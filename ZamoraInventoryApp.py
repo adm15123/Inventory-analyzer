@@ -98,13 +98,29 @@ def index():
 
 @app.route("/view_all", methods=["GET"])
 def view_all():
-    """View all content in the uploaded Excel file."""
+    """View all content in the uploaded Excel file with a clickable 'Graph' box next to each row."""
     global df
     if df is None:
         flash("⚠ Please upload an Excel file first.")
         return redirect(url_for("index"))
     
-    table_html = df.to_html(classes="table table-striped", index=False)
+    # Create a copy of the DataFrame so we don't modify the global df
+    df_temp = df.copy()
+    
+    # If the columns 'Date' and 'Description' exist, insert a new column after 'Date'
+    if "Date" in df_temp.columns and "Description" in df_temp.columns:
+        date_index = list(df_temp.columns).index("Date")
+        # Insert a new column "Graph" with a clickable button that passes the description as a parameter
+        df_temp.insert(
+            date_index + 1,
+            "Graph",
+            df_temp["Description"].apply(
+                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc)}">Graph</a>'
+            )
+        )
+    
+    # Generate the HTML table. Set escape=False so that HTML in the "Graph" column is rendered.
+    table_html = df_temp.to_html(classes="table table-striped", index=False, escape=False)
     return render_template("view_all.html", table=table_html)
 
 @app.route("/search", methods=["GET", "POST"])
@@ -214,7 +230,7 @@ def product_detail():
     """
     Displays a page for a specific product with:
       - A graph (rendered by the /graph endpoint)
-      - A table with Date and Price per Unit for that product.
+      - A table with Date and Price per Unit for that product (sorted by Date).
     """
     global df
     description = request.args.get("description")
