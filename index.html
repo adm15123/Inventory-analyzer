@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Zamora Plumbing Corp Inventory Analyzer</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        table { width: 80%; margin: auto; border-collapse: collapse; }
+        th, td { padding: 10px; border: 1px solid black; }
+    </style>
+</head>
+<body>
+    <h2>Zamora Plumbing Corp Inventory Analyzer</h2>
+    <form method="POST" action="/search">
+        <input type="text" name="query" placeholder="Search for materials...">
+        <button type="submit">Search</button>
+    </form>
+    <h3>Results:</h3>
+    {{ table|safe }}
+</body>
+</html>
