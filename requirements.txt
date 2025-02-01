@@ -1,1 +1,3 @@
-"pandas\nmatplotlib\ntkcalendar" 
+pandas
+matplotlib
+tkcalendar
