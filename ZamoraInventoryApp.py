@@ -107,10 +107,9 @@ def view_all():
     # Create a copy of the DataFrame so we don't modify the global df
     df_temp = df.copy()
     
-    # If the columns 'Date' and 'Description' exist, insert a new column after 'Date'
+    # If the columns 'Date' and 'Description' exist, insert a new column "Graph"
     if "Date" in df_temp.columns and "Description" in df_temp.columns:
         date_index = list(df_temp.columns).index("Date")
-        # Insert a new column "Graph" with a clickable button that passes the description as a parameter
         df_temp.insert(
             date_index + 1,
             "Graph",
@@ -119,13 +118,13 @@ def view_all():
             )
         )
     
-    # Generate the HTML table. Set escape=False so that HTML in the "Graph" column is rendered.
+    # Generate the HTML table. Use escape=False so that HTML in the "Graph" column is rendered.
     table_html = df_temp.to_html(classes="table table-striped", index=False, escape=False)
     return render_template("view_all.html", table=table_html)
 
 @app.route("/search", methods=["GET", "POST"])
 def search():
-    """Search the DataFrame’s 'Description' column for a query."""
+    """Search the DataFrame’s 'Description' column for a query and include a Graph column."""
     global df
     if df is None:
         flash("⚠ Please upload an Excel file first.")
@@ -146,7 +145,16 @@ def search():
             if results.empty:
                 flash("⚠ No matching results found.")
     
-    table_html = results.to_html(classes="table table-striped", index=False) if results is not None else None
+    if results is not None and not results.empty:
+        # Insert a Graph column right after the Date column
+        if "Date" in results.columns and "Description" in results.columns:
+            date_index = list(results.columns).index("Date")
+            results.insert(date_index + 1, "Graph", results["Description"].apply(
+                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc)}">Graph</a>'
+            ))
+        table_html = results.to_html(classes="table table-striped", index=False, escape=False)
+    else:
+        table_html = None
     return render_template("search.html", table=table_html, query=query)
 
 @app.route("/graph")
@@ -224,7 +232,6 @@ def analyze():
     table_html = results.to_html(classes="table table-striped", index=False) if results is not None else None
     return render_template("analyze.html", table=table_html)
 
-# New route for product details that includes both a graph and a table
 @app.route("/product_detail", methods=["GET"])
 def product_detail():
     """
