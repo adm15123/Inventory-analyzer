@@ -1,20 +1,45 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Zamora Plumbing Corp Inventory Analyzer</title>
-    <style>
-        body { font-family: Arial, sans-serif; text-align: center; }
-        table { width: 80%; margin: auto; border-collapse: collapse; }
-        th, td { padding: 10px; border: 1px solid black; }
-    </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zamora Inventory Analyzer</title>
 </head>
 <body>
-    <h2>Zamora Plumbing Corp Inventory Analyzer</h2>
-    <form method="POST" action="/search">
-        <input type="text" name="query" placeholder="Search for materials...">
-        <button type="submit">Search</button>
+    <h1>Zamora Inventory Analyzer</h1>
+    <form id="uploadForm" enctype="multipart/form-data">
+        <input type="file" id="fileInput" name="file" required>
+        <button type="submit">Upload Excel</button>
     </form>
-    <h3>Results:</h3>
-    {{ table|safe }}
+    
+    <input type="text" id="searchQuery" placeholder="Enter search term">
+    <button onclick="searchData()">Search</button>
+    
+    <div id="results"></div>
+
+    <script>
+        document.getElementById("uploadForm").onsubmit = async function(event) {
+            event.preventDefault();
+            let formData = new FormData();
+            formData.append("file", document.getElementById("fileInput").files[0]);
+
+            let response = await fetch("/upload", {
+                method: "POST",
+                body: formData
+            });
+
+            let result = await response.json();
+            alert(result.message || result.error);
+        };
+
+        async function searchData() {
+            let query = document.getElementById("searchQuery").value;
+            let response = await fetch(`/search?query=${query}`);
+            let data = await response.json();
+
+            let resultsDiv = document.getElementById("results");
+            resultsDiv.innerHTML = JSON.stringify(data, null, 2);
+        }
+    </script>
 </body>
 </html>
