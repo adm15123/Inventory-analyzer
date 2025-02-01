@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ description }} Details</title>
+    <!-- Optional: Include Bootstrap for styling -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+</head>
+<body>
+    <div class="container my-4">
+        <h1>{{ description }} Details</h1>
+        <a href="{{ url_for('view_all') }}" class="btn btn-primary mb-3">Back to All Products</a>
+        <div class="row">
+            <!-- Graph Section -->
+            <div class="col-md-8">
+                <img src="{{ url_for('graph', description=description) }}" class="img-fluid" alt="Graph for {{ description }}">
+            </div>
+            <!-- Table Section -->
+            <div class="col-md-4">
+                <h3>Price Data</h3>
+                {{ table|safe }}
+            </div>
+        </div>
+    </div>
+</body>
+</html>
