@@ -49,14 +49,19 @@ app.config["MAIL_SERVER"] = "smtp.gmail.com"  # Use your SMTP server
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
 app.config["MAIL_USERNAME"] = "aliant.delgado07@gmail.com"
-app.config["MAIL_PASSWORD"] = "acAB53mggmail."
+app.config["MAIL_PASSWORD"] = "lgco kmqe emqr qdrj"
 app.config["MAIL_DEFAULT_SENDER"] = "aliant.delgado07@gmail.com"
 
 mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.secret_key)
 
 # Predefined list of customer emails allowed to log in
-ALLOWED_EMAILS = ["aliant.delgado@yahoo.com"]
+ALLOWED_EMAILS = [
+    "aliant.delgado@yahoo.com",
+    "aliant.delgado17@gmail.com",
+    "zamoraplumbing01@gmail.com",
+    "aliant.delgado01@yahoo.com"
+]
 
 # ================================
 # Login Helper Functions
