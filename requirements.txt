@@ -4,8 +4,6 @@ pandas
 matplotlib
 tkcalendar
 openpyxl
-<<<<<<< HEAD
 flask-mail
 itsdangerous
-=======
->>>>>>> 85c1ca8478271fcd9faa138bc0cdf55b5a1a5029
+
