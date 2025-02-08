@@ -5,8 +5,8 @@ import os
 import io
 import matplotlib.pyplot as plt
 from werkzeug.utils import secure_filename
-from datetime import datetime, timedelta  # Updated: timedelta imported for session lifetime
-import time  # Imported for session inactivity tracking
+from datetime import datetime, timedelta
+import time
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 # Additional imports for login functionality
@@ -14,19 +14,17 @@ from flask_mail import Mail, Message
 from itsdangerous import URLSafeTimedSerializer
 from functools import wraps
 
-# ================================
+# -------------------------------
 # Application Configuration
-# ================================
+# -------------------------------
 
-# Set the base directory to the directory of this file
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-
 app = Flask(__name__)
-app.secret_key = "your_secret_key"  # Secure flash messages and session management
+app.secret_key = "your_secret_key"
 
 # Session Timeout Configuration
 app.config["SESSION_PERMANENT"] = True
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)  # Logout after 30 min of inactivity
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=10)
 
 # Allowed file extension for uploads
 ALLOWED_EXTENSIONS = {"xlsx"}
@@ -34,8 +32,6 @@ ALLOWED_EXTENSIONS = {"xlsx"}
 # Define the upload folder (absolute path)
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-
-# Ensure the upload directory exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Define the default Excel file name and its path within the uploads folder
@@ -45,22 +41,19 @@ DEFAULT_FILE = os.path.join(UPLOAD_FOLDER, EXCEL_FILENAME)
 # Global DataFrame variable
 df = None
 
-# ================================
+# -------------------------------
 # Flask-Mail and Login Configuration
-# ================================
+# -------------------------------
 
-# Configure Flask-Mail with Gmail SMTP settings
-app.config["MAIL_SERVER"] = "smtp.gmail.com"  # Use your SMTP server
+app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
 app.config["MAIL_USERNAME"] = "aliant.delgado07@gmail.com"
-app.config["MAIL_PASSWORD"] = "lgco kmqe emqr qdrj"
+app.config["MAIL_PASSWORD"] = "lgco kmqe emqr qdrj"  # Use an app-specific password if using 2FA
 app.config["MAIL_DEFAULT_SENDER"] = "aliant.delgado07@gmail.com"
 
 mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.secret_key)
-
-# Predefined list of customer emails allowed to log in
 ALLOWED_EMAILS = [
     "aliant.delgado@yahoo.com",
     "aliant.delgado17@gmail.com",
@@ -68,19 +61,37 @@ ALLOWED_EMAILS = [
     "aliant.delgado01@yahoo.com"
 ]
 
-# ================================
-# Login Helper Functions
-# ================================
+# -------------------------------
+# Global Before-Request Handler (Option 2)
+# -------------------------------
 
-def is_logged_in():
-    """Check if user is logged in and handle session expiration based on inactivity."""
+@app.before_request
+def check_session_timeout():
+    # Skip session timeout check for login, verify, and static assets.
+    if request.endpoint in ('login', 'verify_login', 'static'):
+        return
+
     if "email" in session:
         last_activity = session.get("last_activity", time.time())
-        if time.time() - last_activity > 1800:  # 1800 seconds = 30 minutes
-            session.pop("email", None)  # Log out user
+        if time.time() - last_activity > 600:  # 30 minutes of inactivity
+            session.pop("email", None)
+            flash("Session expired due to inactivity. Please log in again.", "warning")
+            return redirect(url_for("login"))
+        # Update last activity timestamp for active users.
+        session["last_activity"] = time.time()
+
+# -------------------------------
+# Login Helper Functions
+# -------------------------------
+
+def is_logged_in():
+    if "email" in session:
+        last_activity = session.get("last_activity", time.time())
+        if time.time() - last_activity > 600:
+            session.pop("email", None)
             flash("Session expired due to inactivity. Please log in again.", "warning")
             return False
-        session["last_activity"] = time.time()  # Update last activity timestamp
+        session["last_activity"] = time.time()
         return True
     return False
 
@@ -93,9 +104,9 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# ================================
+# -------------------------------
 # Utility Functions for Main Functionality
-# ================================
+# -------------------------------
 
 def allowed_file(filename):
     """Check if the uploaded file is an allowed type (.xlsx)."""
@@ -122,10 +133,9 @@ def load_default_file():
 # Attempt to load the default file when the app starts
 load_default_file()
 
-# ================================
-# Routes for Main Functionality (File Upload, Analysis, etc.)
-# All routes below require the user to be logged in.
-# ================================
+# -------------------------------
+# Routes for Main Functionality (Protected by login_required)
+# -------------------------------
 
 @app.route("/", methods=["GET", "POST"])
 @login_required
@@ -324,9 +334,9 @@ def product_detail():
     table_html = filtered_data[['Date', 'Price per Unit']].to_html(classes="table table-striped", index=False)
     return render_template("product_detail.html", description=description, table=table_html)
 
-# ================================
-# Routes for Login and Logout
-# ================================
+# -------------------------------
+# Login and Logout Routes
+# -------------------------------
 
 @app.route("/login", methods=["GET", "POST"])
 def login():
@@ -347,15 +357,14 @@ def login():
             return redirect(url_for("index"))
         else:
             flash("Unauthorized email.", "danger")
-    
     return render_template("login.html")
 
 @app.route("/verify_login/<token>")
 def verify_login(token):
     try:
         email = serializer.loads(token, salt="email-confirmation", max_age=600)
-        session["email"] = email  # Store in session to keep the user logged in
-        session["last_activity"] = time.time()  # Initialize last activity timestamp
+        session["email"] = email
+        session["last_activity"] = time.time()
         flash("Login successful!", "success")
         return redirect(url_for("index"))
     except Exception as e:
@@ -368,9 +377,9 @@ def logout():
     flash("Logged out successfully.", "info")
     return redirect(url_for("login"))
 
-# ================================
+# -------------------------------
 # Run the Application
-# ================================
+# -------------------------------
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000, debug=True)
