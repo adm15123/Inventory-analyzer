@@ -3,3 +3,6 @@ gunicorn
 pandas
 matplotlib
 tkcalendar
+openpyxl
+flask-mail
+itsdangerous

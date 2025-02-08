@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session
 import pandas as pd
 import re
 import os
@@ -8,11 +8,20 @@ from werkzeug.utils import secure_filename
 from datetime import datetime
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
+# Additional imports for login functionality
+from flask_mail import Mail, Message
+from itsdangerous import URLSafeTimedSerializer
+from functools import wraps
+
+# ================================
+# Application Configuration
+# ================================
+
 # Set the base directory to the directory of this file
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(__name__)
-app.secret_key = "your_secret_key"  # Secure flash messages
+app.secret_key = "your_secret_key"  # Secure flash messages and session management
 
 # Allowed file extension for uploads
 ALLOWED_EXTENSIONS = {"xlsx"}
@@ -24,12 +33,50 @@ app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 # Ensure the upload directory exists
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Global DataFrame variable
-df = None
-
 # Define the default Excel file name and its path within the uploads folder
 EXCEL_FILENAME = "Final_Extracted_Data_Fixed_Logic4.xlsx"
 DEFAULT_FILE = os.path.join(UPLOAD_FOLDER, EXCEL_FILENAME)
+
+# Global DataFrame variable
+df = None
+
+# ================================
+# Flask-Mail and Login Configuration
+# ================================
+
+# Configure Flask-Mail
+app.config["MAIL_SERVER"] = "smtp.gmail.com"  # Use your SMTP server
+app.config["MAIL_PORT"] = 587
+app.config["MAIL_USE_TLS"] = True
+app.config["MAIL_USERNAME"] = "aliant.delgado07@gmail.com"
+app.config["MAIL_PASSWORD"] = "acAB53mggmail."
+app.config["MAIL_DEFAULT_SENDER"] = "aliant.delgado07@gmail.com"
+
+mail = Mail(app)
+serializer = URLSafeTimedSerializer(app.secret_key)
+
+# Predefined list of customer emails allowed to log in
+ALLOWED_EMAILS = ["aliant.delgado@yahoo.com"]
+
+# ================================
+# Login Helper Functions
+# ================================
+
+def is_logged_in():
+    return "email" in session
+
+def login_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_logged_in():
+            flash("Please log in to access this page.", "warning")
+            return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated_function
+
+# ================================
+# Utility Functions for Main Functionality
+# ================================
 
 def allowed_file(filename):
     """Check if the uploaded file is an allowed type (.xlsx)."""
@@ -56,11 +103,17 @@ def load_default_file():
 # Attempt to load the default file when the app starts
 load_default_file()
 
+# ================================
+# Routes for Main Functionality (File Upload, Analysis, etc.)
+# All routes below require the user to be logged in.
+# ================================
+
 @app.route("/", methods=["GET", "POST"])
+@login_required
 def index():
     """
     Landing page: Upload an Excel file and navigate to other features.
-    (Renamed from 'home' to 'index' so that template calls to url_for("index") work.)
+    (This replaces the login snippet's index route by adding the file upload functionality.)
     """
     global df
     if request.method == "POST":
@@ -97,19 +150,36 @@ def index():
     return render_template("index.html")
 
 @app.route("/view_all", methods=["GET"])
+@login_required
 def view_all():
-    """View all content in the uploaded Excel file."""
+    """View all content in the uploaded Excel file with a clickable 'Graph' box next to each row."""
     global df
     if df is None:
         flash("⚠ Please upload an Excel file first.")
         return redirect(url_for("index"))
     
-    table_html = df.to_html(classes="table table-striped", index=False)
+    # Create a copy of the DataFrame so we don't modify the global df
+    df_temp = df.copy()
+    
+    # If the columns 'Date' and 'Description' exist, insert a new column "Graph"
+    if "Date" in df_temp.columns and "Description" in df_temp.columns:
+        date_index = list(df_temp.columns).index("Date")
+        df_temp.insert(
+            date_index + 1,
+            "Graph",
+            df_temp["Description"].apply(
+                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc)}">Graph</a>'
+            )
+        )
+    
+    # Generate the HTML table. Use escape=False so that HTML in the "Graph" column is rendered.
+    table_html = df_temp.to_html(classes="table table-striped", index=False, escape=False)
     return render_template("view_all.html", table=table_html)
 
 @app.route("/search", methods=["GET", "POST"])
+@login_required
 def search():
-    """Search the DataFrame’s 'Description' column for a query."""
+    """Search the DataFrame’s 'Description' column for a query and include a Graph column."""
     global df
     if df is None:
         flash("⚠ Please upload an Excel file first.")
@@ -130,10 +200,20 @@ def search():
             if results.empty:
                 flash("⚠ No matching results found.")
     
-    table_html = results.to_html(classes="table table-striped", index=False) if results is not None else None
+    if results is not None and not results.empty:
+        # Insert a Graph column right after the Date column
+        if "Date" in results.columns and "Description" in results.columns:
+            date_index = list(results.columns).index("Date")
+            results.insert(date_index + 1, "Graph", results["Description"].apply(
+                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc)}">Graph</a>'
+            ))
+        table_html = results.to_html(classes="table table-striped", index=False, escape=False)
+    else:
+        table_html = None
     return render_template("search.html", table=table_html, query=query)
 
 @app.route("/graph")
+@login_required
 def graph():
     """Generate a graph of Price per Unit over time for a given description."""
     global df
@@ -166,6 +246,7 @@ def graph():
     return send_file(output, mimetype="image/png")
 
 @app.route("/analyze", methods=["GET", "POST"])
+@login_required
 def analyze():
     """Analyze price changes for items across a custom date range."""
     global df
@@ -208,13 +289,13 @@ def analyze():
     table_html = results.to_html(classes="table table-striped", index=False) if results is not None else None
     return render_template("analyze.html", table=table_html)
 
-# New route for product details that includes both a graph and a table
 @app.route("/product_detail", methods=["GET"])
+@login_required
 def product_detail():
     """
     Displays a page for a specific product with:
       - A graph (rendered by the /graph endpoint)
-      - A table with Date and Price per Unit for that product.
+      - A table with Date and Price per Unit for that product (sorted by Date).
     """
     global df
     description = request.args.get("description")
@@ -231,6 +312,48 @@ def product_detail():
     # Create an HTML table for Date and Price per Unit columns
     table_html = filtered_data[['Date', 'Price per Unit']].to_html(classes="table table-striped", index=False)
     return render_template("product_detail.html", description=description, table=table_html)
+
+# ================================
+# Routes for Login and Logout
+# ================================
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if request.method == "POST":
+        email = request.form.get("email")
+        if email in ALLOWED_EMAILS:
+            token = serializer.dumps(email, salt="email-confirmation")
+            login_url = url_for("verify_login", token=token, _external=True)
+            msg = Message("Your Login Link", recipients=[email])
+            msg.body = f"Click the link to log in: {login_url}"
+            mail.send(msg)
+            flash("A login link has been sent to your email.", "info")
+            return redirect(url_for("index"))
+        else:
+            flash("Unauthorized email.", "danger")
+    
+    return render_template("login.html")
+
+@app.route("/verify_login/<token>")
+def verify_login(token):
+    try:
+        email = serializer.loads(token, salt="email-confirmation", max_age=600)
+        session["email"] = email  # Store in session to keep the user logged in
+        flash("Login successful!", "success")
+        return redirect(url_for("index"))
+    except Exception as e:
+        flash("Invalid or expired login link.", "danger")
+        return redirect(url_for("login"))
+
+@app.route("/logout")
+def logout():
+    session.pop("email", None)
+    flash("Logged out successfully.", "info")
+    return redirect(url_for("login"))
+
+# ================================
+# Run the Application
+# ================================
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=10000, debug=True)
