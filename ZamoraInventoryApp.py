@@ -5,7 +5,8 @@ import os
 import io
 import matplotlib.pyplot as plt
 from werkzeug.utils import secure_filename
-from datetime import datetime
+from datetime import datetime, timedelta  # Updated: timedelta imported for session lifetime
+import time  # Imported for session inactivity tracking
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 # Additional imports for login functionality
@@ -22,6 +23,10 @@ BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
 app = Flask(__name__)
 app.secret_key = "your_secret_key"  # Secure flash messages and session management
+
+# Session Timeout Configuration
+app.config["SESSION_PERMANENT"] = True
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)  # Logout after 30 min of inactivity
 
 # Allowed file extension for uploads
 ALLOWED_EXTENSIONS = {"xlsx"}
@@ -44,7 +49,7 @@ df = None
 # Flask-Mail and Login Configuration
 # ================================
 
-# Configure Flask-Mail
+# Configure Flask-Mail with Gmail SMTP settings
 app.config["MAIL_SERVER"] = "smtp.gmail.com"  # Use your SMTP server
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
@@ -68,7 +73,16 @@ ALLOWED_EMAILS = [
 # ================================
 
 def is_logged_in():
-    return "email" in session
+    """Check if user is logged in and handle session expiration based on inactivity."""
+    if "email" in session:
+        last_activity = session.get("last_activity", time.time())
+        if time.time() - last_activity > 1800:  # 1800 seconds = 30 minutes
+            session.pop("email", None)  # Log out user
+            flash("Session expired due to inactivity. Please log in again.", "warning")
+            return False
+        session["last_activity"] = time.time()  # Update last activity timestamp
+        return True
+    return False
 
 def login_required(f):
     @wraps(f)
@@ -118,7 +132,6 @@ load_default_file()
 def index():
     """
     Landing page: Upload an Excel file and navigate to other features.
-    (This replaces the login snippet's index route by adding the file upload functionality.)
     """
     global df
     if request.method == "POST":
@@ -163,10 +176,8 @@ def view_all():
         flash("⚠ Please upload an Excel file first.")
         return redirect(url_for("index"))
     
-    # Create a copy of the DataFrame so we don't modify the global df
     df_temp = df.copy()
     
-    # If the columns 'Date' and 'Description' exist, insert a new column "Graph"
     if "Date" in df_temp.columns and "Description" in df_temp.columns:
         date_index = list(df_temp.columns).index("Date")
         df_temp.insert(
@@ -177,7 +188,6 @@ def view_all():
             )
         )
     
-    # Generate the HTML table. Use escape=False so that HTML in the "Graph" column is rendered.
     table_html = df_temp.to_html(classes="table table-striped", index=False, escape=False)
     return render_template("view_all.html", table=table_html)
 
@@ -206,7 +216,6 @@ def search():
                 flash("⚠ No matching results found.")
     
     if results is not None and not results.empty:
-        # Insert a Graph column right after the Date column
         if "Date" in results.columns and "Description" in results.columns:
             date_index = list(results.columns).index("Date")
             results.insert(date_index + 1, "Graph", results["Description"].apply(
@@ -235,7 +244,6 @@ def graph():
     
     filtered_data = filtered_data.dropna(subset=["Date"]).sort_values(by="Date")
     
-    # Create the plot
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(filtered_data["Date"], filtered_data["Price per Unit"], marker="o")
     ax.set_title(f"Prices Over Time for '{description}'")
@@ -243,7 +251,6 @@ def graph():
     ax.set_ylabel("Price per Unit")
     ax.grid(True)
     
-    # Save the plot to a BytesIO object and return it as PNG
     output = io.BytesIO()
     FigureCanvas(fig).print_png(output)
     plt.close(fig)
@@ -314,7 +321,6 @@ def product_detail():
         return redirect(url_for("view_all"))
     
     filtered_data = filtered_data.dropna(subset=["Date"]).sort_values(by="Date")
-    # Create an HTML table for Date and Price per Unit columns
     table_html = filtered_data[['Date', 'Price per Unit']].to_html(classes="table table-striped", index=False)
     return render_template("product_detail.html", description=description, table=table_html)
 
@@ -331,7 +337,12 @@ def login():
             login_url = url_for("verify_login", token=token, _external=True)
             msg = Message("Your Login Link", recipients=[email])
             msg.body = f"Click the link to log in: {login_url}"
-            mail.send(msg)
+            try:
+                mail.send(msg)
+            except Exception as e:
+                app.logger.error(f"Error sending email: {e}")
+                flash("Error sending email. Please try again later.", "danger")
+                return redirect(url_for("login"))
             flash("A login link has been sent to your email.", "info")
             return redirect(url_for("index"))
         else:
@@ -344,6 +355,7 @@ def verify_login(token):
     try:
         email = serializer.loads(token, salt="email-confirmation", max_age=600)
         session["email"] = email  # Store in session to keep the user logged in
+        session["last_activity"] = time.time()  # Initialize last activity timestamp
         flash("Login successful!", "success")
         return redirect(url_for("index"))
     except Exception as e:
