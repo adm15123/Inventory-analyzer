@@ -230,7 +230,7 @@ def search():
             results.insert(date_index + 1, "Graph", results["Description"].apply(
                 lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
             ))
-        table_html = results.to_html(classes="table table-striped", index=False, escape=False))
+        table_html = results.to_html(classes="table table-striped", index=False, escape=False)
     else:
         table_html = None
     return render_template("search.html", table=table_html, query=query, supply=supply)
