@@ -17,13 +17,6 @@
       </div>
     {% endif %}
   {% endwith %}
-  <form method="post" enctype="multipart/form-data" class="mb-4">
-    <div class="form-group">
-      <label for="file">Upload Excel File</label>
-      <input type="file" name="file" id="file" class="form-control-file" required>
-    </div>
-    <button type="submit" class="btn btn-primary">Upload</button>
-  </form>
   <hr>
   <a href="{{ url_for('view_all') }}" class="btn btn-secondary">View All Content</a>
   <a href="{{ url_for('search') }}" class="btn btn-secondary">Search Description</a>

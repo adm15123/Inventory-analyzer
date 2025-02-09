@@ -26,10 +26,10 @@ app.secret_key = "your_secret_key"
 app.config["SESSION_PERMANENT"] = True
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
 
-# Allowed file extension for uploads
+# Allowed file extension (not used for upload anymore)
 ALLOWED_EXTENSIONS = {"xlsx"}
 
-# Define the upload folder (absolute path)
+# Define the upload folder (used only for reading pre‑uploaded files)
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -64,7 +64,6 @@ ALLOWED_EMAILS = [
     "zamoraplumbing01@gmail.com",
     "aliant.delgado01@yahoo.com"
 ]
-
 
 # -------------------------------
 # Global Before-Request Handler (Session Timeout)
@@ -112,10 +111,6 @@ def login_required(f):
 # Utility Functions
 # -------------------------------
 
-def allowed_file(filename):
-    """Check if the uploaded file is an allowed type (.xlsx)."""
-    return "." in filename and filename.rsplit(".", 1)[1].lower() in ALLOWED_EXTENSIONS
-
 def preprocess_text_for_search(text):
     """Preprocess text by removing special characters and converting to lowercase."""
     return re.sub(r"[^a-zA-Z0-9\s]", "", str(text)).lower()
@@ -128,25 +123,33 @@ def load_default_file():
             df = pd.read_excel(DEFAULT_FILE, engine="openpyxl")
             if "Date" in df.columns:
                 df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+            if "Description" in df.columns:
+                df["Description"] = df["Description"].astype(str).str.strip()
+            if "Price per Unit" in df.columns:
+                df["Price per Unit"] = pd.to_numeric(df["Price per Unit"], errors='coerce')
             print("✅ Default supply1 file loaded successfully!")
         except Exception as e:
             print(f"❌ Error loading supply1 file: {e}")
     else:
-        print("⚠ No default supply1 file found in the uploads folder. Please upload a file.")
+        print("⚠ No default supply1 file found in the uploads folder.")
 
 def load_supply2_file():
-    """Load the default Excel file (Supply 2) from the uploads folder on startup."""
+    """Load the Supply 2 Excel file from the uploads folder on startup."""
     global df_supply2
     if os.path.exists(DEFAULT_SUPPLY2_FILE):
         try:
             df_supply2 = pd.read_excel(DEFAULT_SUPPLY2_FILE, engine="openpyxl")
             if "Date" in df_supply2.columns:
                 df_supply2["Date"] = pd.to_datetime(df_supply2["Date"], errors="coerce")
+            if "Description" in df_supply2.columns:
+                df_supply2["Description"] = df_supply2["Description"].astype(str).str.strip()
+            if "Price per Unit" in df_supply2.columns:
+                df_supply2["Price per Unit"] = pd.to_numeric(df_supply2["Price per Unit"], errors='coerce')
             print("✅ Default supply2 file loaded successfully!")
         except Exception as e:
             print(f"❌ Error loading supply2 file: {e}")
     else:
-        print("⚠ No default supply2 file found in the uploads folder. Please upload a file.")
+        print("⚠ No default supply2 file found in the uploads folder.")
 
 # Load both files on startup
 load_default_file()
@@ -163,43 +166,11 @@ def get_current_dataframe(supply):
 # Routes for Main Functionality (Protected by login_required)
 # -------------------------------
 
-@app.route("/", methods=["GET", "POST"])
+# Main Menu – note: the file upload functionality has been removed.
+@app.route("/")
 @login_required
 def index():
-    """
-    Landing page: Upload a Supply 1 file.
-    (For simplicity, this route handles only Supply 1 upload. You could create a similar route for Supply 2.)
-    """
-    global df
-    if request.method == "POST":
-        if "file" not in request.files:
-            flash("No file part")
-            return redirect(request.url)
-        file = request.files["file"]
-        if file.filename == "":
-            flash("No file selected")
-            return redirect(request.url)
-        if file and allowed_file(file.filename):
-            filename = secure_filename(file.filename)
-            file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
-            try:
-                file.save(file_path)
-            except Exception as e:
-                flash(f"❌ Error saving file: {e}")
-                return redirect(request.url)
-            try:
-                df = pd.read_excel(file_path, engine="openpyxl")
-                if "Date" in df.columns:
-                    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-                flash("✅ Supply1 Excel file loaded successfully!")
-                return redirect(url_for("view_all", supply="supply1"))
-            except Exception as e:
-                flash(f"❌ Error loading file: {e}")
-                return redirect(request.url)
-        else:
-            flash("File type not allowed. Please upload a .xlsx file.")
-            return redirect(request.url)
-    return render_template("index.html")
+    return render_template("index.html")  # A simple main menu template
 
 @app.route("/view_all", methods=["GET"])
 @login_required
@@ -208,7 +179,7 @@ def view_all():
     supply = request.args.get("supply", "supply1")
     current_df = get_current_dataframe(supply)
     if current_df is None:
-        flash("⚠ Please upload the Excel file for the selected supply first.")
+        flash("⚠ Please ensure the Excel file for the selected supply is available.")
         return redirect(url_for("index"))
     
     df_temp = current_df.copy()
@@ -229,12 +200,11 @@ def view_all():
 def search():
     """
     Search the selected supply’s 'Description' column for a query.
-    The form should include a dropdown (or similar) to choose supply1 or supply2.
     """
     supply = request.args.get("supply", "supply1")
     current_df = get_current_dataframe(supply)
     if current_df is None:
-        flash("⚠ Please upload the Excel file for the selected supply first.")
+        flash("⚠ Please ensure the Excel file for the selected supply is available.")
         return redirect(url_for("index"))
     
     results = None
@@ -277,7 +247,8 @@ def graph():
         flash("⚠ Data or description not provided.")
         return redirect(url_for("index"))
     
-    filtered_data = current_df[current_df["Description"] == description]
+    # Do a case-insensitive, trimmed match for the description.
+    filtered_data = current_df[current_df["Description"].str.lower().str.strip() == description.lower().strip()]
     if filtered_data.empty:
         flash("⚠ No data available for the selected description.")
         return redirect(url_for("view_all", supply=supply))
@@ -301,12 +272,11 @@ def graph():
 def analyze():
     """
     Analyze price changes for items across a custom date range from the selected supply.
-    The form should include a supply selection.
     """
     supply = request.args.get("supply", "supply1")
     current_df = get_current_dataframe(supply)
     if current_df is None:
-        flash("⚠ Please upload the Excel file for the selected supply first.")
+        flash("⚠ Please ensure the Excel file for the selected supply is available.")
         return redirect(url_for("index"))
     
     results = None
@@ -352,7 +322,7 @@ def product_detail():
     """
     Display a page for a specific product (from the selected supply) with:
       - A graph (rendered by the /graph endpoint)
-      - A table with Date and Price per Unit (sorted by Date).
+      - A table with Date and Price per Unit for that product (sorted by Date).
     """
     supply = request.args.get("supply", "supply1")
     current_df = get_current_dataframe(supply)
@@ -361,7 +331,8 @@ def product_detail():
         flash("⚠ Please provide a product description.")
         return redirect(url_for("index"))
     
-    filtered_data = current_df[current_df["Description"] == description]
+    # Use a case-insensitive, trimmed comparison for matching.
+    filtered_data = current_df[current_df["Description"].str.lower().str.strip() == description.lower().strip()]
     if filtered_data.empty:
         flash("⚠ No data available for the selected product.")
         return redirect(url_for("view_all", supply=supply))
