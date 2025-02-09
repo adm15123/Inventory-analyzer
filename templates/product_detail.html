@@ -4,6 +4,12 @@
   <meta charset="UTF-8">
   <title>Product Detail</title>
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
+  <style>
+    .graph-container img {
+      width: 100%;
+      height: auto;
+    }
+  </style>
 </head>
 <body>
 <div class="container">
@@ -21,11 +27,16 @@
   <!-- Back button -->
   <a href="{{ url_for(ref, supply=supply) }}" class="btn btn-secondary mb-3">Back</a>
   
-  <!-- Graph section -->
-  <img src="{{ url_for('graph', description=description, supply=supply) }}" alt="Graph for {{ description }}">
-  
-  <!-- Table with Date and Price per Unit -->
-  {{ table | safe }}
+  <div class="row">
+    <!-- Graph column: takes about two-thirds of the width -->
+    <div class="col-md-8 graph-container">
+      <img src="{{ url_for('graph', description=description, supply=supply, ref=ref) }}" alt="Graph for {{ description }}" class="img-fluid">
+    </div>
+    <!-- Table column: takes about one-third of the width -->
+    <div class="col-md-4">
+      {{ table | safe }}
+    </div>
+  </div>
 </div>
 </body>
 </html>
