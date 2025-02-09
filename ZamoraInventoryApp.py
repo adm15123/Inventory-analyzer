@@ -228,9 +228,9 @@ def search():
         if "Date" in results.columns and "Description" in results.columns:
             date_index = list(results.columns).index("Date")
             results.insert(date_index + 1, "Graph", results["Description"].apply(
-                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search")}">Graph</a>'
+                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
             ))
-        table_html = results.to_html(classes="table table-striped", index=False, escape=False)
+        table_html = results.to_html(classes="table table-striped", index=False, escape=False))
     else:
         table_html = None
     return render_template("search.html", table=table_html, query=query, supply=supply)
@@ -331,7 +331,7 @@ def product_detail():
         flash("⚠ Please provide a product description.")
         return redirect(url_for("index"))
     
-    # Use a case-insensitive, trimmed comparison for matching.
+    # Use case-insensitive, trimmed comparison for matching.
     filtered_data = current_df[current_df["Description"].str.lower().str.strip() == description.lower().strip()]
     if filtered_data.empty:
         flash("⚠ No data available for the selected product.")
@@ -339,8 +339,10 @@ def product_detail():
     
     filtered_data = filtered_data.dropna(subset=["Date"]).sort_values(by="Date")
     table_html = filtered_data[['Date', 'Price per Unit']].to_html(classes="table table-striped", index=False)
-    ref = request.args.get("ref", "view_all")  # default back to view_all if not provided
-    return render_template("product_detail.html", description=description, table=table_html, supply=supply, ref=ref)
+    ref = request.args.get("ref", "view_all")  # defaults to view_all if not provided
+    query = request.args.get("query", "")       # Get the search query if available
+    return render_template("product_detail.html", description=description, table=table_html, supply=supply, ref=ref, query=query)
+
 
 # -------------------------------
 # Login and Logout Routes

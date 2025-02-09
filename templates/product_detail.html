@@ -24,15 +24,19 @@
     {% endif %}
   {% endwith %}
   
-  <!-- Back button -->
-  <a href="{{ url_for(ref, supply=supply) }}" class="btn btn-secondary mb-3">Back</a>
+  <!-- Back button: if ref is "search", pass the query to preserve filter -->
+  {% if ref == "search" %}
+    <a href="{{ url_for(ref, supply=supply, query=query) }}" class="btn btn-secondary mb-3">Back</a>
+  {% else %}
+    <a href="{{ url_for(ref, supply=supply) }}" class="btn btn-secondary mb-3">Back</a>
+  {% endif %}
   
   <div class="row">
-    <!-- Graph column: takes about two-thirds of the width -->
+    <!-- Graph column -->
     <div class="col-md-8 graph-container">
       <img src="{{ url_for('graph', description=description, supply=supply, ref=ref) }}" alt="Graph for {{ description }}" class="img-fluid">
     </div>
-    <!-- Table column: takes about one-third of the width -->
+    <!-- Table column -->
     <div class="col-md-4">
       {{ table | safe }}
     </div>
