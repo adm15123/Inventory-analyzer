@@ -24,7 +24,7 @@ app.secret_key = "your_secret_key"
 
 # Session Timeout Configuration
 app.config["SESSION_PERMANENT"] = True
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=10)
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
 
 # Allowed file extension for uploads
 ALLOWED_EXTENSIONS = {"xlsx"}
@@ -34,12 +34,16 @@ UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Define the default Excel file name and its path within the uploads folder
-EXCEL_FILENAME = "Final_Extracted_Data_Fixed_Logic4.xlsx"
+# Define filenames and paths for both supplies
+EXCEL_FILENAME = "Final_Extracted_Data_Fixed_Logic4.xlsx"  # Supply 1 file
 DEFAULT_FILE = os.path.join(UPLOAD_FOLDER, EXCEL_FILENAME)
 
-# Global DataFrame variable
-df = None
+SUPPLY2_FILENAME = "Supply2.xlsx"  # Supply 2 file
+DEFAULT_SUPPLY2_FILE = os.path.join(UPLOAD_FOLDER, SUPPLY2_FILENAME)
+
+# Global DataFrames for each supply
+df = None         # Data for supply 1
+df_supply2 = None # Data for supply 2
 
 # -------------------------------
 # Flask-Mail and Login Configuration
@@ -61,23 +65,23 @@ ALLOWED_EMAILS = [
     "aliant.delgado01@yahoo.com"
 ]
 
+
 # -------------------------------
-# Global Before-Request Handler (Option 2)
+# Global Before-Request Handler (Session Timeout)
 # -------------------------------
 
 @app.before_request
 def check_session_timeout():
-    # Skip session timeout check for login, verify, and static assets.
+    # Skip timeout check for login, verification, and static assets.
     if request.endpoint in ('login', 'verify_login', 'static'):
         return
 
     if "email" in session:
         last_activity = session.get("last_activity", time.time())
-        if time.time() - last_activity > 600:  # 30 minutes of inactivity
+        if time.time() - last_activity > 1800:  # 30 minutes inactivity
             session.pop("email", None)
             flash("Session expired due to inactivity. Please log in again.", "warning")
             return redirect(url_for("login"))
-        # Update last activity timestamp for active users.
         session["last_activity"] = time.time()
 
 # -------------------------------
@@ -87,7 +91,7 @@ def check_session_timeout():
 def is_logged_in():
     if "email" in session:
         last_activity = session.get("last_activity", time.time())
-        if time.time() - last_activity > 600:
+        if time.time() - last_activity > 1800:
             session.pop("email", None)
             flash("Session expired due to inactivity. Please log in again.", "warning")
             return False
@@ -105,7 +109,7 @@ def login_required(f):
     return decorated_function
 
 # -------------------------------
-# Utility Functions for Main Functionality
+# Utility Functions
 # -------------------------------
 
 def allowed_file(filename):
@@ -117,21 +121,43 @@ def preprocess_text_for_search(text):
     return re.sub(r"[^a-zA-Z0-9\s]", "", str(text)).lower()
 
 def load_default_file():
-    """Load the default Excel file from the uploads folder on startup."""
+    """Load the default Excel file (Supply 1) from the uploads folder on startup."""
     global df
     if os.path.exists(DEFAULT_FILE):
         try:
             df = pd.read_excel(DEFAULT_FILE, engine="openpyxl")
             if "Date" in df.columns:
                 df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-            print("✅ Default file loaded successfully!")
+            print("✅ Default supply1 file loaded successfully!")
         except Exception as e:
-            print(f"❌ Error loading default file: {e}")
+            print(f"❌ Error loading supply1 file: {e}")
     else:
-        print("⚠ No default Excel file found in the uploads folder. Please upload a file.")
+        print("⚠ No default supply1 file found in the uploads folder. Please upload a file.")
 
-# Attempt to load the default file when the app starts
+def load_supply2_file():
+    """Load the default Excel file (Supply 2) from the uploads folder on startup."""
+    global df_supply2
+    if os.path.exists(DEFAULT_SUPPLY2_FILE):
+        try:
+            df_supply2 = pd.read_excel(DEFAULT_SUPPLY2_FILE, engine="openpyxl")
+            if "Date" in df_supply2.columns:
+                df_supply2["Date"] = pd.to_datetime(df_supply2["Date"], errors="coerce")
+            print("✅ Default supply2 file loaded successfully!")
+        except Exception as e:
+            print(f"❌ Error loading supply2 file: {e}")
+    else:
+        print("⚠ No default supply2 file found in the uploads folder. Please upload a file.")
+
+# Load both files on startup
 load_default_file()
+load_supply2_file()
+
+def get_current_dataframe(supply):
+    """Return the DataFrame for the specified supply."""
+    if supply == "supply2":
+        return df_supply2
+    else:
+        return df
 
 # -------------------------------
 # Routes for Main Functionality (Protected by login_required)
@@ -141,19 +167,18 @@ load_default_file()
 @login_required
 def index():
     """
-    Landing page: Upload an Excel file and navigate to other features.
+    Landing page: Upload a Supply 1 file.
+    (For simplicity, this route handles only Supply 1 upload. You could create a similar route for Supply 2.)
     """
     global df
     if request.method == "POST":
         if "file" not in request.files:
             flash("No file part")
             return redirect(request.url)
-
         file = request.files["file"]
         if file.filename == "":
             flash("No file selected")
             return redirect(request.url)
-
         if file and allowed_file(file.filename):
             filename = secure_filename(file.filename)
             file_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
@@ -162,13 +187,12 @@ def index():
             except Exception as e:
                 flash(f"❌ Error saving file: {e}")
                 return redirect(request.url)
-
             try:
                 df = pd.read_excel(file_path, engine="openpyxl")
                 if "Date" in df.columns:
                     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-                flash("✅ Excel file loaded successfully!")
-                return redirect(url_for("view_all"))
+                flash("✅ Supply1 Excel file loaded successfully!")
+                return redirect(url_for("view_all", supply="supply1"))
             except Exception as e:
                 flash(f"❌ Error loading file: {e}")
                 return redirect(request.url)
@@ -180,46 +204,51 @@ def index():
 @app.route("/view_all", methods=["GET"])
 @login_required
 def view_all():
-    """View all content in the uploaded Excel file with a clickable 'Graph' box next to each row."""
-    global df
-    if df is None:
-        flash("⚠ Please upload an Excel file first.")
+    """View all content from the selected supply's Excel file."""
+    supply = request.args.get("supply", "supply1")
+    current_df = get_current_dataframe(supply)
+    if current_df is None:
+        flash("⚠ Please upload the Excel file for the selected supply first.")
         return redirect(url_for("index"))
     
-    df_temp = df.copy()
-    
+    df_temp = current_df.copy()
     if "Date" in df_temp.columns and "Description" in df_temp.columns:
         date_index = list(df_temp.columns).index("Date")
         df_temp.insert(
             date_index + 1,
             "Graph",
             df_temp["Description"].apply(
-                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc)}">Graph</a>'
+                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply)}">Graph</a>'
             )
         )
-    
     table_html = df_temp.to_html(classes="table table-striped", index=False, escape=False)
-    return render_template("view_all.html", table=table_html)
+    return render_template("view_all.html", table=table_html, supply=supply)
 
 @app.route("/search", methods=["GET", "POST"])
 @login_required
 def search():
-    """Search the DataFrame’s 'Description' column for a query and include a Graph column."""
-    global df
-    if df is None:
-        flash("⚠ Please upload an Excel file first.")
+    """
+    Search the selected supply’s 'Description' column for a query.
+    The form should include a dropdown (or similar) to choose supply1 or supply2.
+    """
+    supply = request.args.get("supply", "supply1")
+    current_df = get_current_dataframe(supply)
+    if current_df is None:
+        flash("⚠ Please upload the Excel file for the selected supply first.")
         return redirect(url_for("index"))
     
     results = None
     query = ""
     if request.method == "POST":
+        supply = request.form.get("supply", "supply1")
+        current_df = get_current_dataframe(supply)
         query = request.form.get("query")
         if not query:
             flash("⚠ Please enter a search term.")
         else:
             preprocessed_query = preprocess_text_for_search(query)
             keywords = preprocessed_query.split()
-            results = df[df["Description"].apply(
+            results = current_df[current_df["Description"].apply(
                 lambda desc: all(keyword in preprocess_text_for_search(desc) for keyword in keywords)
             )]
             if results.empty:
@@ -229,31 +258,31 @@ def search():
         if "Date" in results.columns and "Description" in results.columns:
             date_index = list(results.columns).index("Date")
             results.insert(date_index + 1, "Graph", results["Description"].apply(
-                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc)}">Graph</a>'
+                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply)}">Graph</a>'
             ))
         table_html = results.to_html(classes="table table-striped", index=False, escape=False)
     else:
         table_html = None
-    return render_template("search.html", table=table_html, query=query)
+    return render_template("search.html", table=table_html, query=query, supply=supply)
 
 @app.route("/graph")
 @login_required
 def graph():
-    """Generate a graph of Price per Unit over time for a given description."""
-    global df
+    """Generate a graph of Price per Unit over time for a given description from the selected supply."""
+    supply = request.args.get("supply", "supply1")
+    current_df = get_current_dataframe(supply)
     description = request.args.get("description")
     
-    if df is None or not description:
+    if current_df is None or not description:
         flash("⚠ Data or description not provided.")
         return redirect(url_for("index"))
     
-    filtered_data = df[df["Description"] == description]
+    filtered_data = current_df[current_df["Description"] == description]
     if filtered_data.empty:
         flash("⚠ No data available for the selected description.")
-        return redirect(url_for("view_all"))
+        return redirect(url_for("view_all", supply=supply))
     
     filtered_data = filtered_data.dropna(subset=["Date"]).sort_values(by="Date")
-    
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.plot(filtered_data["Date"], filtered_data["Price per Unit"], marker="o")
     ax.set_title(f"Prices Over Time for '{description}'")
@@ -270,18 +299,24 @@ def graph():
 @app.route("/analyze", methods=["GET", "POST"])
 @login_required
 def analyze():
-    """Analyze price changes for items across a custom date range."""
-    global df
-    results = None
-    if df is None:
-        flash("⚠ Please upload an Excel file first.")
+    """
+    Analyze price changes for items across a custom date range from the selected supply.
+    The form should include a supply selection.
+    """
+    supply = request.args.get("supply", "supply1")
+    current_df = get_current_dataframe(supply)
+    if current_df is None:
+        flash("⚠ Please upload the Excel file for the selected supply first.")
         return redirect(url_for("index"))
     
+    results = None
     if request.method == "POST":
         try:
             start_date = pd.to_datetime(request.form.get("start_date"))
             end_date = pd.to_datetime(request.form.get("end_date"))
-            filtered_data = df[(df["Date"] >= start_date) & (df["Date"] <= end_date)]
+            supply = request.form.get("supply", "supply1")
+            current_df = get_current_dataframe(supply)
+            filtered_data = current_df[(current_df["Date"] >= start_date) & (current_df["Date"] <= end_date)]
             
             if filtered_data.empty:
                 flash("⚠ No items found within the selected date range.")
@@ -309,30 +344,31 @@ def analyze():
             flash(f"❌ Error analyzing price changes: {e}")
     
     table_html = results.to_html(classes="table table-striped", index=False) if results is not None else None
-    return render_template("analyze.html", table=table_html)
+    return render_template("analyze.html", table=table_html, supply=supply)
 
 @app.route("/product_detail", methods=["GET"])
 @login_required
 def product_detail():
     """
-    Displays a page for a specific product with:
+    Display a page for a specific product (from the selected supply) with:
       - A graph (rendered by the /graph endpoint)
-      - A table with Date and Price per Unit for that product (sorted by Date).
+      - A table with Date and Price per Unit (sorted by Date).
     """
-    global df
+    supply = request.args.get("supply", "supply1")
+    current_df = get_current_dataframe(supply)
     description = request.args.get("description")
-    if df is None or not description:
+    if current_df is None or not description:
         flash("⚠ Please provide a product description.")
         return redirect(url_for("index"))
     
-    filtered_data = df[df["Description"] == description]
+    filtered_data = current_df[current_df["Description"] == description]
     if filtered_data.empty:
         flash("⚠ No data available for the selected product.")
-        return redirect(url_for("view_all"))
+        return redirect(url_for("view_all", supply=supply))
     
     filtered_data = filtered_data.dropna(subset=["Date"]).sort_values(by="Date")
     table_html = filtered_data[['Date', 'Price per Unit']].to_html(classes="table table-striped", index=False)
-    return render_template("product_detail.html", description=description, table=table_html)
+    return render_template("product_detail.html", description=description, table=table_html, supply=supply)
 
 # -------------------------------
 # Login and Logout Routes
