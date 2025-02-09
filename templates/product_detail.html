@@ -1,25 +1,31 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>{{ description }} Details</title>
-    <!-- Optional: Include Bootstrap for styling -->
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css">
+  <meta charset="UTF-8">
+  <title>Product Detail</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
 </head>
 <body>
-    <div class="container my-4">
-        <h1>{{ description }} Details</h1>
-        <a href="{{ url_for('view_all') }}" class="btn btn-primary mb-3">Back to All Products</a>
-        <div class="row">
-            <!-- Graph Section -->
-            <div class="col-md-8">
-                <img src="{{ url_for('graph', description=description) }}" class="img-fluid" alt="Graph for {{ description }}">
-            </div>
-            <!-- Table Section -->
-            <div class="col-md-4">
-                <h3>Price Data</h3>
-                {{ table|safe }}
-            </div>
-        </div>
-    </div>
+<div class="container">
+  <h1 class="mt-4">Product Detail for "{{ description }}"</h1>
+  {% with messages = get_flashed_messages() %}
+    {% if messages %}
+      <div class="alert alert-info">
+        {% for message in messages %}
+          <p>{{ message }}</p>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+  
+  <!-- Back button -->
+  <a href="{{ url_for(ref, supply=supply) }}" class="btn btn-secondary mb-3">Back</a>
+  
+  <!-- Graph section -->
+  <img src="{{ url_for('graph', description=description, supply=supply) }}" alt="Graph for {{ description }}">
+  
+  <!-- Table with Date and Price per Unit -->
+  {{ table | safe }}
+</div>
 </body>
 </html>
