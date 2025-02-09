@@ -247,8 +247,8 @@ def graph():
         flash("⚠ Data or description not provided.")
         return redirect(url_for("index"))
     
-    # Do a case-insensitive, trimmed match for the description.
-    filtered_data = current_df[current_df["Description"].str.lower().str.strip() == description.lower().strip()]
+    # Use a case-insensitive, trimmed partial match:
+    filtered_data = current_df[current_df["Description"].str.lower().str.strip().str.contains(description.lower().strip(), na=False)]
     if filtered_data.empty:
         flash("⚠ No data available for the selected description.")
         return redirect(url_for("view_all", supply=supply))
