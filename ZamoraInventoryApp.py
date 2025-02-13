@@ -126,7 +126,10 @@ def load_default_file():
             if "Description" in df.columns:
                 df["Description"] = df["Description"].astype(str).str.strip()
             if "Price per Unit" in df.columns:
-                df["Price per Unit"] = pd.to_numeric(df["Price per Unit"], errors='coerce')
+                df["Price per Unit"] = pd.to_numeric(
+                    df["Price per Unit"].astype(str).str.replace(',', '', regex=False),
+                 errors='coerce'
+                 )
             print("✅ Default supply1 file loaded successfully!")
         except Exception as e:
             print(f"❌ Error loading supply1 file: {e}")
@@ -144,7 +147,10 @@ def load_supply2_file():
             if "Description" in df_supply2.columns:
                 df_supply2["Description"] = df_supply2["Description"].astype(str).str.strip()
             if "Price per Unit" in df_supply2.columns:
-                df_supply2["Price per Unit"] = pd.to_numeric(df_supply2["Price per Unit"], errors='coerce')
+                df_supply2["Price per Unit"] = pd.to_numeric(
+                    df_supply2["Price per Unit"].astype(str).str.replace(',', '', regex=False),
+                 errors='coerce' 
+                 )
             print("✅ Default supply2 file loaded successfully!")
         except Exception as e:
             print(f"❌ Error loading supply2 file: {e}")
