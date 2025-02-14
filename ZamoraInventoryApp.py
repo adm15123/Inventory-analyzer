@@ -45,6 +45,8 @@ DEFAULT_SUPPLY2_FILE = os.path.join(UPLOAD_FOLDER, SUPPLY2_FILENAME)
 df = None         # Data for supply 1
 df_supply2 = None # Data for supply 2
 df_underground = None # Data for the underground list
+df_rough = None   # Rough list
+df_final = None   # Final list
 # -------------------------------
 # Flask-Mail and Login Configuration
 # -------------------------------
@@ -173,10 +175,39 @@ def load_underground_list():
     else:
         print("⚠ No underground list found in the uploads folder.")
 
+def load_rough_list():
+    global df_rough
+    file_path = os.path.join(app.config["UPLOAD_FOLDER"], "rough_list.xlsx")
+    if os.path.exists(file_path):
+        try:
+            df_rough = pd.read_excel(file_path, engine="openpyxl")
+            if "Product Description" in df_rough.columns:
+                df_rough["Product Description"] = df_rough["Product Description"].astype(str).str.strip()
+            print("✅ Rough list loaded successfully!")
+        except Exception as e:
+            print(f"❌ Error loading rough list: {e}")
+    else:
+        print("⚠ No rough list found in the uploads folder.")
+
+def load_final_list():
+    global df_final
+    file_path = os.path.join(app.config["UPLOAD_FOLDER"], "final_list.xlsx")
+    if os.path.exists(file_path):
+        try:
+            df_final = pd.read_excel(file_path, engine="openpyxl")
+            if "Product Description" in df_final.columns:
+                df_final["Product Description"] = df_final["Product Description"].astype(str).str.strip()
+            print("✅ Final list loaded successfully!")
+        except Exception as e:
+            print(f"❌ Error loading final list: {e}")
+    else:
+        print("⚠ No final list found in the uploads folder.")
 # Load both files on startup
 load_default_file()
 load_supply2_file()
 load_underground_list()
+load_rough_list()
+load_final_list()
 
 def get_current_dataframe(supply):
     """Return the DataFrame for the specified supply."""
@@ -185,16 +216,26 @@ def get_current_dataframe(supply):
     else:
         return df
 
-def update_underground_prices():
-    """Update the 'Last Price' in the underground list using supply1 data."""
-    global df_underground, df
-    if df_underground is not None and df is not None:
+def update_list_prices(df_list):
+    global df
+    if df_list is not None and df is not None:
         def get_last_price(desc):
-            # Find rows in supply1 where the description matches (case-insensitive, trimmed).
             matches = df[df["Description"].astype(str).str.lower().str.strip() == desc.lower().strip()]
-            # If a match exists, return the maximum price (or the first one) – adjust as needed.
             return matches["Price per Unit"].max() if not matches.empty else 0
-        df_underground["Last Price"] = df_underground["Product Description"].apply(get_last_price)
+        df_list["Last Price"] = df_list["Product Description"].apply(get_last_price)
+
+def update_underground_prices():
+    global df_underground
+    update_list_prices(df_underground)
+
+def update_rough_prices():
+    global df_rough
+    update_list_prices(df_rough)
+
+def update_final_prices():
+    global df_final
+    update_list_prices(df_final)
+
 
 # -------------------------------
 # Routes for Main Functionality (Protected by login_required)
@@ -380,6 +421,71 @@ def product_detail():
 @app.route("/material_list", methods=["GET", "POST"])
 @login_required
 def material_list():
+    global df_underground, df_rough, df_final
+    if request.method == "POST":
+        # Process the submitted order:
+        contractor = request.form.get("contractor")
+        address = request.form.get("address")
+        order_date = request.form.get("date")
+        # Assume the product details (including manual entries) are sent as JSON 
+        # in a hidden input field named "product_data"
+        import json
+        product_data_json = request.form.get("product_data")
+        try:
+            product_data = json.loads(product_data_json) if product_data_json else []
+        except Exception as e:
+            flash("Error processing product data.", "danger")
+            return redirect(url_for("material_list"))
+        
+        # Calculate total cost from product_data (each item should have quantity and last_price)
+        total_cost = sum(float(item.get("total", 0)) for item in product_data)
+        
+        # Render an order summary HTML template for PDF generation
+        rendered = render_template("order_summary.html",
+                                   contractor=contractor,
+                                   address=address,
+                                   order_date=order_date,
+                                   products=product_data,
+                                   total_cost=total_cost)
+        # Generate PDF from the rendered HTML (using pdfkit as an example)
+        import pdfkit
+        try:
+            pdf = pdfkit.from_string(rendered, False)
+        except Exception as e:
+            flash(f"PDF generation failed: {e}", "danger")
+            return redirect(url_for("material_list"))
+        
+        # Email the PDF to the logged-in user
+        recipient = session.get("email")
+        msg = Message("Your Order Summary", recipients=[recipient])
+        msg.body = "Please find attached your order summary PDF."
+        msg.attach("order_summary.pdf", "application/pdf", pdf)
+        try:
+            mail.send(msg)
+            flash("Order summary PDF sent to your email.", "success")
+        except Exception as e:
+            flash(f"Error sending email: {e}", "danger")
+        return redirect(url_for("material_list"))
+    
+    # For GET: Determine which predetermined list to load based on a query parameter "list"
+    list_option = request.args.get("list", "underground").lower()
+    if list_option == "underground":
+        update_underground_prices()
+        product_list = df_underground.to_dict('records') if df_underground is not None else []
+    elif list_option == "rough":
+        update_rough_prices()
+        product_list = df_rough.to_dict('records') if df_rough is not None else []
+    elif list_option == "final":
+        update_final_prices()
+        product_list = df_final.to_dict('records') if df_final is not None else []
+    elif list_option == "new":
+        product_list = []  # start with an empty list
+    else:
+        product_list = []  # default to empty if unknown option
+    
+    # Pass the chosen option to the template as well, so the UI can reflect the current choice.
+    return render_template("material_list.html", product_list=product_list, list_option=list_option)
+
     global df_underground
     if request.method == "POST":
         # Process the submitted order:

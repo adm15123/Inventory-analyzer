@@ -4,11 +4,28 @@
   <meta charset="UTF-8">
   <title>Material List</title>
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
+  <script>
+    function changeList(selectedList) {
+      // Reload the page with the chosen list as a query parameter
+      window.location.href = "{{ url_for('material_list') }}" + "?list=" + selectedList;
+    }
+  </script>
 </head>
 <body>
 <div class="container">
   <h1 class="mt-4">Material List</h1>
   <a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">Back</a>
+  
+  <!-- Dropdown to choose which predetermined list to use -->
+  <div class="form-group">
+    <label for="listSelector">Choose Predetermined List:</label>
+    <select id="listSelector" class="form-control" onchange="changeList(this.value)">
+      <option value="underground" {% if list_option == 'underground' %}selected{% endif %}>Underground List</option>
+      <option value="rough" {% if list_option == 'rough' %}selected{% endif %}>Rough List</option>
+      <option value="final" {% if list_option == 'final' %}selected{% endif %}>Final List</option>
+      <option value="new" {% if list_option == 'new' %}selected{% endif %}>New List</option>
+    </select>
+  </div>
   
   <!-- Project Information Box -->
   <div class="card mb-4">
@@ -42,7 +59,7 @@
         </tr>
       </thead>
       <tbody id="material-list">
-        <!-- Render predetermined list rows -->
+        <!-- Render predetermined list rows if available -->
         {% for product in product_list %}
         <tr class="predetermined">
           <td>{{ product["Product Description"] }}</td>
@@ -84,7 +101,7 @@
     }
   });
 
-  // Add Manual Item: this will append a new row to the table.
+  // Add Manual Item: append a new row to the table.
   document.getElementById("add-item").addEventListener("click", function() {
     let table = document.getElementById("material-list");
     let row = table.insertRow();
