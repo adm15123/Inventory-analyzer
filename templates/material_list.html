@@ -119,7 +119,6 @@
       // Column 1 is Quantity, Column 2 is Product Description.
       var productDesc = predRows[i].cells[1].innerText.trim().toLowerCase();
       var matches = [];
-      // Helper function: get property using fallback keys.
       function getProp(obj, keys) {
         for (var idx = 0; idx < keys.length; idx++) {
           if (obj[keys[idx]] !== undefined) return obj[keys[idx]];
@@ -133,7 +132,6 @@
         }
       }
       if (matches.length > 0) {
-        // Find the product with the most recent date.
         var latest = matches[0];
         for (var k = 1; k < matches.length; k++) {
           var dateLatest = new Date(getProp(latest, ["Date", "date"]));
@@ -179,12 +177,13 @@
       '<td class="total">0.00</td>' +
       '<td><button type="button" class="btn btn-danger remove-item">Remove</button></td>';
     
-    // Auto-fill last price using chosen lookup supply.
     var productInput = row.querySelector("input.product");
     productInput.addEventListener("change", function() {
       var inputVal = this.value.trim().toLowerCase();
+      // Read the current lookup supply from the dropdown:
       var lookupSupply = document.getElementById("lookupSupply").value;
       console.log("Lookup supply selected:", lookupSupply);
+      // Choose the correct product array based on the current selection:
       var prodArray = (lookupSupply === "supply2") ? supply2Products : supply1Products;
       console.log("Using product array with length:", prodArray.length);
       var matches = [];
@@ -211,6 +210,8 @@
         }
         row.querySelector("input.last-price").value = getProp(latest, ["Price per Unit", "price per unit", "Price", "price"]);
         recalcRow(row);
+      } else {
+        console.log("No matching product found in " + lookupSupply);
       }
     });
     
