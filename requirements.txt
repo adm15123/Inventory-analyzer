@@ -6,4 +6,5 @@ tkcalendar
 openpyxl
 flask-mail
 itsdangerous
+pdfkit
 
