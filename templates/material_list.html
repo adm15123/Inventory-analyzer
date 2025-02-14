@@ -90,8 +90,8 @@
 </div>
 
 <script>
-  // Use JSON.parse with escapejs to avoid linting errors in Xcode.
-  var supply1Products = JSON.parse('{{ supply1_products|tojson|escapejs }}');
+  // Supply1 products data from backend (using ES5)
+  var supply1Products = {{ supply1_products|tojson }};
   
   // Function to recalculate total for a row.
   function recalcRow(row) {
@@ -99,7 +99,7 @@
     var quantity = parseFloat(row.querySelector("input.quantity").value) || 0;
     row.querySelector(".total").innerText = (lastPrice * quantity).toFixed(2);
   }
-
+  
   // Attach change event listeners for predetermined rows.
   var rows = document.querySelectorAll("#material-list tr");
   for (var i = 0; i < rows.length; i++) {
@@ -110,7 +110,7 @@
       });
     }
   }
-
+  
   // Add Manual Item: append a new row to the table.
   document.getElementById("add-item").addEventListener("click", function() {
     var table = document.getElementById("material-list");
@@ -146,7 +146,7 @@
       row.parentNode.removeChild(row);
     });
   });
-
+  
   // On Export to PDF, gather data from all rows.
   document.getElementById("export-pdf").addEventListener("click", function() {
     var productData = [];
