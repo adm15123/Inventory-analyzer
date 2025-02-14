@@ -1,4 +1,3 @@
-<!-- Material List Page -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -30,6 +29,13 @@
     </div>
   </div>
   
+  <!-- Predetermined Product List from Underground List -->
+  <h3>Predetermined Product List</h3>
+  <div id="predetermined-list">
+    {{ product_list | safe }}
+  </div>
+  
+  <!-- Manual Product Entry Form -->
   <form id="material-form">
     <table class="table table-striped">
       <thead>
@@ -42,29 +48,71 @@
         </tr>
       </thead>
       <tbody id="material-list">
-        <!-- Dynamically populated rows will go here -->
+        <!-- Dynamically populated manual entry rows will go here -->
       </tbody>
     </table>
     <button type="button" class="btn btn-primary" id="add-item">Add Item</button>
     <button type="button" class="btn btn-success" id="export-pdf">Export to PDF</button>
+    
+    <!-- Hidden field to store manual entry product data as JSON -->
+    <input type="hidden" name="product_data" id="product_data">
   </form>
 </div>
 
 <script>
+  // Function to recalculate total for a given row
+  function recalcRow(row) {
+    let lastPrice = parseFloat(row.querySelector("input.last-price").value) || 0;
+    let quantity = parseFloat(row.querySelector("input.quantity").value) || 0;
+    row.querySelector(".total").innerText = (lastPrice * quantity).toFixed(2);
+  }
+
   document.getElementById("add-item").addEventListener("click", function() {
     let table = document.getElementById("material-list");
     let row = table.insertRow();
     row.innerHTML = `
-      <td><input type="text" class="form-control" placeholder="Enter product"></td>
-      <td><input type="number" class="form-control" placeholder="Last price"></td>
-      <td><input type="number" class="form-control" placeholder="Quantity"></td>
-      <td class="total">0</td>
+      <td><input type="text" class="form-control product" placeholder="Enter product"></td>
+      <td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>
+      <td><input type="number" class="form-control quantity" placeholder="Quantity"></td>
+      <td class="total">0.00</td>
       <td><button type="button" class="btn btn-danger remove-item">Remove</button></td>
     `;
-
+    
+    // Attach change event listeners for automatic recalculation
+    row.querySelector("input.last-price").addEventListener("change", function() {
+      recalcRow(row);
+    });
+    row.querySelector("input.quantity").addEventListener("change", function() {
+      recalcRow(row);
+    });
+    
     row.querySelector(".remove-item").addEventListener("click", function() {
       row.remove();
     });
+  });
+
+  // Optionally, add code here to gather manual entry data into the hidden field "product_data"
+  // when the user clicks "Export to PDF".
+  // For example:
+  document.getElementById("export-pdf").addEventListener("click", function() {
+    let productData = [];
+    let rows = document.querySelectorAll("#material-list tr");
+    rows.forEach(row => {
+      let product = row.querySelector("input.product").value;
+      let lastPrice = row.querySelector("input.last-price").value;
+      let quantity = row.querySelector("input.quantity").value;
+      let total = row.querySelector(".total").innerText;
+      productData.push({
+        description: product,
+        last_price: lastPrice,
+        quantity: quantity,
+        total: total
+      });
+    });
+    // Save the data as JSON in the hidden field
+    document.getElementById("product_data").value = JSON.stringify(productData);
+    // Submit the form (or handle PDF export via AJAX, as needed)
+    document.getElementById("material-form").submit();
   });
 </script>
 </body>

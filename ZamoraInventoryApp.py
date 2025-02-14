@@ -164,19 +164,14 @@ def load_underground_list():
     if os.path.exists(file_path):
         try:
             df_underground = pd.read_excel(file_path, engine="openpyxl")
-            # Clean and convert data as needed:
+            # Ensure the column "Product Description" exists and is cleaned.
             if "Product Description" in df_underground.columns:
                 df_underground["Product Description"] = df_underground["Product Description"].astype(str).str.strip()
-            if "Last Price" in df_underground.columns:
-                df_underground["Last Price"] = pd.to_numeric(
-                    df_underground["Last Price"].astype(str).str.replace(',', '', regex=False),
-                    errors='coerce'
-                )
             print("✅ Underground list loaded successfully!")
         except Exception as e:
             print(f"❌ Error loading underground list: {e}")
     else:
-        print("⚠ No underground list file found in the uploads folder.")
+        print("⚠ No underground list found in the uploads folder.")
 
 # Load both files on startup
 load_default_file()
@@ -189,6 +184,17 @@ def get_current_dataframe(supply):
         return df_supply2
     else:
         return df
+
+def update_underground_prices():
+    """Update the 'Last Price' in the underground list using supply1 data."""
+    global df_underground, df
+    if df_underground is not None and df is not None:
+        def get_last_price(desc):
+            # Find rows in supply1 where the description matches (case-insensitive, trimmed).
+            matches = df[df["Description"].astype(str).str.lower().str.strip() == desc.lower().strip()]
+            # If a match exists, return the maximum price (or the first one) – adjust as needed.
+            return matches["Price per Unit"].max() if not matches.empty else 0
+        df_underground["Last Price"] = df_underground["Product Description"].apply(get_last_price)
 
 # -------------------------------
 # Routes for Main Functionality (Protected by login_required)
@@ -380,7 +386,7 @@ def material_list():
         contractor = request.form.get("contractor")
         address = request.form.get("address")
         order_date = request.form.get("date")
-        # Assume the product details (including any manually added items) are sent as JSON 
+        # Assume the product details (including manual entries) are sent as JSON 
         # in a hidden input field named "product_data"
         import json
         product_data_json = request.form.get("product_data")
@@ -420,8 +426,8 @@ def material_list():
             flash(f"Error sending email: {e}", "danger")
         return redirect(url_for("material_list"))
     
-    # For GET: Pass the predetermined product list to the template.
-    # For simplicity, we convert the DataFrame to HTML.
+    # For GET: Update the predetermined product list with the latest prices from supply1.
+    update_underground_prices()
     product_list_html = (df_underground.to_html(classes="table table-striped", index=False)
                          if df_underground is not None else "")
     return render_template("material_list.html", product_list=product_list_html)
