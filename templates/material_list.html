@@ -25,8 +25,17 @@
       <option value="new" {% if list_option == 'new' %}selected{% endif %}>New List</option>
     </select>
   </div>
+
+  <!-- New dropdown: Choose Supply for Lookup -->
+  <div class="form-group">
+    <label for="lookupSupply">Choose Supply for Lookup:</label>
+    <select id="lookupSupply" class="form-control">
+      <option value="supply1" selected>Supply 1</option>
+      <option value="supply2">Supply 2</option>
+    </select>
+  </div>
   
-  <!-- Datalist for Supply1 product suggestions -->
+  <!-- Datalist for Supply1 product suggestions (for manual entries) -->
   <datalist id="supply1List">
     {% for prod in supply1_products %}
       <option value="{{ prod['Description'] }}">
@@ -84,14 +93,15 @@
     <button type="button" class="btn btn-primary" id="add-item">Add Manual Item</button>
     <button type="button" class="btn btn-success" id="export-pdf">Export to PDF</button>
     
-    <!-- Hidden field to store the entire product list (both predetermined and manual entries) as JSON -->
+    <!-- Hidden field to store product data as JSON -->
     <input type="hidden" name="product_data" id="product_data">
   </form>
 </div>
 
 <script>
-  // Supply1 products data from backend (using ES5)
+  // Supply products data from backend (ES5)
   var supply1Products = {{ supply1_products|tojson }};
+  var supply2Products = {{ supply2_products|tojson }};
   
   // Function to recalculate total for a row.
   function recalcRow(row) {
@@ -100,10 +110,46 @@
     row.querySelector(".total").innerText = (lastPrice * quantity).toFixed(2);
   }
   
-  // Attach change event listeners for predetermined rows.
-  var rows = document.querySelectorAll("#material-list tr");
-  for (var i = 0; i < rows.length; i++) {
-    var qtyInput = rows[i].querySelector("input.quantity");
+  // Function to update predetermined rows using lookup logic.
+  function updatePredeterminedRows() {
+    var lookupSupply = document.getElementById("lookupSupply").value; // "supply1" or "supply2"
+    var prodArray = (lookupSupply === "supply2") ? supply2Products : supply1Products;
+    var predRows = document.querySelectorAll("#material-list tr.predetermined");
+    for (var i = 0; i < predRows.length; i++) {
+      var productDesc = predRows[i].cells[0].innerText.trim().toLowerCase();
+      var matches = [];
+      for (var j = 0; j < prodArray.length; j++) {
+        if (prodArray[j].Description.toLowerCase() === productDesc) {
+          matches.push(prodArray[j]);
+        }
+      }
+      if (matches.length > 0) {
+        // Find the product with the most recent date.
+        var latest = matches[0];
+        for (var k = 1; k < matches.length; k++) {
+          if (new Date(matches[k].Date) > new Date(latest.Date)) {
+            latest = matches[k];
+          }
+        }
+        var lastPriceInput = predRows[i].querySelector("input.last-price");
+        lastPriceInput.value = latest["Price per Unit"];
+        recalcRow(predRows[i]);
+      }
+    }
+  }
+  
+  // Call updatePredeterminedRows on page load.
+  updatePredeterminedRows();
+  
+  // Also update predetermined rows when the lookup supply dropdown changes.
+  document.getElementById("lookupSupply").addEventListener("change", function() {
+    updatePredeterminedRows();
+  });
+  
+  // Attach change event listeners for predetermined rows (for quantity changes).
+  var predRows = document.querySelectorAll("#material-list tr.predetermined");
+  for (var i = 0; i < predRows.length; i++) {
+    var qtyInput = predRows[i].querySelector("input.quantity");
     if (qtyInput) {
       qtyInput.addEventListener("change", function() {
         recalcRow(this.parentNode.parentNode);
@@ -122,15 +168,27 @@
       '<td class="total">0.00</td>' +
       '<td><button type="button" class="btn btn-danger remove-item">Remove</button></td>';
     
+    // Auto-fill last price using chosen lookup supply.
     var productInput = row.querySelector("input.product");
     productInput.addEventListener("change", function() {
       var inputVal = this.value.trim().toLowerCase();
-      for (var j = 0; j < supply1Products.length; j++) {
-        if (supply1Products[j].Description.toLowerCase() === inputVal) {
-          row.querySelector("input.last-price").value = supply1Products[j]["Price per Unit"];
-          recalcRow(row);
-          break;
+      var lookupSupply = document.getElementById("lookupSupply").value;
+      var prodArray = (lookupSupply === "supply2") ? supply2Products : supply1Products;
+      var matches = [];
+      for (var j = 0; j < prodArray.length; j++) {
+        if (prodArray[j].Description.toLowerCase() === inputVal) {
+          matches.push(prodArray[j]);
         }
+      }
+      if (matches.length > 0) {
+        var latest = matches[0];
+        for (var k = 1; k < matches.length; k++) {
+          if (new Date(matches[k].Date) > new Date(latest.Date)) {
+            latest = matches[k];
+          }
+        }
+        row.querySelector("input.last-price").value = latest["Price per Unit"];
+        recalcRow(row);
       }
     });
     

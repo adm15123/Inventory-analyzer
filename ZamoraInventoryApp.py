@@ -480,13 +480,15 @@ def material_list():
     else:
         product_list = []  # default to empty if unknown option
     
-    # Supply1 products for autocomplete in manual entry:
+    # Supply1 and Supply2 products for lookup in manual entries:
     supply1_products = df.to_dict('records') if df is not None else []
+    supply2_products = df_supply2.to_dict('records') if df_supply2 is not None else []
     
     return render_template("material_list.html", 
                            product_list=product_list, 
                            list_option=list_option,
-                           supply1_products=supply1_products)
+                           supply1_products=supply1_products,
+                           supply2_products=supply2_products)
 
 # -------------------------------
 # Login and Logout Routes
