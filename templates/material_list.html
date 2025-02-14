@@ -66,9 +66,9 @@
     <table class="table table-striped">
       <thead>
         <tr>
+          <th>Quantity</th>
           <th>Product Description</th>
           <th>Last Price</th>
-          <th>Quantity</th>
           <th>Total</th>
           <th>Action</th>
         </tr>
@@ -77,12 +77,12 @@
         <!-- Render predetermined list rows -->
         {% for product in product_list %}
         <tr class="predetermined">
+          <td>
+            <input type="number" class="form-control quantity" value="0">
+          </td>
           <td>{{ product["Product Description"] }}</td>
           <td>
             <input type="number" step="0.01" class="form-control last-price" value="{{ product["Last Price"] }}" readonly>
-          </td>
-          <td>
-            <input type="number" class="form-control quantity" value="0">
           </td>
           <td class="total">0.00</td>
           <td><!-- Predetermined rows cannot be removed --></td>
@@ -93,7 +93,7 @@
     <button type="button" class="btn btn-primary" id="add-item">Add Manual Item</button>
     <button type="button" class="btn btn-success" id="export-pdf">Export to PDF</button>
     
-    <!-- Hidden field to store product data as JSON -->
+    <!-- Hidden field to store the entire product list as JSON -->
     <input type="hidden" name="product_data" id="product_data">
   </form>
 </div>
@@ -116,7 +116,7 @@
     var prodArray = (lookupSupply === "supply2") ? supply2Products : supply1Products;
     var predRows = document.querySelectorAll("#material-list tr.predetermined");
     for (var i = 0; i < predRows.length; i++) {
-      var productDesc = predRows[i].cells[0].innerText.trim().toLowerCase();
+      var productDesc = predRows[i].cells[1].innerText.trim().toLowerCase();
       var matches = [];
       for (var j = 0; j < prodArray.length; j++) {
         if (prodArray[j].Description.toLowerCase() === productDesc) {
@@ -162,9 +162,9 @@
     var table = document.getElementById("material-list");
     var row = table.insertRow();
     row.innerHTML = 
+      '<td><input type="number" class="form-control quantity" placeholder="Quantity"></td>' +
       '<td><input type="text" class="form-control product" placeholder="Enter product" list="supply1List"></td>' +
       '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
-      '<td><input type="number" class="form-control quantity" placeholder="Quantity"></td>' +
       '<td class="total">0.00</td>' +
       '<td><button type="button" class="btn btn-danger remove-item">Remove</button></td>';
     
@@ -212,7 +212,7 @@
     for (var i = 0; i < rows.length; i++) {
       var product;
       if (rows[i].classList.contains("predetermined")) {
-        product = rows[i].cells[0].innerText.trim();
+        product = rows[i].cells[1].innerText.trim();
       } else {
         product = rows[i].querySelector("input.product").value;
       }
