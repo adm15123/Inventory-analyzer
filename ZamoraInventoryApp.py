@@ -44,7 +44,7 @@ DEFAULT_SUPPLY2_FILE = os.path.join(UPLOAD_FOLDER, SUPPLY2_FILENAME)
 # Global DataFrames for each supply
 df = None         # Data for supply 1
 df_supply2 = None # Data for supply 2
-
+df_underground = None # Data for the underground list
 # -------------------------------
 # Flask-Mail and Login Configuration
 # -------------------------------
@@ -157,9 +157,31 @@ def load_supply2_file():
     else:
         print("⚠ No default supply2 file found in the uploads folder.")
 
+def load_underground_list():
+    """Load the predetermined product list from the uploads folder."""
+    global df_underground
+    file_path = os.path.join(app.config["UPLOAD_FOLDER"], "underground_list.xlsx")
+    if os.path.exists(file_path):
+        try:
+            df_underground = pd.read_excel(file_path, engine="openpyxl")
+            # Clean and convert data as needed:
+            if "Product Description" in df_underground.columns:
+                df_underground["Product Description"] = df_underground["Product Description"].astype(str).str.strip()
+            if "Last Price" in df_underground.columns:
+                df_underground["Last Price"] = pd.to_numeric(
+                    df_underground["Last Price"].astype(str).str.replace(',', '', regex=False),
+                    errors='coerce'
+                )
+            print("✅ Underground list loaded successfully!")
+        except Exception as e:
+            print(f"❌ Error loading underground list: {e}")
+    else:
+        print("⚠ No underground list file found in the uploads folder.")
+
 # Load both files on startup
 load_default_file()
 load_supply2_file()
+load_underground_list()
 
 def get_current_dataframe(supply):
     """Return the DataFrame for the specified supply."""
@@ -349,6 +371,60 @@ def product_detail():
     query = request.args.get("query", "")       # Get the search query if available
     return render_template("product_detail.html", description=description, table=table_html, supply=supply, ref=ref, query=query)
 
+@app.route("/material_list", methods=["GET", "POST"])
+@login_required
+def material_list():
+    global df_underground
+    if request.method == "POST":
+        # Process the submitted order:
+        contractor = request.form.get("contractor")
+        address = request.form.get("address")
+        order_date = request.form.get("date")
+        # Assume the product details (including any manually added items) are sent as JSON 
+        # in a hidden input field named "product_data"
+        import json
+        product_data_json = request.form.get("product_data")
+        try:
+            product_data = json.loads(product_data_json) if product_data_json else []
+        except Exception as e:
+            flash("Error processing product data.", "danger")
+            return redirect(url_for("material_list"))
+        
+        # Calculate total cost from product_data (each item should have quantity and last_price)
+        total_cost = sum(float(item.get("total", 0)) for item in product_data)
+        
+        # Render an order summary HTML template for PDF generation
+        rendered = render_template("order_summary.html",
+                                   contractor=contractor,
+                                   address=address,
+                                   order_date=order_date,
+                                   products=product_data,
+                                   total_cost=total_cost)
+        # Generate PDF from the rendered HTML (using pdfkit as an example)
+        import pdfkit
+        try:
+            pdf = pdfkit.from_string(rendered, False)
+        except Exception as e:
+            flash(f"PDF generation failed: {e}", "danger")
+            return redirect(url_for("material_list"))
+        
+        # Email the PDF to the logged-in user
+        recipient = session.get("email")
+        msg = Message("Your Order Summary", recipients=[recipient])
+        msg.body = "Please find attached your order summary PDF."
+        msg.attach("order_summary.pdf", "application/pdf", pdf)
+        try:
+            mail.send(msg)
+            flash("Order summary PDF sent to your email.", "success")
+        except Exception as e:
+            flash(f"Error sending email: {e}", "danger")
+        return redirect(url_for("material_list"))
+    
+    # For GET: Pass the predetermined product list to the template.
+    # For simplicity, we convert the DataFrame to HTML.
+    product_list_html = (df_underground.to_html(classes="table table-striped", index=False)
+                         if df_underground is not None else "")
+    return render_template("material_list.html", product_list=product_list_html)
 
 # -------------------------------
 # Login and Logout Routes

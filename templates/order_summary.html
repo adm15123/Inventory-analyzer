@@ -1,0 +1,42 @@
+<!-- order_summary.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Order Summary</title>
+  <style>
+    body { font-family: Arial, sans-serif; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    table, th, td { border: 1px solid #000; }
+    th, td { padding: 8px; text-align: left; }
+  </style>
+</head>
+<body>
+  <h1>Zamora Plumbing Corp</h1>
+  <p><strong>Contractor:</strong> {{ contractor }}</p>
+  <p><strong>Address:</strong> {{ address }}</p>
+  <p><strong>Date of Order:</strong> {{ order_date }}</p>
+  <h2>Order Summary</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Product Description</th>
+        <th>Last Price</th>
+        <th>Quantity</th>
+        <th>Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for product in products %}
+      <tr>
+        <td>{{ product.description }}</td>
+        <td>{{ product.last_price }}</td>
+        <td>{{ product.quantity }}</td>
+        <td>{{ product.total }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <h3>Total Cost: {{ total_cost }}</h3>
+</body>
+</html>
