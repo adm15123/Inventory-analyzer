@@ -427,8 +427,6 @@ def material_list():
         contractor = request.form.get("contractor")
         address = request.form.get("address")
         order_date = request.form.get("date")
-        # Assume the product details (including manual entries) are sent as JSON 
-        # in a hidden input field named "product_data"
         import json
         product_data_json = request.form.get("product_data")
         try:
@@ -447,7 +445,6 @@ def material_list():
                                    order_date=order_date,
                                    products=product_data,
                                    total_cost=total_cost)
-        # Generate PDF from the rendered HTML (using pdfkit as an example)
         import pdfkit
         try:
             pdf = pdfkit.from_string(rendered, False)
@@ -483,59 +480,8 @@ def material_list():
     else:
         product_list = []  # default to empty if unknown option
     
-    # Pass the chosen option to the template as well, so the UI can reflect the current choice.
+    # Pass the chosen option to the template so the UI can reflect the current selection.
     return render_template("material_list.html", product_list=product_list, list_option=list_option)
-
-    global df_underground
-    if request.method == "POST":
-        # Process the submitted order:
-        contractor = request.form.get("contractor")
-        address = request.form.get("address")
-        order_date = request.form.get("date")
-        # Assume the product details (including manual entries) are sent as JSON 
-        # in a hidden input field named "product_data"
-        import json
-        product_data_json = request.form.get("product_data")
-        try:
-            product_data = json.loads(product_data_json) if product_data_json else []
-        except Exception as e:
-            flash("Error processing product data.", "danger")
-            return redirect(url_for("material_list"))
-        
-        # Calculate total cost from product_data (each item should have quantity and last_price)
-        total_cost = sum(float(item.get("total", 0)) for item in product_data)
-        
-        # Render an order summary HTML template for PDF generation
-        rendered = render_template("order_summary.html",
-                                   contractor=contractor,
-                                   address=address,
-                                   order_date=order_date,
-                                   products=product_data,
-                                   total_cost=total_cost)
-        # Generate PDF from the rendered HTML (using pdfkit as an example)
-        import pdfkit
-        try:
-            pdf = pdfkit.from_string(rendered, False)
-        except Exception as e:
-            flash(f"PDF generation failed: {e}", "danger")
-            return redirect(url_for("material_list"))
-        
-        # Email the PDF to the logged-in user
-        recipient = session.get("email")
-        msg = Message("Your Order Summary", recipients=[recipient])
-        msg.body = "Please find attached your order summary PDF."
-        msg.attach("order_summary.pdf", "application/pdf", pdf)
-        try:
-            mail.send(msg)
-            flash("Order summary PDF sent to your email.", "success")
-        except Exception as e:
-            flash(f"Error sending email: {e}", "danger")
-        return redirect(url_for("material_list"))
-    
-    # For GET: Update the predetermined product list with the latest prices from supply1.
-    update_underground_prices()
-    product_list = df_underground.to_dict('records') if df_underground is not None else []
-    return render_template("material_list.html", product_list=product_list)
 
 # -------------------------------
 # Login and Logout Routes
