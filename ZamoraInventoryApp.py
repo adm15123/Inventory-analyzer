@@ -428,9 +428,8 @@ def material_list():
     
     # For GET: Update the predetermined product list with the latest prices from supply1.
     update_underground_prices()
-    product_list_html = (df_underground.to_html(classes="table table-striped", index=False)
-                         if df_underground is not None else "")
-    return render_template("material_list.html", product_list=product_list_html)
+    product_list = df_underground.to_dict('records') if df_underground is not None else []
+    return render_template("material_list.html", product_list=product_list)
 
 # -------------------------------
 # Login and Logout Routes

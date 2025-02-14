@@ -29,14 +29,8 @@
     </div>
   </div>
   
-  <!-- Predetermined Product List from Underground List -->
-  <h3>Predetermined Product List</h3>
-  <div id="predetermined-list">
-    {{ product_list | safe }}
-  </div>
-  
-  <!-- Manual Product Entry Form -->
-  <form id="material-form">
+  <!-- Material List Form -->
+  <form id="material-form" method="POST">
     <table class="table table-striped">
       <thead>
         <tr>
@@ -48,25 +42,49 @@
         </tr>
       </thead>
       <tbody id="material-list">
-        <!-- Dynamically populated manual entry rows will go here -->
+        <!-- Render predetermined list rows -->
+        {% for product in product_list %}
+        <tr class="predetermined">
+          <td>{{ product["Product Description"] }}</td>
+          <td>
+            <input type="number" step="0.01" class="form-control last-price" value="{{ product["Last Price"] }}" readonly>
+          </td>
+          <td>
+            <input type="number" class="form-control quantity" value="0">
+          </td>
+          <td class="total">0.00</td>
+          <td><!-- Predetermined rows cannot be removed --></td>
+        </tr>
+        {% endfor %}
       </tbody>
     </table>
-    <button type="button" class="btn btn-primary" id="add-item">Add Item</button>
+    <button type="button" class="btn btn-primary" id="add-item">Add Manual Item</button>
     <button type="button" class="btn btn-success" id="export-pdf">Export to PDF</button>
     
-    <!-- Hidden field to store manual entry product data as JSON -->
+    <!-- Hidden field to store the entire product list (both predetermined and manual entries) as JSON -->
     <input type="hidden" name="product_data" id="product_data">
   </form>
 </div>
 
 <script>
-  // Function to recalculate total for a given row
+  // Function to recalculate total for a row.
   function recalcRow(row) {
     let lastPrice = parseFloat(row.querySelector("input.last-price").value) || 0;
     let quantity = parseFloat(row.querySelector("input.quantity").value) || 0;
     row.querySelector(".total").innerText = (lastPrice * quantity).toFixed(2);
   }
 
+  // Attach change event listeners for predetermined rows.
+  document.querySelectorAll("#material-list tr").forEach(function(row) {
+    let qtyInput = row.querySelector("input.quantity");
+    if (qtyInput) {
+      qtyInput.addEventListener("change", function() {
+        recalcRow(row);
+      });
+    }
+  });
+
+  // Add Manual Item: this will append a new row to the table.
   document.getElementById("add-item").addEventListener("click", function() {
     let table = document.getElementById("material-list");
     let row = table.insertRow();
@@ -77,28 +95,29 @@
       <td class="total">0.00</td>
       <td><button type="button" class="btn btn-danger remove-item">Remove</button></td>
     `;
-    
-    // Attach change event listeners for automatic recalculation
-    row.querySelector("input.last-price").addEventListener("change", function() {
-      recalcRow(row);
-    });
     row.querySelector("input.quantity").addEventListener("change", function() {
       recalcRow(row);
     });
-    
+    row.querySelector("input.last-price").addEventListener("change", function() {
+      recalcRow(row);
+    });
     row.querySelector(".remove-item").addEventListener("click", function() {
       row.remove();
     });
   });
 
-  // Optionally, add code here to gather manual entry data into the hidden field "product_data"
-  // when the user clicks "Export to PDF".
-  // For example:
+  // On Export to PDF, gather data from all rows.
   document.getElementById("export-pdf").addEventListener("click", function() {
     let productData = [];
     let rows = document.querySelectorAll("#material-list tr");
-    rows.forEach(row => {
-      let product = row.querySelector("input.product").value;
+    rows.forEach(function(row) {
+      let product;
+      // For predetermined rows, product description is in the first cell.
+      if (row.classList.contains("predetermined")) {
+        product = row.cells[0].innerText.trim();
+      } else {
+        product = row.querySelector("input.product").value;
+      }
       let lastPrice = row.querySelector("input.last-price").value;
       let quantity = row.querySelector("input.quantity").value;
       let total = row.querySelector(".total").innerText;
@@ -109,9 +128,7 @@
         total: total
       });
     });
-    // Save the data as JSON in the hidden field
     document.getElementById("product_data").value = JSON.stringify(productData);
-    // Submit the form (or handle PDF export via AJAX, as needed)
     document.getElementById("material-form").submit();
   });
 </script>
