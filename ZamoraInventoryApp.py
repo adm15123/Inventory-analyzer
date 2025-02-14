@@ -423,6 +423,75 @@ def product_detail():
 def material_list():
     global df_underground, df_rough, df_final, df
     if request.method == "POST":
+        contractor = request.form.get("contractor")
+        address = request.form.get("address")
+        order_date = request.form.get("date")
+        import json
+        product_data_json = request.form.get("product_data")
+        try:
+            product_data = json.loads(product_data_json) if product_data_json else []
+        except Exception as e:
+            flash("Error processing product data.", "danger")
+            return redirect(url_for("material_list"))
+        
+        # Retrieve include_price choice from the form:
+        include_price = request.form.get("include_price", "yes")
+        
+        total_cost = sum(float(item.get("total", 0)) for item in product_data)
+        
+        # Pass the include_price flag to the order summary template:
+        rendered = render_template("order_summary.html",
+                                   contractor=contractor,
+                                   address=address,
+                                   order_date=order_date,
+                                   products=product_data,
+                                   total_cost=total_cost,
+                                   include_price=include_price)
+        import pdfkit
+        try:
+            pdf = pdfkit.from_string(rendered, False)
+        except Exception as e:
+            flash(f"PDF generation failed: {e}", "danger")
+            return redirect(url_for("material_list"))
+        
+        recipient = session.get("email")
+        msg = Message("Your Order Summary", recipients=[recipient])
+        msg.body = "Please find attached your order summary PDF."
+        msg.attach("order_summary.pdf", "application/pdf", pdf)
+        try:
+            mail.send(msg)
+            flash("Order summary PDF sent to your email.", "success")
+        except Exception as e:
+            flash(f"Error sending email: {e}", "danger")
+        return redirect(url_for("material_list"))
+    
+    # For GET: (existing code to load predetermined list and supply data)
+    list_option = request.args.get("list", "underground").lower()
+    if list_option == "underground":
+        update_underground_prices()
+        product_list = df_underground.to_dict('records') if df_underground is not None else []
+    elif list_option == "rough":
+        update_rough_prices()
+        product_list = df_rough.to_dict('records') if df_rough is not None else []
+    elif list_option == "final":
+        update_final_prices()
+        product_list = df_final.to_dict('records') if df_final is not None else []
+    elif list_option == "new":
+        product_list = []
+    else:
+        product_list = []
+    
+    supply1_products = df.to_dict('records') if df is not None else []
+    supply2_products = df_supply2.to_dict('records') if df_supply2 is not None else []
+    
+    return render_template("material_list.html", 
+                           product_list=product_list, 
+                           list_option=list_option,
+                           supply1_products=supply1_products,
+                           supply2_products=supply2_products)
+
+    global df_underground, df_rough, df_final, df
+    if request.method == "POST":
         # Process the submitted order:
         contractor = request.form.get("contractor")
         address = request.form.get("address")
@@ -489,7 +558,6 @@ def material_list():
                            list_option=list_option,
                            supply1_products=supply1_products,
                            supply2_products=supply2_products)
-
 # -------------------------------
 # Login and Logout Routes
 # -------------------------------

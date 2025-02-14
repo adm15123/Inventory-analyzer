@@ -93,8 +93,9 @@
     <button type="button" class="btn btn-primary" id="add-item">Add Manual Item</button>
     <button type="button" class="btn btn-success" id="export-pdf">Export to PDF</button>
     
-    <!-- Hidden field to store the entire product list as JSON -->
+    <!-- Hidden fields -->
     <input type="hidden" name="product_data" id="product_data">
+    <input type="hidden" name="include_price" id="include_price" value="yes">
   </form>
 </div>
 
@@ -228,8 +229,11 @@
     });
   });
   
-  // On Export to PDF, gather data from all rows.
+  // On Export to PDF, gather data from all rows and prompt for including price.
   document.getElementById("export-pdf").addEventListener("click", function() {
+    var includePrice = confirm("Would you like to include the price in the PDF?");
+    document.getElementById("include_price").value = includePrice ? "yes" : "no";
+    
     var productData = [];
     var rows = document.querySelectorAll("#material-list tr");
     for (var i = 0; i < rows.length; i++) {
