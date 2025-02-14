@@ -6,7 +6,6 @@
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
   <script>
     function changeList(selectedList) {
-      // Reload the page with the chosen list as a query parameter
       window.location.href = "{{ url_for('material_list') }}" + "?list=" + selectedList;
     }
   </script>
@@ -26,6 +25,13 @@
       <option value="new" {% if list_option == 'new' %}selected{% endif %}>New List</option>
     </select>
   </div>
+  
+  <!-- Datalist for Supply1 product suggestions -->
+  <datalist id="supply1List">
+    {% for prod in supply1_products %}
+      <option value="{{ prod['Description'] }}">
+    {% endfor %}
+  </datalist>
   
   <!-- Project Information Box -->
   <div class="card mb-4">
@@ -59,7 +65,7 @@
         </tr>
       </thead>
       <tbody id="material-list">
-        <!-- Render predetermined list rows if available -->
+        <!-- Render predetermined list rows -->
         {% for product in product_list %}
         <tr class="predetermined">
           <td>{{ product["Product Description"] }}</td>
@@ -84,67 +90,84 @@
 </div>
 
 <script>
+  // Use JSON.parse with escapejs to avoid linting errors in Xcode.
+  var supply1Products = JSON.parse('{{ supply1_products|tojson|escapejs }}');
+  
   // Function to recalculate total for a row.
   function recalcRow(row) {
-    let lastPrice = parseFloat(row.querySelector("input.last-price").value) || 0;
-    let quantity = parseFloat(row.querySelector("input.quantity").value) || 0;
+    var lastPrice = parseFloat(row.querySelector("input.last-price").value) || 0;
+    var quantity = parseFloat(row.querySelector("input.quantity").value) || 0;
     row.querySelector(".total").innerText = (lastPrice * quantity).toFixed(2);
   }
 
   // Attach change event listeners for predetermined rows.
-  document.querySelectorAll("#material-list tr").forEach(function(row) {
-    let qtyInput = row.querySelector("input.quantity");
+  var rows = document.querySelectorAll("#material-list tr");
+  for (var i = 0; i < rows.length; i++) {
+    var qtyInput = rows[i].querySelector("input.quantity");
     if (qtyInput) {
       qtyInput.addEventListener("change", function() {
-        recalcRow(row);
+        recalcRow(this.parentNode.parentNode);
       });
     }
-  });
+  }
 
   // Add Manual Item: append a new row to the table.
   document.getElementById("add-item").addEventListener("click", function() {
-    let table = document.getElementById("material-list");
-    let row = table.insertRow();
-    row.innerHTML = `
-      <td><input type="text" class="form-control product" placeholder="Enter product"></td>
-      <td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>
-      <td><input type="number" class="form-control quantity" placeholder="Quantity"></td>
-      <td class="total">0.00</td>
-      <td><button type="button" class="btn btn-danger remove-item">Remove</button></td>
-    `;
-    row.querySelector("input.quantity").addEventListener("change", function() {
+    var table = document.getElementById("material-list");
+    var row = table.insertRow();
+    row.innerHTML = 
+      '<td><input type="text" class="form-control product" placeholder="Enter product" list="supply1List"></td>' +
+      '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
+      '<td><input type="number" class="form-control quantity" placeholder="Quantity"></td>' +
+      '<td class="total">0.00</td>' +
+      '<td><button type="button" class="btn btn-danger remove-item">Remove</button></td>';
+    
+    var productInput = row.querySelector("input.product");
+    productInput.addEventListener("change", function() {
+      var inputVal = this.value.trim().toLowerCase();
+      for (var j = 0; j < supply1Products.length; j++) {
+        if (supply1Products[j].Description.toLowerCase() === inputVal) {
+          row.querySelector("input.last-price").value = supply1Products[j]["Price per Unit"];
+          recalcRow(row);
+          break;
+        }
+      }
+    });
+    
+    var quantityInput = row.querySelector("input.quantity");
+    quantityInput.addEventListener("change", function() {
       recalcRow(row);
     });
-    row.querySelector("input.last-price").addEventListener("change", function() {
+    var lastPriceInput = row.querySelector("input.last-price");
+    lastPriceInput.addEventListener("change", function() {
       recalcRow(row);
     });
     row.querySelector(".remove-item").addEventListener("click", function() {
-      row.remove();
+      row.parentNode.removeChild(row);
     });
   });
 
   // On Export to PDF, gather data from all rows.
   document.getElementById("export-pdf").addEventListener("click", function() {
-    let productData = [];
-    let rows = document.querySelectorAll("#material-list tr");
-    rows.forEach(function(row) {
-      let product;
-      // For predetermined rows, product description is in the first cell.
-      if (row.classList.contains("predetermined")) {
-        product = row.cells[0].innerText.trim();
+    var productData = [];
+    var rows = document.querySelectorAll("#material-list tr");
+    for (var i = 0; i < rows.length; i++) {
+      var product;
+      if (rows[i].classList.contains("predetermined")) {
+        product = rows[i].cells[0].innerText.trim();
       } else {
-        product = row.querySelector("input.product").value;
+        product = rows[i].querySelector("input.product").value;
       }
-      let lastPrice = row.querySelector("input.last-price").value;
-      let quantity = row.querySelector("input.quantity").value;
-      let total = row.querySelector(".total").innerText;
+      var lastPrice = rows[i].querySelector("input.last-price").value;
+      var quantity = rows[i].querySelector("input.quantity").value;
+      var total = rows[i].querySelector(".total").innerText;
       productData.push({
         description: product,
         last_price: lastPrice,
         quantity: quantity,
         total: total
       });
-    });
+    }
     document.getElementById("product_data").value = JSON.stringify(productData);
     document.getElementById("material-form").submit();
   });

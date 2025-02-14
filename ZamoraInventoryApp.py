@@ -421,7 +421,7 @@ def product_detail():
 @app.route("/material_list", methods=["GET", "POST"])
 @login_required
 def material_list():
-    global df_underground, df_rough, df_final
+    global df_underground, df_rough, df_final, df  # df is supply1 data
     if request.method == "POST":
         # Process the submitted order:
         contractor = request.form.get("contractor")
@@ -435,10 +435,8 @@ def material_list():
             flash("Error processing product data.", "danger")
             return redirect(url_for("material_list"))
         
-        # Calculate total cost from product_data (each item should have quantity and last_price)
         total_cost = sum(float(item.get("total", 0)) for item in product_data)
         
-        # Render an order summary HTML template for PDF generation
         rendered = render_template("order_summary.html",
                                    contractor=contractor,
                                    address=address,
@@ -452,7 +450,6 @@ def material_list():
             flash(f"PDF generation failed: {e}", "danger")
             return redirect(url_for("material_list"))
         
-        # Email the PDF to the logged-in user
         recipient = session.get("email")
         msg = Message("Your Order Summary", recipients=[recipient])
         msg.body = "Please find attached your order summary PDF."
@@ -479,9 +476,14 @@ def material_list():
         product_list = []  # start with an empty list
     else:
         product_list = []  # default to empty if unknown option
+
+    # Prepare Supply1 product suggestions for manual entry:
+    supply1_products = df.to_dict('records') if df is not None else []
     
-    # Pass the chosen option to the template so the UI can reflect the current selection.
-    return render_template("material_list.html", product_list=product_list, list_option=list_option)
+    return render_template("material_list.html", 
+                           product_list=product_list, 
+                           list_option=list_option,
+                           supply1_products=supply1_products)
 
 # -------------------------------
 # Login and Logout Routes
