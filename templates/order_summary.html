@@ -4,10 +4,26 @@
   <meta charset="UTF-8">
   <title>Order Summary</title>
   <style>
-    body { font-family: Arial, sans-serif; }
-    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
-    table, th, td { border: 1px solid #000; }
-    th, td { padding: 8px; text-align: left; }
+    /* Add margins to ensure nothing is cut off in the PDF */
+    body {
+      font-family: Arial, sans-serif;
+      margin: 1in;
+    }
+    h1, h2, h3, p {
+      margin-bottom: 0.5em;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    table, th, td {
+      border: 1px solid #000;
+    }
+    th, td {
+      padding: 8px;
+      text-align: left;
+    }
   </style>
 </head>
 <body>
@@ -22,21 +38,23 @@
         <th>Quantity</th>
         <th>Product Description</th>
         {% if include_price == "yes" %}
-        <th>Last Price</th>
-        <th>Total</th>
+          <th>Last Price</th>
+          <th>Total</th>
         {% endif %}
       </tr>
     </thead>
     <tbody>
       {% for product in products %}
-      <tr>
-        <td>{{ product.quantity }}</td>
-        <td>{{ product.description }}</td>
-        {% if include_price == "yes" %}
-        <td>{{ product.last_price }}</td>
-        <td>{{ product.total }}</td>
+        {% if product.quantity|float > 0 %}
+        <tr>
+          <td>{{ product.quantity }}</td>
+          <td>{{ product.description }}</td>
+          {% if include_price == "yes" %}
+            <td>{{ product.last_price }}</td>
+            <td>{{ product.total }}</td>
+          {% endif %}
+        </tr>
         {% endif %}
-      </tr>
       {% endfor %}
     </tbody>
   </table>
