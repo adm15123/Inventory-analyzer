@@ -158,53 +158,59 @@
   }
   
   // Add Manual Item: append a new row to the table.
-  document.getElementById("add-item").addEventListener("click", function() {
-    var table = document.getElementById("material-list");
-    var row = table.insertRow();
-    row.innerHTML = 
-      '<td><input type="number" class="form-control quantity" placeholder="Quantity"></td>' +
-      '<td><input type="text" class="form-control product" placeholder="Enter product" list="supply1List"></td>' +
-      '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
-      '<td class="total">0.00</td>' +
-      '<td><button type="button" class="btn btn-danger remove-item">Remove</button></td>';
-    
-    // Auto-fill last price using chosen lookup supply.
-    var productInput = row.querySelector("input.product");
-    productInput.addEventListener("change", function() {
-      var inputVal = this.value.trim().toLowerCase();
-      var lookupSupply = document.getElementById("lookupSupply").value;
-      var prodArray = (lookupSupply === "supply2") ? supply2Products : supply1Products;
-      var matches = [];
-      for (var j = 0; j < prodArray.length; j++) {
-        if (prodArray[j].Description.toLowerCase() === inputVal) {
-          matches.push(prodArray[j]);
+ // Add Manual Item: append a new row to the table.
+document.getElementById("add-item").addEventListener("click", function() {
+  var table = document.getElementById("material-list");
+  var row = table.insertRow();
+  row.innerHTML = 
+    '<td><input type="number" class="form-control quantity" placeholder="Quantity"></td>' +
+    '<td><input type="text" class="form-control product" placeholder="Enter product" list="supply1List"></td>' +
+    '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
+    '<td class="total">0.00</td>' +
+    '<td><button type="button" class="btn btn-danger remove-item">Remove</button></td>';
+  
+  // Auto-fill last price using chosen lookup supply.
+  var productInput = row.querySelector("input.product");
+  productInput.addEventListener("change", function() {
+    var inputVal = this.value.trim().toLowerCase();
+    // Get the lookup supply selection:
+    var lookupSupply = document.getElementById("lookupSupply").value;
+    console.log("Lookup supply selected:", lookupSupply);
+    // Choose the correct product array:
+    var prodArray = (lookupSupply === "supply2") ? supply2Products : supply1Products;
+    console.log("Using product array with length:", prodArray.length);
+    var matches = [];
+    for (var j = 0; j < prodArray.length; j++) {
+      if (prodArray[j].Description.toLowerCase() === inputVal) {
+        matches.push(prodArray[j]);
+      }
+    }
+    if (matches.length > 0) {
+      // Find the match with the most recent date.
+      var latest = matches[0];
+      for (var k = 1; k < matches.length; k++) {
+        if (new Date(matches[k].Date) > new Date(latest.Date)) {
+          latest = matches[k];
         }
       }
-      if (matches.length > 0) {
-        var latest = matches[0];
-        for (var k = 1; k < matches.length; k++) {
-          if (new Date(matches[k].Date) > new Date(latest.Date)) {
-            latest = matches[k];
-          }
-        }
-        row.querySelector("input.last-price").value = latest["Price per Unit"];
-        recalcRow(row);
-      }
-    });
-    
-    var quantityInput = row.querySelector("input.quantity");
-    quantityInput.addEventListener("change", function() {
+      row.querySelector("input.last-price").value = latest["Price per Unit"];
       recalcRow(row);
-    });
-    var lastPriceInput = row.querySelector("input.last-price");
-    lastPriceInput.addEventListener("change", function() {
-      recalcRow(row);
-    });
-    row.querySelector(".remove-item").addEventListener("click", function() {
-      row.parentNode.removeChild(row);
-    });
+    }
   });
   
+  var quantityInput = row.querySelector("input.quantity");
+  quantityInput.addEventListener("change", function() {
+    recalcRow(row);
+  });
+  var lastPriceInput = row.querySelector("input.last-price");
+  lastPriceInput.addEventListener("change", function() {
+    recalcRow(row);
+  });
+  row.querySelector(".remove-item").addEventListener("click", function() {
+    row.parentNode.removeChild(row);
+  });
+});
+
   // On Export to PDF, gather data from all rows.
   document.getElementById("export-pdf").addEventListener("click", function() {
     var productData = [];
