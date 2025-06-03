@@ -4,10 +4,13 @@
   <meta charset="UTF-8">
   <title>Product Detail</title>
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
     .graph-container img {
+    .graph-container {
       width: 100%;
       height: auto;
+      height: 400px;
     }
   </style>
 </head>
@@ -35,6 +38,8 @@
     <!-- Graph column -->
     <div class="col-md-8 graph-container">
       <img src="{{ url_for('graph', description=description, supply=supply, ref=ref) }}" alt="Graph for {{ description }}" class="img-fluid">
+    <div class="col-md-8">
+      <div id="priceChart" class="graph-container"></div>
     </div>
     <!-- Table column -->
     <div class="col-md-4">
@@ -42,5 +47,21 @@
     </div>
   </div>
 </div>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    fetch('{{ url_for('graph_data', description=description, supply=supply) }}')
+      .then(resp => resp.json())
+      .then(data => {
+        if(data.error) return;
+        var trace = {
+          x: data.dates,
+          y: data.prices,
+          mode: 'lines+markers',
+          type: 'scatter'
+        };
+        Plotly.newPlot('priceChart', [trace], {title: 'Prices Over Time'});
+      });
+  });
+</script>
 </body>
 </html>
