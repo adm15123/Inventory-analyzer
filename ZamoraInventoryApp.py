@@ -531,7 +531,6 @@ def material_list():
         # Retrieve include_price choice from the form:
         include_price = request.form.get("include_price", "yes")
         
-        total_cost = sum(float(item.get("total", 0)) for item in product_data)
         valid_products = [p for p in product_data if float(p.get("quantity", 0)) > 0]
         total_cost = sum(float(item.get("total", 0)) for item in valid_products)
         
@@ -540,7 +539,6 @@ def material_list():
                                    contractor=contractor,
                                    address=address,
                                    order_date=order_date,
-                                   products=product_data,
                                    products=valid_products,
                                    total_cost=total_cost,
                                    include_price=include_price)
