@@ -1,7 +1,7 @@
 import pandas as pd
 import os
 from typing import Optional
-from .config import (
+from config import (
     DEFAULT_FILE,
     DEFAULT_SUPPLY2_FILE,
     UPLOAD_FOLDER,
