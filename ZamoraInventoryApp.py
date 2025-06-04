@@ -230,7 +230,7 @@ def api_search():
 
     current_df = get_current_dataframe(supply)
     if current_df is None or not query:
-        return jsonify({"data": [], "next_page": None, "prev_page": None})
+        return jsonify({"table_html": "", "next_page": None, "prev_page": None})
 
     preprocessed_query = preprocess_text_for_search(query)
     keywords = preprocessed_query.split()
@@ -248,11 +248,12 @@ def api_search():
                 lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
             ),
         )
+
     page_df = du.paginate_dataframe(results, page, per_page)
-    json_data = json.loads(page_df.to_json(orient="records", date_format="iso"))
+    table_html = page_df.to_html(classes="table table-striped", index=False, escape=False)
     next_page = page + 1 if len(results) > page * per_page else None
     prev_page = page - 1 if page > 1 else None
-    return jsonify({"data": json_data, "next_page": next_page, "prev_page": prev_page})
+    return jsonify({"table_html": table_html, "next_page": next_page, "prev_page": prev_page})
 
 @app.route("/graph")
 @login_required
