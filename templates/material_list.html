@@ -68,8 +68,7 @@
         {% for product in product_list %}
         <tr class="predetermined">
           <td>
-            <input type="number" class="form-control quantity" value="0">
-            <input type="number" class="form-control quantity" value="0" min="0">
+            <input type="number" class="form-control quantity" value="0" min="1" required>
           </td>
           <td>{{ product["Product Description"] }}</td>
           <td>
