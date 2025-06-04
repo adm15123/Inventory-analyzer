@@ -449,8 +449,8 @@ def view_all_data():
         return jsonify([])
     df_temp = current_df.copy()
     normalize_columns(df_temp)
-    if "Item Number" in df_temp.columns:
-        df_temp = df_temp.sort_values("Item Number")
+    if "Item No." in df_temp.columns and "Item Number" not in df_temp.columns:
+        df_temp.rename(columns={"Item No.": "Item Number"}, inplace=True)
     if "Date" in df_temp.columns and "Description" in df_temp.columns:
         date_index = list(df_temp.columns).index("Date")
         df_temp.insert(
@@ -482,8 +482,8 @@ def search_data():
     if results.empty:
         return jsonify([])
     normalize_columns(results)
-    if "Item Number" in results.columns:
-        results = results.sort_values("Item Number")
+    if "Item No." in results.columns and "Item Number" not in results.columns:
+        results.rename(columns={"Item No.": "Item Number"}, inplace=True)
     if "Date" in results.columns and "Description" in results.columns:
         date_index = list(results.columns).index("Date")
         results.insert(

@@ -32,6 +32,12 @@
           { targets: [0,2,3,4,5,6], searchable: false },
           { targets: 6, orderable: false }
         ]
+        scrollY: '400px',
+        scrollCollapse: true
+      });
+
+      $('#showAll').on('click', function(){
+        table.page.len(-1).draw();
       });
 
       $('#showAll').on('click', function(){
