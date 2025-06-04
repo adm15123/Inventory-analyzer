@@ -118,6 +118,15 @@ def preprocess_text_for_search(text):
     """Preprocess text by removing special characters and converting to lowercase."""
     return re.sub(r"[^a-zA-Z0-9\s]", "", str(text)).lower()
 
+
+def normalize_columns(df):
+    """Rename common columns so DataTables receive consistent headers."""
+    if "Item No." in df.columns and "Item Number" not in df.columns:
+        df.rename(columns={"Item No.": "Item Number"}, inplace=True)
+    if "Invoice No." in df.columns and "Invoice No" not in df.columns:
+        df.rename(columns={"Invoice No.": "Invoice No"}, inplace=True)
+    return df
+
 def load_default_file():
     """Load the default Excel file (Supply 1) from the uploads folder on startup."""
     global df
@@ -258,18 +267,7 @@ def view_all():
         flash("⚠ Please ensure the Excel file for the selected supply is available.")
         return redirect(url_for("index"))
     
-    df_temp = current_df.copy()
-    if "Date" in df_temp.columns and "Description" in df_temp.columns:
-        date_index = list(df_temp.columns).index("Date")
-        df_temp.insert(
-            date_index + 1,
-            "Graph",
-            df_temp["Description"].apply(
-                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="view_all")}">Graph</a>'
-            )
-        )
-    table_html = df_temp.to_html(classes="table table-striped", index=False, escape=False)
-    return render_template("view_all.html", table=table_html, supply=supply)
+    return render_template("view_all.html", supply=supply)
 
 @app.route("/search", methods=["GET", "POST"])
 @login_required
@@ -282,34 +280,13 @@ def search():
     if current_df is None:
         flash("⚠ Please ensure the Excel file for the selected supply is available.")
         return redirect(url_for("index"))
-    
-    results = None
-    query = ""
+
+    query = request.args.get("query", "")
     if request.method == "POST":
-        supply = request.form.get("supply", "supply1")
-        current_df = get_current_dataframe(supply)
-        query = request.form.get("query")
-        if not query:
-            flash("⚠ Please enter a search term.")
-        else:
-            preprocessed_query = preprocess_text_for_search(query)
-            keywords = preprocessed_query.split()
-            results = current_df[current_df["Description"].apply(
-                lambda desc: all(keyword in preprocess_text_for_search(desc) for keyword in keywords)
-            )]
-            if results.empty:
-                flash("⚠ No matching results found.")
-    
-    if results is not None and not results.empty:
-        if "Date" in results.columns and "Description" in results.columns:
-            date_index = list(results.columns).index("Date")
-            results.insert(date_index + 1, "Graph", results["Description"].apply(
-                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
-            ))
-        table_html = results.to_html(classes="table table-striped", index=False, escape=False)
-    else:
-        table_html = None
-    return render_template("search.html", table=table_html, query=query, supply=supply)
+        query = request.form.get("query", "")
+        supply = request.form.get("supply", supply)
+
+    return render_template("search.html", query=query, supply=supply)
 
 @app.route("/graph")
 @login_required
@@ -471,10 +448,7 @@ def view_all_data():
     if current_df is None:
         return jsonify([])
     df_temp = current_df.copy()
-    if "Item No." in df_temp.columns and "Item Number" not in df_temp.columns:
-        df_temp.rename(columns={"Item No.": "Item Number"}, inplace=True)
-    if "Invoice No." in df_temp.columns and "Invoice No" not in df_temp.columns:
-        df_temp.rename(columns={"Invoice No.": "Invoice No"}, inplace=True)
+    normalize_columns(df_temp)
     if "Item Number" in df_temp.columns:
         df_temp = df_temp.sort_values("Item Number")
     if "Date" in df_temp.columns and "Description" in df_temp.columns:
@@ -507,10 +481,7 @@ def search_data():
         results = pd.DataFrame()
     if results.empty:
         return jsonify([])
-    if "Item No." in results.columns and "Item Number" not in results.columns:
-        results.rename(columns={"Item No.": "Item Number"}, inplace=True)
-    if "Invoice No." in results.columns and "Invoice No" not in results.columns:
-        results.rename(columns={"Invoice No.": "Invoice No"}, inplace=True)
+    normalize_columns(results)
     if "Item Number" in results.columns:
         results = results.sort_values("Item Number")
     if "Date" in results.columns and "Description" in results.columns:
