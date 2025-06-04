@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session
+from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session, jsonify, abort
 import pandas as pd
 import re
 import os
@@ -20,7 +20,7 @@ from functools import wraps
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__)
-app.secret_key = "your_secret_key"
+app.secret_key = os.getenv("SECRET_KEY", "change-me")
 
 # Session Timeout Configuration
 app.config["SESSION_PERMANENT"] = True
@@ -54,9 +54,9 @@ df_final = None   # Final list
 app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
-app.config["MAIL_USERNAME"] = "aliant.delgado07@gmail.com"
-app.config["MAIL_PASSWORD"] = "lgco kmqe emqr qdrj"  # Use an app-specific password if using 2FA
-app.config["MAIL_DEFAULT_SENDER"] = "aliant.delgado07@gmail.com"
+app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME", "")
+app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD", "")
+app.config["MAIL_DEFAULT_SENDER"] = os.getenv("MAIL_DEFAULT_SENDER", app.config["MAIL_USERNAME"])
 
 mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.secret_key)
@@ -359,6 +359,9 @@ def analyze():
         try:
             start_date = pd.to_datetime(request.form.get("start_date"))
             end_date = pd.to_datetime(request.form.get("end_date"))
+            if start_date > end_date:
+                flash("⚠ Start date must be before end date.")
+                raise ValueError("Start date after end date")
             supply = request.form.get("supply", "supply1")
             current_df = get_current_dataframe(supply)
             filtered_data = current_df[(current_df["Date"] >= start_date) & (current_df["Date"] <= end_date)]
@@ -418,6 +421,97 @@ def product_detail():
     query = request.args.get("query", "")       # Get the search query if available
     return render_template("product_detail.html", description=description, table=table_html, supply=supply, ref=ref, query=query)
 
+
+@app.route("/graph_data")
+@login_required
+def graph_data():
+    """Return price data for a product as JSON for interactive charts."""
+    supply = request.args.get("supply", "supply1")
+    current_df = get_current_dataframe(supply)
+    description = request.args.get("description")
+    if current_df is None or not description:
+        return jsonify({"error": "Invalid parameters"})
+    try:
+        filtered = current_df[current_df["Description"].str.lower().str.strip() == description.lower().strip()]
+    except Exception:
+        return jsonify({"error": "Invalid data"})
+    if filtered.empty:
+        return jsonify({"error": "No data"})
+    filtered = filtered.dropna(subset=["Date"]).sort_values(by="Date")
+    return jsonify({
+        "dates": filtered["Date"].dt.strftime("%Y-%m-%d").tolist(),
+        "prices": filtered["Price per Unit"].fillna(0).tolist()
+    })
+
+
+@app.route("/autocomplete")
+@login_required
+def autocomplete():
+    """Return description suggestions matching a term."""
+    term = request.args.get("term", "").lower().strip()
+    supply = request.args.get("supply", "supply1")
+    current_df = get_current_dataframe(supply)
+    if current_df is None or not term:
+        return jsonify([])
+    try:
+        matches = current_df[current_df["Description"].astype(str).str.lower().str.contains(re.escape(term))]
+        suggestions = matches["Description"].dropna().unique()[:10]
+    except Exception:
+        suggestions = []
+    return jsonify(list(suggestions))
+
+
+@app.route("/view_all_data")
+@login_required
+def view_all_data():
+    """Return all rows for DataTables AJAX loading."""
+    supply = request.args.get("supply", "supply1")
+    current_df = get_current_dataframe(supply)
+    if current_df is None:
+        return jsonify([])
+    df_temp = current_df.copy()
+    if "Date" in df_temp.columns and "Description" in df_temp.columns:
+        date_index = list(df_temp.columns).index("Date")
+        df_temp.insert(
+            date_index + 1,
+            "Graph",
+            df_temp["Description"].apply(
+                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="view_all")}">Graph</a>'
+            )
+        )
+    df_temp["Date"] = df_temp["Date"].astype(str)
+    return jsonify(df_temp.to_dict(orient="records"))
+
+
+@app.route("/search_data")
+@login_required
+def search_data():
+    """Return search results in JSON."""
+    supply = request.args.get("supply", "supply1")
+    query = request.args.get("query", "")
+    current_df = get_current_dataframe(supply)
+    if current_df is None or not query:
+        return jsonify([])
+    keywords = preprocess_text_for_search(query).split()
+    try:
+        results = current_df[current_df["Description"].apply(
+            lambda desc: all(k in preprocess_text_for_search(desc) for k in keywords))]
+    except Exception:
+        results = pd.DataFrame()
+    if results.empty:
+        return jsonify([])
+    if "Date" in results.columns and "Description" in results.columns:
+        date_index = list(results.columns).index("Date")
+        results.insert(
+            date_index + 1,
+            "Graph",
+            results["Description"].apply(
+                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
+            )
+        )
+    results["Date"] = results["Date"].astype(str)
+    return jsonify(results.to_dict(orient="records"))
+
 @app.route("/material_list", methods=["GET", "POST"])
 @login_required
 def material_list():
@@ -437,14 +531,15 @@ def material_list():
         # Retrieve include_price choice from the form:
         include_price = request.form.get("include_price", "yes")
         
-        total_cost = sum(float(item.get("total", 0)) for item in product_data)
+        valid_products = [p for p in product_data if float(p.get("quantity", 0)) > 0]
+        total_cost = sum(float(item.get("total", 0)) for item in valid_products)
         
         # Pass the include_price flag to the order summary template:
         rendered = render_template("order_summary.html",
                                    contractor=contractor,
                                    address=address,
                                    order_date=order_date,
-                                   products=product_data,
+                                   products=valid_products,
                                    total_cost=total_cost,
                                    include_price=include_price)
         import pdfkit
