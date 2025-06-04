@@ -253,8 +253,7 @@ def api_search():
 
     current_df = get_current_dataframe(supply)
     if current_df is None or not query:
-        return jsonify({"table_html": "", "next_page": None, "prev_page": None})
-
+        return jsonify({"data": [], "next_page": None, "prev_page": None})
     preprocessed_query = preprocess_text_for_search(query)
     keywords = preprocessed_query.split()
     results = current_df[current_df["Description"].apply(
@@ -282,12 +281,11 @@ def api_search():
         ]
         existing_cols = [c for c in desired_order if c in results.columns]
         results = results[existing_cols]
-
     page_df = du.paginate_dataframe(results, page, per_page)
-    table_html = page_df.to_html(classes="table table-striped", index=False, escape=False)
+    json_data = json.loads(page_df.to_json(orient="records", date_format="iso"))
     next_page = page + 1 if len(results) > page * per_page else None
     prev_page = page - 1 if page > 1 else None
-    return jsonify({"table_html": table_html, "next_page": next_page, "prev_page": prev_page})
+    return jsonify({"data": json_data, "next_page": next_page, "prev_page": prev_page})
 
 @app.route("/graph")
 @login_required

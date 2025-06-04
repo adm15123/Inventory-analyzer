@@ -65,16 +65,18 @@ document.addEventListener('DOMContentLoaded', function() {
     fetch(`/api/search?supply=${encodeURIComponent(supplyVal)}&query=${encodeURIComponent(val)}`)
       .then(r => r.json())
       .then(data => {
-        if (!data.table_html) { resultsDiv.innerHTML = ''; return; }
-        let html = data.table_html;
-        html += '<nav aria-label="Page navigation" class="mt-3"><ul class="pagination">';
-        if (data.prev_page) {
-          html += `<li class="page-item"><a class="page-link" href="?supply=${encodeURIComponent(supplyVal)}&query=${encodeURIComponent(val)}&page=${data.prev_page}">Previous</a></li>`;
-        }
-        if (data.next_page) {
-          html += `<li class="page-item"><a class="page-link" href="?supply=${encodeURIComponent(supplyVal)}&query=${encodeURIComponent(val)}&page=${data.next_page}">Next</a></li>`;
-        }
-        html += '</ul></nav>';
+        const rows = data.data || [];
+        if (rows.length === 0) { resultsDiv.innerHTML = ''; return; }
+        const cols = Object.keys(rows[0]);
+        let html = '<table class="table table-striped"><thead><tr>';
+        cols.forEach(c => { html += `<th>${c}</th>`; });
+        html += '</tr></thead><tbody>';
+        rows.forEach(row => {
+          html += '<tr>';
+          cols.forEach(c => { html += `<td>${row[c] || ''}</td>`; });
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
         resultsDiv.innerHTML = html;
       });
   });
