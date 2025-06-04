@@ -1,11 +1,16 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, send_file, session
-import pandas as pd
-import re
-import os
+from flask import (
+    Flask,
+    render_template,
+    request,
+    redirect,
+    url_for,
+    flash,
+    send_file,
+    session,
+)
 import io
 import matplotlib.pyplot as plt
-from werkzeug.utils import secure_filename
-from datetime import datetime, timedelta
+from datetime import datetime
 import time
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
@@ -18,54 +23,29 @@ from functools import wraps
 # Application Configuration
 # -------------------------------
 
-BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+import config
+import data_utils as du
+
 app = Flask(__name__)
-app.secret_key = "your_secret_key"
+app.secret_key = config.SECRET_KEY
 
-# Session Timeout Configuration
-app.config["SESSION_PERMANENT"] = True
-app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(minutes=30)
-
-# Allowed file extension (not used for upload anymore)
-ALLOWED_EXTENSIONS = {"xlsx"}
-
-# Define the upload folder (used only for reading pre‑uploaded files)
-UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
-app.config["UPLOAD_FOLDER"] = UPLOAD_FOLDER
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-
-# Define filenames and paths for both supplies
-EXCEL_FILENAME = "Final_Extracted_Data_Fixed_Logic4.xlsx"  # Supply 1 file
-DEFAULT_FILE = os.path.join(UPLOAD_FOLDER, EXCEL_FILENAME)
-
-SUPPLY2_FILENAME = "Supply2.xlsx"  # Supply 2 file
-DEFAULT_SUPPLY2_FILE = os.path.join(UPLOAD_FOLDER, SUPPLY2_FILENAME)
-
-# Global DataFrames for each supply
-df = None         # Data for supply 1
-df_supply2 = None # Data for supply 2
-df_underground = None # Data for the underground list
-df_rough = None   # Rough list
-df_final = None   # Final list
+app.config["SESSION_PERMANENT"] = config.SESSION_PERMANENT
+app.config["PERMANENT_SESSION_LIFETIME"] = config.PERMANENT_SESSION_LIFETIME
+app.config["UPLOAD_FOLDER"] = config.UPLOAD_FOLDER
 # -------------------------------
 # Flask-Mail and Login Configuration
 # -------------------------------
 
-app.config["MAIL_SERVER"] = "smtp.gmail.com"
-app.config["MAIL_PORT"] = 587
-app.config["MAIL_USE_TLS"] = True
-app.config["MAIL_USERNAME"] = "aliant.delgado07@gmail.com"
-app.config["MAIL_PASSWORD"] = "lgco kmqe emqr qdrj"  # Use an app-specific password if using 2FA
-app.config["MAIL_DEFAULT_SENDER"] = "aliant.delgado07@gmail.com"
+app.config["MAIL_SERVER"] = config.MAIL_SERVER
+app.config["MAIL_PORT"] = config.MAIL_PORT
+app.config["MAIL_USE_TLS"] = config.MAIL_USE_TLS
+app.config["MAIL_USERNAME"] = config.MAIL_USERNAME
+app.config["MAIL_PASSWORD"] = config.MAIL_PASSWORD
+app.config["MAIL_DEFAULT_SENDER"] = config.MAIL_DEFAULT_SENDER
 
 mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.secret_key)
-ALLOWED_EMAILS = [
-    "aliant.delgado@yahoo.com",
-    "aliant.delgado17@gmail.com",
-    "zamoraplumbing01@gmail.com",
-    "aliant.delgado01@yahoo.com"
-]
+ALLOWED_EMAILS = config.ALLOWED_EMAILS
 
 # -------------------------------
 # Global Before-Request Handler (Session Timeout)
@@ -110,131 +90,26 @@ def login_required(f):
     return decorated_function
 
 # -------------------------------
-# Utility Functions
+# Utility Functions (delegated to data_utils)
 # -------------------------------
 
-def preprocess_text_for_search(text):
-    """Preprocess text by removing special characters and converting to lowercase."""
-    return re.sub(r"[^a-zA-Z0-9\s]", "", str(text)).lower()
+preprocess_text_for_search = du.preprocess_text_for_search
+load_default_file = du.load_default_file
+load_supply2_file = du.load_supply2_file
+load_underground_list = du.load_underground_list
+load_rough_list = du.load_rough_list
+load_final_list = du.load_final_list
+get_current_dataframe = du.get_current_dataframe
+update_underground_prices = du.update_underground_prices
+update_rough_prices = du.update_rough_prices
+update_final_prices = du.update_final_prices
 
-def load_default_file():
-    """Load the default Excel file (Supply 1) from the uploads folder on startup."""
-    global df
-    if os.path.exists(DEFAULT_FILE):
-        try:
-            df = pd.read_excel(DEFAULT_FILE, engine="openpyxl")
-            if "Date" in df.columns:
-                df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
-            if "Description" in df.columns:
-                df["Description"] = df["Description"].astype(str).str.strip()
-            if "Price per Unit" in df.columns:
-                df["Price per Unit"] = pd.to_numeric(
-                    df["Price per Unit"].astype(str).str.replace(',', '', regex=False),
-                 errors='coerce'
-                 )
-            print("✅ Default supply1 file loaded successfully!")
-        except Exception as e:
-            print(f"❌ Error loading supply1 file: {e}")
-    else:
-        print("⚠ No default supply1 file found in the uploads folder.")
-
-def load_supply2_file():
-    """Load the Supply 2 Excel file from the uploads folder on startup."""
-    global df_supply2
-    if os.path.exists(DEFAULT_SUPPLY2_FILE):
-        try:
-            df_supply2 = pd.read_excel(DEFAULT_SUPPLY2_FILE, engine="openpyxl")
-            if "Date" in df_supply2.columns:
-                df_supply2["Date"] = pd.to_datetime(df_supply2["Date"], errors="coerce")
-            if "Description" in df_supply2.columns:
-                df_supply2["Description"] = df_supply2["Description"].astype(str).str.strip()
-            if "Price per Unit" in df_supply2.columns:
-                df_supply2["Price per Unit"] = pd.to_numeric(
-                    df_supply2["Price per Unit"].astype(str).str.replace(',', '', regex=False),
-                 errors='coerce' 
-                 )
-            print("✅ Default supply2 file loaded successfully!")
-        except Exception as e:
-            print(f"❌ Error loading supply2 file: {e}")
-    else:
-        print("⚠ No default supply2 file found in the uploads folder.")
-
-def load_underground_list():
-    """Load the predetermined product list from the uploads folder."""
-    global df_underground
-    file_path = os.path.join(app.config["UPLOAD_FOLDER"], "underground_list.xlsx")
-    if os.path.exists(file_path):
-        try:
-            df_underground = pd.read_excel(file_path, engine="openpyxl")
-            # Ensure the column "Product Description" exists and is cleaned.
-            if "Product Description" in df_underground.columns:
-                df_underground["Product Description"] = df_underground["Product Description"].astype(str).str.strip()
-            print("✅ Underground list loaded successfully!")
-        except Exception as e:
-            print(f"❌ Error loading underground list: {e}")
-    else:
-        print("⚠ No underground list found in the uploads folder.")
-
-def load_rough_list():
-    global df_rough
-    file_path = os.path.join(app.config["UPLOAD_FOLDER"], "rough_list.xlsx")
-    if os.path.exists(file_path):
-        try:
-            df_rough = pd.read_excel(file_path, engine="openpyxl")
-            if "Product Description" in df_rough.columns:
-                df_rough["Product Description"] = df_rough["Product Description"].astype(str).str.strip()
-            print("✅ Rough list loaded successfully!")
-        except Exception as e:
-            print(f"❌ Error loading rough list: {e}")
-    else:
-        print("⚠ No rough list found in the uploads folder.")
-
-def load_final_list():
-    global df_final
-    file_path = os.path.join(app.config["UPLOAD_FOLDER"], "final_list.xlsx")
-    if os.path.exists(file_path):
-        try:
-            df_final = pd.read_excel(file_path, engine="openpyxl")
-            if "Product Description" in df_final.columns:
-                df_final["Product Description"] = df_final["Product Description"].astype(str).str.strip()
-            print("✅ Final list loaded successfully!")
-        except Exception as e:
-            print(f"❌ Error loading final list: {e}")
-    else:
-        print("⚠ No final list found in the uploads folder.")
-# Load both files on startup
+# Load data on startup
 load_default_file()
 load_supply2_file()
 load_underground_list()
 load_rough_list()
 load_final_list()
-
-def get_current_dataframe(supply):
-    """Return the DataFrame for the specified supply."""
-    if supply == "supply2":
-        return df_supply2
-    else:
-        return df
-
-def update_list_prices(df_list):
-    global df
-    if df_list is not None and df is not None:
-        def get_last_price(desc):
-            matches = df[df["Description"].astype(str).str.lower().str.strip() == desc.lower().strip()]
-            return matches["Price per Unit"].max() if not matches.empty else 0
-        df_list["Last Price"] = df_list["Product Description"].apply(get_last_price)
-
-def update_underground_prices():
-    global df_underground
-    update_list_prices(df_underground)
-
-def update_rough_prices():
-    global df_rough
-    update_list_prices(df_rough)
-
-def update_final_prices():
-    global df_final
-    update_list_prices(df_final)
 
 
 # -------------------------------
@@ -252,11 +127,14 @@ def index():
 def view_all():
     """View all content from the selected supply's Excel file."""
     supply = request.args.get("supply", "supply1")
+    page = request.args.get("page", 1, type=int)
+    per_page = 50
+
     current_df = get_current_dataframe(supply)
     if current_df is None:
         flash("⚠ Please ensure the Excel file for the selected supply is available.")
         return redirect(url_for("index"))
-    
+
     df_temp = current_df.copy()
     if "Date" in df_temp.columns and "Description" in df_temp.columns:
         date_index = list(df_temp.columns).index("Date")
@@ -267,8 +145,19 @@ def view_all():
                 lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="view_all")}">Graph</a>'
             )
         )
-    table_html = df_temp.to_html(classes="table table-striped", index=False, escape=False)
-    return render_template("view_all.html", table=table_html, supply=supply)
+
+    page_df = du.paginate_dataframe(df_temp, page, per_page)
+    table_html = page_df.to_html(classes="table table-striped", index=False, escape=False)
+    next_page = page + 1 if len(df_temp) > page * per_page else None
+    prev_page = page - 1 if page > 1 else None
+    return render_template(
+        "view_all.html",
+        table=table_html,
+        supply=supply,
+        next_page=next_page,
+        prev_page=prev_page,
+        page=page,
+    )
 
 @app.route("/search", methods=["GET", "POST"])
 @login_required
@@ -277,6 +166,8 @@ def search():
     Search the selected supply’s 'Description' column for a query.
     """
     supply = request.args.get("supply", "supply1")
+    page = request.args.get("page", 1, type=int)
+    per_page = 50
     current_df = get_current_dataframe(supply)
     if current_df is None:
         flash("⚠ Please ensure the Excel file for the selected supply is available.")
@@ -302,13 +193,29 @@ def search():
     if results is not None and not results.empty:
         if "Date" in results.columns and "Description" in results.columns:
             date_index = list(results.columns).index("Date")
-            results.insert(date_index + 1, "Graph", results["Description"].apply(
-                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
-            ))
-        table_html = results.to_html(classes="table table-striped", index=False, escape=False)
+            results.insert(
+                date_index + 1,
+                "Graph",
+                results["Description"].apply(
+                    lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
+                ),
+            )
+        page_df = du.paginate_dataframe(results, page, per_page)
+        table_html = page_df.to_html(classes="table table-striped", index=False, escape=False)
+        next_page = page + 1 if len(results) > page * per_page else None
+        prev_page = page - 1 if page > 1 else None
     else:
         table_html = None
-    return render_template("search.html", table=table_html, query=query, supply=supply)
+        next_page = prev_page = None
+    return render_template(
+        "search.html",
+        table=table_html,
+        query=query,
+        supply=supply,
+        next_page=next_page,
+        prev_page=prev_page,
+        page=page,
+    )
 
 @app.route("/graph")
 @login_required
