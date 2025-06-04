@@ -45,7 +45,6 @@
           data: function(d){
             d.query = $('#query').val();
             d.supply = $('#supply').val();
-          },
           dataSrc: ''
         },
         columns: [
@@ -56,6 +55,7 @@
         ]
       });
       $('#searchForm').on('submit', function(e){
+
         e.preventDefault();
         table.ajax.reload();
       });

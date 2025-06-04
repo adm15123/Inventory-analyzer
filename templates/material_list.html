@@ -1,4 +1,15 @@
-@@ -13,94 +13,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Material List</title>
+  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
+  <script>
+    function changeList(selectedList) {
+      window.location.href = "{{ url_for('material_list') }}" + "?list=" + selectedList;
+    }
+  </script>
+</head>
 <body>
 <div class="container">
   <h1 class="mt-4">Material List</h1>
@@ -30,7 +41,6 @@
       <option value="{{ prod['Description'] }}">
     {% endfor %}
   </datalist>
-  <datalist id="productSuggestions"></datalist>
   
   <!-- Project Information Box (fields are inside the form so they are submitted) -->
   <form id="material-form" method="POST">
@@ -39,10 +49,6 @@
       <div class="card-body">
         <div class="form-group">
           <label for="contractor">Contractor</label>
-          <input type="text" id="contractor" name="contractor" class="form-control" placeholder="Enter contractor name">
-        </div>
-        <div class="form-group">
-          <label for="address">Address</label>
           <input type="text" id="address" name="address" class="form-control" placeholder="Enter project address">
         </div>
         <div class="form-group">
@@ -94,7 +100,24 @@
   var supply1Products = {{ supply1_products|tojson }};
   var supply2Products = {{ supply2_products|tojson }};
   
-@@ -125,82 +120,101 @@
+  // Function to recalculate total for a row.
+  function recalcRow(row) {
+    var lastPrice = parseFloat(row.querySelector("input.last-price").value) || 0;
+    var quantity = parseFloat(row.querySelector("input.quantity").value) || 0;
+    row.querySelector(".total").innerText = (lastPrice * quantity).toFixed(2);
+  }
+  
+  // Function to update predetermined rows using lookup logic.
+  function updatePredeterminedRows() {
+    var lookupSupply = document.getElementById("lookupSupply").value; // "supply1" or "supply2"
+    var prodArray = (lookupSupply === "supply2") ? supply2Products : supply1Products;
+    var predRows = document.querySelectorAll("#material-list tr.predetermined");
+    for (var i = 0; i < predRows.length; i++) {
+      // Column 1 is Quantity, Column 2 is Product Description.
+      var productDesc = predRows[i].cells[1].innerText.trim().toLowerCase();
+      var matches = [];
+      function getProp(obj, keys) {
+        for (var idx = 0; idx < keys.length; idx++) {
           if (obj[keys[idx]] !== undefined) return obj[keys[idx]];
         }
         return null;
@@ -121,7 +144,6 @@
     }
   }
   
-
   // Call updatePredeterminedRows on page load.
   updatePredeterminedRows();
   
@@ -140,24 +162,6 @@
       });
     }
   }
-
-  function attachAutocomplete(input) {
-    input.addEventListener('input', function() {
-      var term = this.value;
-      var supply = document.getElementById('lookupSupply').value;
-      fetch('/autocomplete?term=' + encodeURIComponent(term) + '&supply=' + supply)
-        .then(function(resp){ return resp.json(); })
-        .then(function(options){
-          var dl = document.getElementById('productSuggestions');
-          dl.innerHTML = '';
-          for(var i=0;i<options.length;i++){
-            var opt = document.createElement('option');
-            opt.value = options[i];
-            dl.appendChild(opt);
-          }
-        });
-    });
-  }
   
   // Add Manual Item: append a new row to the table.
   document.getElementById("add-item").addEventListener("click", function() {
@@ -166,15 +170,11 @@
     row.innerHTML = 
       '<td><input type="number" class="form-control quantity" placeholder="Quantity"></td>' +
       '<td><input type="text" class="form-control product" placeholder="Enter product" list="supply1List"></td>' +
-    row.innerHTML =
-      '<td><input type="number" class="form-control quantity" placeholder="Quantity" min="1" required></td>' +
-      '<td><input type="text" class="form-control product" placeholder="Enter product" list="productSuggestions" required></td>' +
       '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
       '<td class="total">0.00</td>' +
       '<td><button type="button" class="btn btn-danger remove-item">Remove</button></td>';
     
     var productInput = row.querySelector("input.product");
-    attachAutocomplete(productInput);
     productInput.addEventListener("change", function() {
       var inputVal = this.value.trim().toLowerCase();
       // Read the current lookup supply from the dropdown:
@@ -200,7 +200,31 @@
         var latest = matches[0];
         for (var k = 1; k < matches.length; k++) {
           var dateLatest = new Date(getProp(latest, ["Date", "date"]));
-@@ -232,30 +246,35 @@
+          var dateCurrent = new Date(getProp(matches[k], ["Date", "date"]));
+          if (dateCurrent > dateLatest) {
+            latest = matches[k];
+          }
+        }
+        row.querySelector("input.last-price").value = getProp(latest, ["Price per Unit", "price per unit", "Price", "price"]);
+        recalcRow(row);
+      } else {
+        console.log("No matching product found in " + lookupSupply);
+      }
+    });
+    
+    var quantityInput = row.querySelector("input.quantity");
+    quantityInput.addEventListener("change", function() {
+      recalcRow(row);
+    });
+    var lastPriceInput = row.querySelector("input.last-price");
+    lastPriceInput.addEventListener("change", function() {
+      recalcRow(row);
+    });
+    row.querySelector(".remove-item").addEventListener("click", function() {
+      row.parentNode.removeChild(row);
+    });
+  });
+  
   // On Export to PDF, gather data from all rows and prompt for including price.
   document.getElementById("export-pdf").addEventListener("click", function() {
     var includePrice = confirm("Would you like to include the price in the PDF?");
@@ -227,12 +251,6 @@
     }
     document.getElementById("product_data").value = JSON.stringify(productData);
     document.getElementById("material-form").submit();
-    var form = document.getElementById("material-form");
-    if(form.checkValidity()) {
-      form.submit();
-    } else {
-      form.reportValidity();
-    }
   });
 </script>
 </body>
