@@ -147,6 +147,18 @@ def view_all():
                 lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="view_all")}">Graph</a>'
             )
         )
+        # Ensure column order is consistent
+        desired_order = [
+            "Item Number",
+            "Description",
+            "Price per Unit",
+            "Unit",
+            "Invoice No.",
+            "Date",
+            "Graph",
+        ]
+        existing_columns = [c for c in desired_order if c in df_temp.columns]
+        df_temp = df_temp[existing_columns]
 
     page_df = du.paginate_dataframe(df_temp, page, per_page)
     table_html = page_df.to_html(classes="table table-striped", index=False, escape=False)
@@ -202,6 +214,17 @@ def search():
                     lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
                 ),
             )
+            desired_order = [
+                "Item Number",
+                "Description",
+                "Price per Unit",
+                "Unit",
+                "Invoice No.",
+                "Date",
+                "Graph",
+            ]
+            existing_cols = [c for c in desired_order if c in results.columns]
+            results = results[existing_cols]
         page_df = du.paginate_dataframe(results, page, per_page)
         table_html = page_df.to_html(classes="table table-striped", index=False, escape=False)
         next_page = page + 1 if len(results) > page * per_page else None
@@ -231,7 +254,6 @@ def api_search():
     current_df = get_current_dataframe(supply)
     if current_df is None or not query:
         return jsonify({"data": [], "next_page": None, "prev_page": None})
-
     preprocessed_query = preprocess_text_for_search(query)
     keywords = preprocessed_query.split()
     results = current_df[current_df["Description"].apply(
@@ -248,6 +270,17 @@ def api_search():
                 lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
             ),
         )
+        desired_order = [
+            "Item Number",
+            "Description",
+            "Price per Unit",
+            "Unit",
+            "Invoice No.",
+            "Date",
+            "Graph",
+        ]
+        existing_cols = [c for c in desired_order if c in results.columns]
+        results = results[existing_cols]
     page_df = du.paginate_dataframe(results, page, per_page)
     json_data = json.loads(page_df.to_json(orient="records", date_format="iso"))
     next_page = page + 1 if len(results) > page * per_page else None
