@@ -130,8 +130,6 @@ def index():
 def view_all():
     """View all content from the selected supply's Excel file."""
     supply = request.args.get("supply", "supply1")
-    page = request.args.get("page", 1, type=int)
-    per_page = 50
 
     current_df = get_current_dataframe(supply)
     if current_df is None:
@@ -163,17 +161,11 @@ def view_all():
         existing_columns = [c for c in desired_order if c in df_temp.columns]
         df_temp = df_temp[existing_columns]
 
-    page_df = du.paginate_dataframe(df_temp, page, per_page)
-    table_html = page_df.to_html(table_id="data-table", classes="table table-striped", index=False, escape=False)
-    next_page = page + 1 if len(df_temp) > page * per_page else None
-    prev_page = page - 1 if page > 1 else None
+    table_html = df_temp.to_html(table_id="data-table", classes="table table-striped", index=False, escape=False)
     return render_template(
         "view_all.html",
         table=table_html,
         supply=supply,
-        next_page=next_page,
-        prev_page=prev_page,
-        page=page,
     )
 
 @app.route("/search", methods=["GET", "POST"])
