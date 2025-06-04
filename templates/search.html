@@ -39,7 +39,9 @@ $(document).ready(function(){
   const input = document.getElementById('query');
   const supply = document.getElementById('supply');
   const resultsDiv = document.getElementById('results');
-  if ($('#data-table').length) { $('#data-table').DataTable(); }
+  if ($('#data-table').length) {
+    $('#data-table').DataTable({pageLength:20,lengthMenu:[[20,50,100,-1],[20,50,100,'All']]});
+  }
   input.addEventListener('input', function() {
     const val = input.value.trim();
     const supplyVal = supply.value;
@@ -48,7 +50,8 @@ $(document).ready(function(){
       .then(data => {
         const rows = data.data || [];
         if (rows.length === 0) { resultsDiv.innerHTML = ''; return; }
-        const cols = Object.keys(rows[0]);
+        const desired = ["Item Number","Description","Price per Unit","Unit","Invoice No.","Date","Graph"];
+        const cols = desired.filter(c => c in rows[0]);
         let html = '<table id="data-table" class="table table-striped"><thead><tr>';
         cols.forEach(c => { html += `<th>${c}</th>`; });
         html += '</tr></thead><tbody>';
@@ -57,7 +60,7 @@ $(document).ready(function(){
         });
         html += '</tbody></table>';
         resultsDiv.innerHTML = html;
-        $('#data-table').DataTable();
+        $('#data-table').DataTable({pageLength:20,lengthMenu:[[20,50,100,-1],[20,50,100,'All']]});
       });
   });
 });
