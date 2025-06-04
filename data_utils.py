@@ -6,7 +6,6 @@ from config import (
     DEFAULT_SUPPLY2_FILE,
     UPLOAD_FOLDER,
 )
-
 # Global DataFrames
 df: Optional[pd.DataFrame] = None
 df_supply2: Optional[pd.DataFrame] = None
