@@ -13,8 +13,15 @@
       window.location.href = url;
     }
     $(document).ready(function() {
-      $("table").attr("id", "resultsTable");
-      $('#resultsTable').DataTable();
+      $('#resultsTable').DataTable({
+        ajax: '{{ url_for("view_all_data") }}?supply={{ supply }}',
+        columns: [
+          { data: 'Date' },
+          { data: 'Graph', orderable:false },
+          { data: 'Description' },
+          { data: 'Price per Unit' }
+        ]
+      });
     });
   </script>
 </head>
@@ -31,7 +38,7 @@
     </select>
   </div>
   <hr>
-  {{ table | safe }}
+  <table id="resultsTable" class="table table-striped"></table>
 </div>
 </body>
 </html>

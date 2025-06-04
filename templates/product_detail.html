@@ -6,10 +6,8 @@
   <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
   <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
   <style>
-    .graph-container img {
     .graph-container {
       width: 100%;
-      height: auto;
       height: 400px;
     }
   </style>
@@ -36,8 +34,6 @@
   
   <div class="row">
     <!-- Graph column -->
-    <div class="col-md-8 graph-container">
-      <img src="{{ url_for('graph', description=description, supply=supply, ref=ref) }}" alt="Graph for {{ description }}" class="img-fluid">
     <div class="col-md-8">
       <div id="priceChart" class="graph-container"></div>
     </div>
