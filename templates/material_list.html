@@ -1,261 +1,92 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Material List</title>
-  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
-  <script>
-    function changeList(selectedList) {
-      window.location.href = "{{ url_for('material_list') }}" + "?list=" + selectedList;
-    }
-  </script>
-</head>
-<body>
-<div class="container">
-  <h1 class="mt-4">Material List</h1>
-  <a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">Back</a>
-  
-  <!-- Dropdown to choose which predetermined list to use -->
-  <div class="form-group">
-    <label for="listSelector">Choose Predetermined List:</label>
-    <select id="listSelector" class="form-control" onchange="changeList(this.value)">
-      <option value="underground" {% if list_option == 'underground' %}selected{% endif %}>Underground List</option>
-      <option value="rough" {% if list_option == 'rough' %}selected{% endif %}>Rough List</option>
-      <option value="final" {% if list_option == 'final' %}selected{% endif %}>Final List</option>
-      <option value="new" {% if list_option == 'new' %}selected{% endif %}>New List</option>
-    </select>
-  </div>
-
-  <!-- New dropdown: Choose Supply for Lookup -->
-  <div class="form-group">
-    <label for="lookupSupply">Choose Supply for Lookup:</label>
-    <select id="lookupSupply" class="form-control">
-      <option value="supply1" selected>Supply 1</option>
-      <option value="supply2">Supply 2</option>
-    </select>
-  </div>
-  
-  <!-- Datalist for Supply1 product suggestions (for manual entries) -->
-  <datalist id="supply1List">
-    {% for prod in supply1_products %}
-      <option value="{{ prod['Description'] }}">
-    {% endfor %}
-  </datalist>
-  
-  <!-- Project Information Box (fields are inside the form so they are submitted) -->
-  <form id="material-form" method="POST">
-    <div class="card mb-4">
-      <div class="card-header">Project Information</div>
-      <div class="card-body">
-        <div class="form-group">
-          <label for="contractor">Contractor</label>
-          <input type="text" id="contractor" name="contractor" class="form-control" placeholder="Enter contractor name">
-        </div>
-        <div class="form-group">
-          <label for="address">Address</label>
-          <input type="text" id="address" name="address" class="form-control" placeholder="Enter project address">
-        </div>
-        <div class="form-group">
-          <label for="date">Date</label>
-          <input type="date" id="date" name="date" class="form-control">
-        </div>
+{% extends 'base.html' %}
+{% block title %}Material List{% endblock %}
+{% block extra_head %}
+<script>
+  function changeList(selectedList) { window.location.href = "{{ url_for('material_list') }}" + "?list=" + selectedList; }
+</script>
+{% endblock %}
+{% block content %}
+<h1 class="mt-4">Material List</h1>
+<a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">Back</a>
+<div class="form-group">
+  <label for="listSelector">Choose Predetermined List:</label>
+  <select id="listSelector" class="form-control" onchange="changeList(this.value)">
+    <option value="underground" {% if list_option == 'underground' %}selected{% endif %}>Underground List</option>
+    <option value="rough" {% if list_option == 'rough' %}selected{% endif %}>Rough List</option>
+    <option value="final" {% if list_option == 'final' %}selected{% endif %}>Final List</option>
+    <option value="new" {% if list_option == 'new' %}selected{% endif %}>New List</option>
+  </select>
+</div>
+<div class="form-group">
+  <label for="lookupSupply">Choose Supply for Lookup:</label>
+  <select id="lookupSupply" class="form-control">
+    <option value="supply1" selected>Supply 1</option>
+    <option value="supply2">Supply 2</option>
+  </select>
+</div>
+<datalist id="supply1List">
+  {% for prod in supply1_products %}
+    <option value="{{ prod['Description'] }}">
+  {% endfor %}
+</datalist>
+<form id="material-form" method="POST">
+  <div class="card mb-4">
+    <div class="card-header">Project Information</div>
+    <div class="card-body">
+      <div class="form-group">
+        <label for="contractor">Contractor</label>
+        <input type="text" id="contractor" name="contractor" class="form-control" placeholder="Enter contractor name">
+      </div>
+      <div class="form-group">
+        <label for="address">Address</label>
+        <input type="text" id="address" name="address" class="form-control" placeholder="Enter project address">
+      </div>
+      <div class="form-group">
+        <label for="date">Date</label>
+        <input type="date" id="date" name="date" class="form-control">
       </div>
     </div>
-    
-    <!-- Material List Table -->
-    <table class="table table-striped">
-      <thead>
-        <tr>
-          <th>Quantity</th>
-          <th>Product Description</th>
-          <th>Last Price</th>
-          <th>Total</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody id="material-list">
-        <!-- Render predetermined list rows -->
-        {% for product in product_list %}
-        <tr class="predetermined">
-          <td>
-            <input type="number" class="form-control quantity" value="0">
-          </td>
-          <td>{{ product["Product Description"] }}</td>
-          <td>
-            <input type="number" step="0.01" class="form-control last-price" value="{{ product["Last Price"] }}" readonly>
-          </td>
-          <td class="total">0.00</td>
-          <td><!-- Predetermined rows cannot be removed --></td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-    <button type="button" class="btn btn-primary" id="add-item">Add Manual Item</button>
-    <button type="button" class="btn btn-success" id="export-pdf">Export to PDF</button>
-    
-    <!-- Hidden fields -->
-    <input type="hidden" name="product_data" id="product_data">
-    <input type="hidden" name="include_price" id="include_price" value="yes">
-  </form>
-</div>
-
+  </div>
+  <table class="table table-striped">
+    <thead>
+      <tr>
+        <th>Quantity</th>
+        <th>Product Description</th>
+        <th>Last Price</th>
+        <th>Total</th>
+        <th>Action</th>
+      </tr>
+    </thead>
+    <tbody id="material-list">
+      {% for product in product_list %}
+      <tr class="predetermined">
+        <td><input type="number" class="form-control quantity" value="0"></td>
+        <td>{{ product["Product Description"] }}</td>
+        <td><input type="number" step="0.01" class="form-control last-price" value="{{ product["Last Price"] }}" readonly></td>
+        <td class="total">0.00</td>
+        <td></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <button type="button" class="btn btn-primary" id="add-item">Add Manual Item</button>
+  <button type="button" class="btn btn-success" id="export-pdf">Export to PDF</button>
+  <input type="hidden" name="product_data" id="product_data">
+  <input type="hidden" name="include_price" id="include_price" value="yes">
+</form>
+{% endblock %}
+{% block extra_scripts %}
 <script>
-  // Supply products data from backend (ES5)
-  var supply1Products = {{ supply1_products|tojson }};
-  var supply2Products = {{ supply2_products|tojson }};
-  
-  // Function to recalculate total for a row.
-  function recalcRow(row) {
-    var lastPrice = parseFloat(row.querySelector("input.last-price").value) || 0;
-    var quantity = parseFloat(row.querySelector("input.quantity").value) || 0;
-    row.querySelector(".total").innerText = (lastPrice * quantity).toFixed(2);
-  }
-  
-  // Function to update predetermined rows using lookup logic.
-  function updatePredeterminedRows() {
-    var lookupSupply = document.getElementById("lookupSupply").value; // "supply1" or "supply2"
-    var prodArray = (lookupSupply === "supply2") ? supply2Products : supply1Products;
-    var predRows = document.querySelectorAll("#material-list tr.predetermined");
-    for (var i = 0; i < predRows.length; i++) {
-      // Column 1 is Quantity, Column 2 is Product Description.
-      var productDesc = predRows[i].cells[1].innerText.trim().toLowerCase();
-      var matches = [];
-      function getProp(obj, keys) {
-        for (var idx = 0; idx < keys.length; idx++) {
-          if (obj[keys[idx]] !== undefined) return obj[keys[idx]];
-        }
-        return null;
-      }
-      for (var j = 0; j < prodArray.length; j++) {
-        var descVal = getProp(prodArray[j], ["Description", "description"]);
-        if (descVal && descVal.toLowerCase() === productDesc) {
-          matches.push(prodArray[j]);
-        }
-      }
-      if (matches.length > 0) {
-        var latest = matches[0];
-        for (var k = 1; k < matches.length; k++) {
-          var dateLatest = new Date(getProp(latest, ["Date", "date"]));
-          var dateCurrent = new Date(getProp(matches[k], ["Date", "date"]));
-          if (dateCurrent > dateLatest) {
-            latest = matches[k];
-          }
-        }
-        var lastPriceInput = predRows[i].querySelector("input.last-price");
-        lastPriceInput.value = getProp(latest, ["Price per Unit", "price per unit", "Price", "price"]);
-        recalcRow(predRows[i]);
-      }
-    }
-  }
-  
-  // Call updatePredeterminedRows on page load.
-  updatePredeterminedRows();
-  
-  // Also update predetermined rows when the lookup supply dropdown changes.
-  document.getElementById("lookupSupply").addEventListener("change", function() {
-    updatePredeterminedRows();
-  });
-  
-  // Attach change event listeners for predetermined rows (for quantity changes).
-  var predRows = document.querySelectorAll("#material-list tr.predetermined");
-  for (var i = 0; i < predRows.length; i++) {
-    var qtyInput = predRows[i].querySelector("input.quantity");
-    if (qtyInput) {
-      qtyInput.addEventListener("change", function() {
-        recalcRow(this.parentNode.parentNode);
-      });
-    }
-  }
-  
-  // Add Manual Item: append a new row to the table.
-  document.getElementById("add-item").addEventListener("click", function() {
-    var table = document.getElementById("material-list");
-    var row = table.insertRow();
-    row.innerHTML = 
-      '<td><input type="number" class="form-control quantity" placeholder="Quantity"></td>' +
-      '<td><input type="text" class="form-control product" placeholder="Enter product" list="supply1List"></td>' +
-      '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
-      '<td class="total">0.00</td>' +
-      '<td><button type="button" class="btn btn-danger remove-item">Remove</button></td>';
-    
-    var productInput = row.querySelector("input.product");
-    productInput.addEventListener("change", function() {
-      var inputVal = this.value.trim().toLowerCase();
-      // Read the current lookup supply from the dropdown:
-      var lookupSupply = document.getElementById("lookupSupply").value;
-      console.log("Lookup supply selected:", lookupSupply);
-      // Choose the correct product array based on the current selection:
-      var prodArray = (lookupSupply === "supply2") ? supply2Products : supply1Products;
-      console.log("Using product array with length:", prodArray.length);
-      var matches = [];
-      function getProp(obj, keys) {
-        for (var idx = 0; idx < keys.length; idx++) {
-          if (obj[keys[idx]] !== undefined) return obj[keys[idx]];
-        }
-        return null;
-      }
-      for (var j = 0; j < prodArray.length; j++) {
-        var descVal = getProp(prodArray[j], ["Description", "description"]);
-        if (descVal && descVal.toLowerCase() === inputVal) {
-          matches.push(prodArray[j]);
-        }
-      }
-      if (matches.length > 0) {
-        var latest = matches[0];
-        for (var k = 1; k < matches.length; k++) {
-          var dateLatest = new Date(getProp(latest, ["Date", "date"]));
-          var dateCurrent = new Date(getProp(matches[k], ["Date", "date"]));
-          if (dateCurrent > dateLatest) {
-            latest = matches[k];
-          }
-        }
-        row.querySelector("input.last-price").value = getProp(latest, ["Price per Unit", "price per unit", "Price", "price"]);
-        recalcRow(row);
-      } else {
-        console.log("No matching product found in " + lookupSupply);
-      }
-    });
-    
-    var quantityInput = row.querySelector("input.quantity");
-    quantityInput.addEventListener("change", function() {
-      recalcRow(row);
-    });
-    var lastPriceInput = row.querySelector("input.last-price");
-    lastPriceInput.addEventListener("change", function() {
-      recalcRow(row);
-    });
-    row.querySelector(".remove-item").addEventListener("click", function() {
-      row.parentNode.removeChild(row);
-    });
-  });
-  
-  // On Export to PDF, gather data from all rows and prompt for including price.
-  document.getElementById("export-pdf").addEventListener("click", function() {
-    var includePrice = confirm("Would you like to include the price in the PDF?");
-    document.getElementById("include_price").value = includePrice ? "yes" : "no";
-    
-    var productData = [];
-    var rows = document.querySelectorAll("#material-list tr");
-    for (var i = 0; i < rows.length; i++) {
-      var product;
-      if (rows[i].classList.contains("predetermined")) {
-        product = rows[i].cells[1].innerText.trim();
-      } else {
-        product = rows[i].querySelector("input.product").value;
-      }
-      var lastPrice = rows[i].querySelector("input.last-price").value;
-      var quantity = rows[i].querySelector("input.quantity").value;
-      var total = rows[i].querySelector(".total").innerText;
-      productData.push({
-        description: product,
-        last_price: lastPrice,
-        quantity: quantity,
-        total: total
-      });
-    }
-    document.getElementById("product_data").value = JSON.stringify(productData);
-    document.getElementById("material-form").submit();
-  });
+var supply1Products = {{ supply1_products|tojson }};
+var supply2Products = {{ supply2_products|tojson }};
+function recalcRow(row){ var lp=parseFloat(row.querySelector('input.last-price').value)||0; var qty=parseFloat(row.querySelector('input.quantity').value)||0; row.querySelector('.total').innerText=(lp*qty).toFixed(2); }
+function updatePredeterminedRows(){ var lookup=document.getElementById('lookupSupply').value; var prodArray=(lookup==='supply2')?supply2Products:supply1Products; var rows=document.querySelectorAll('#material-list tr.predetermined');
+  rows.forEach(function(r){ var desc=r.cells[1].innerText.trim().toLowerCase(); var matches=prodArray.filter(function(p){return (p.Description||p.description||'').toLowerCase()===desc;}); if(matches.length){ var latest=matches.reduce(function(a,b){ var da=new Date(a.Date||a.date); var db=new Date(b.Date||b.date); return db>da?b:a; }); r.querySelector('input.last-price').value=latest['Price per Unit']||latest['price per unit']||latest.Price||latest.price; recalcRow(r); } }); }
+updatePredeterminedRows();
+document.getElementById('lookupSupply').addEventListener('change', updatePredeterminedRows);
+var predRows=document.querySelectorAll('#material-list tr.predetermined');
+predRows.forEach(function(r){ var qty=r.querySelector('input.quantity'); if(qty){ qty.addEventListener('change',function(){ recalcRow(r); }); } });
+document.getElementById('add-item').addEventListener('click', function(){ var table=document.getElementById('material-list'); var row=table.insertRow(); row.innerHTML='<td><input type="number" class="form-control quantity" placeholder="Quantity"></td><td><input type="text" class="form-control product" placeholder="Enter product" list="supply1List"></td><td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td><td class="total">0.00</td><td><button type="button" class="btn btn-danger remove-item">Remove</button></td>'; var productInput=row.querySelector('input.product'); productInput.addEventListener('change', function(){ var val=this.value.trim().toLowerCase(); var lookup=document.getElementById('lookupSupply').value; var prodArray=(lookup==='supply2')?supply2Products:supply1Products; var matches=prodArray.filter(function(p){return (p.Description||p.description||'').toLowerCase()===val;}); if(matches.length){ var latest=matches.reduce(function(a,b){ return new Date((b.Date||b.date))>new Date((a.Date||a.date))?b:a; }); row.querySelector('input.last-price').value=latest['Price per Unit']||latest['price per unit']||latest.Price||latest.price; recalcRow(row);} }); row.querySelector('input.quantity').addEventListener('change',function(){ recalcRow(row); }); row.querySelector('input.last-price').addEventListener('change',function(){ recalcRow(row); }); row.querySelector('.remove-item').addEventListener('click', function(){ row.remove(); }); });
+document.getElementById('export-pdf').addEventListener('click', function(){ var includePrice=confirm('Would you like to include the price in the PDF?'); document.getElementById('include_price').value=includePrice?'yes':'no'; var productData=[]; var rows=document.querySelectorAll('#material-list tr'); rows.forEach(function(r){ var product=r.classList.contains('predetermined')?r.cells[1].innerText.trim():r.querySelector('input.product').value; var lastPrice=r.querySelector('input.last-price').value; var quantity=r.querySelector('input.quantity').value; var total=r.querySelector('.total').innerText; productData.push({description:product,last_price:lastPrice,quantity:quantity,total:total}); }); document.getElementById('product_data').value=JSON.stringify(productData); document.getElementById('material-form').submit(); });
 </script>
-</body>
-</html>
+{% endblock %}
