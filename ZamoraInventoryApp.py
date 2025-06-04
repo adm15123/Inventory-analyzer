@@ -7,11 +7,13 @@ from flask import (
     flash,
     send_file,
     session,
+    jsonify,
 )
 import io
 import matplotlib.pyplot as plt
 from datetime import datetime
 import time
+import json
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 
 # Additional imports for login functionality
@@ -174,11 +176,11 @@ def search():
         return redirect(url_for("index"))
     
     results = None
-    query = ""
-    if request.method == "POST":
-        supply = request.form.get("supply", "supply1")
-        current_df = get_current_dataframe(supply)
-        query = request.form.get("query")
+    query = request.form.get("query") if request.method == "POST" else request.args.get("query", "")
+    if request.method == "POST" or query:
+        if request.method == "POST":
+            supply = request.form.get("supply", "supply1")
+            current_df = get_current_dataframe(supply)
         if not query:
             flash("⚠ Please enter a search term.")
         else:
@@ -216,6 +218,41 @@ def search():
         prev_page=prev_page,
         page=page,
     )
+
+
+@app.route("/api/search", methods=["GET"])
+@login_required
+def api_search():
+    supply = request.args.get("supply", "supply1")
+    query = request.args.get("query", "")
+    page = request.args.get("page", 1, type=int)
+    per_page = 20
+
+    current_df = get_current_dataframe(supply)
+    if current_df is None or not query:
+        return jsonify({"data": [], "next_page": None, "prev_page": None})
+
+    preprocessed_query = preprocess_text_for_search(query)
+    keywords = preprocessed_query.split()
+    results = current_df[current_df["Description"].apply(
+        lambda desc: all(keyword in preprocess_text_for_search(desc) for keyword in keywords)
+    )]
+
+    if "Date" in results.columns and "Description" in results.columns:
+        date_index = list(results.columns).index("Date")
+        results = results.copy()
+        results.insert(
+            date_index + 1,
+            "Graph",
+            results["Description"].apply(
+                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
+            ),
+        )
+    page_df = du.paginate_dataframe(results, page, per_page)
+    json_data = json.loads(page_df.to_json(orient="records", date_format="iso"))
+    next_page = page + 1 if len(results) > page * per_page else None
+    prev_page = page - 1 if page > 1 else None
+    return jsonify({"data": json_data, "next_page": next_page, "prev_page": prev_page})
 
 @app.route("/graph")
 @login_required
@@ -333,7 +370,6 @@ def material_list():
         contractor = request.form.get("contractor")
         address = request.form.get("address")
         order_date = request.form.get("date")
-        import json
         product_data_json = request.form.get("product_data")
         try:
             product_data = json.loads(product_data_json) if product_data_json else []
