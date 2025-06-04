@@ -36,7 +36,22 @@
     </div>
     <button type="submit" class="btn btn-primary">Search</button>
   </form>
-  <table id="resultsTable" class="table table-striped"></table>
+  <button id="showAll" class="btn btn-secondary mb-2">Show All</button>
+  <div id="tableWrapper">
+  <table id="resultsTable" class="table table-striped">
+    <thead>
+      <tr>
+        <th>Item Number</th>
+        <th>Description</th>
+        <th>Price per Unit</th>
+        <th>Unit</th>
+        <th>Invoice No.</th>
+        <th>Date</th>
+        <th>Graph</th>
+      </tr>
+    </thead>
+  </table>
+  </div>
   <script>
     $(document).ready(function(){
       var table = $('#resultsTable').DataTable({
@@ -45,19 +60,31 @@
           data: function(d){
             d.query = $('#query').val();
             d.supply = $('#supply').val();
+          },
           dataSrc: ''
         },
         columns: [
-          { data: 'Date' },
-          { data: 'Graph', orderable:false },
+          { data: 'Item Number' },
           { data: 'Description' },
-          { data: 'Price per Unit' }
+          { data: 'Price per Unit' },
+          { data: 'Unit' },
+          { data: 'Invoice No' },
+          { data: 'Date' },
+          { data: 'Graph', orderable:false }
+        ],
+        pageLength: 10,
+        columnDefs: [
+          { targets: [0,2,3,4,5,6], searchable: false },
+          { targets: 6, orderable: false }
         ]
       });
       $('#searchForm').on('submit', function(e){
-
         e.preventDefault();
         table.ajax.reload();
+      });
+      $('#showAll').on('click', function(){
+        table.page.len(-1).draw();
+        $('#tableWrapper').css({'max-height':'400px','overflow-y':'auto'});
       });
     });
   </script>
