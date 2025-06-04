@@ -26,5 +26,5 @@
 {% endif %}
 {% endblock %}
 {% block extra_scripts %}
-<script>$(document).ready(function(){ if ($('#data-table').length){ $('#data-table').DataTable(); } });</script>
+<script>$(document).ready(function(){ if ($('#data-table').length){ $('#data-table').DataTable({pageLength:20,lengthMenu:[[20,50,100],[20,50,100]]}); } });</script>
 {% endblock %}
