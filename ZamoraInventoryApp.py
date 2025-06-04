@@ -471,6 +471,12 @@ def view_all_data():
     if current_df is None:
         return jsonify([])
     df_temp = current_df.copy()
+    if "Item No." in df_temp.columns and "Item Number" not in df_temp.columns:
+        df_temp.rename(columns={"Item No.": "Item Number"}, inplace=True)
+    if "Invoice No." in df_temp.columns and "Invoice No" not in df_temp.columns:
+        df_temp.rename(columns={"Invoice No.": "Invoice No"}, inplace=True)
+    if "Item Number" in df_temp.columns:
+        df_temp = df_temp.sort_values("Item Number")
     if "Date" in df_temp.columns and "Description" in df_temp.columns:
         date_index = list(df_temp.columns).index("Date")
         df_temp.insert(
@@ -501,6 +507,12 @@ def search_data():
         results = pd.DataFrame()
     if results.empty:
         return jsonify([])
+    if "Item No." in results.columns and "Item Number" not in results.columns:
+        results.rename(columns={"Item No.": "Item Number"}, inplace=True)
+    if "Invoice No." in results.columns and "Invoice No" not in results.columns:
+        results.rename(columns={"Invoice No.": "Invoice No"}, inplace=True)
+    if "Item Number" in results.columns:
+        results = results.sort_values("Item Number")
     if "Date" in results.columns and "Description" in results.columns:
         date_index = list(results.columns).index("Date")
         results.insert(
