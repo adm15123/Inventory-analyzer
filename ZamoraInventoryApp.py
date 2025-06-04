@@ -12,6 +12,7 @@ from flask import (
 import io
 import matplotlib.pyplot as plt
 from datetime import datetime
+import pandas as pd
 import time
 import json
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
@@ -319,6 +320,20 @@ def graph():
     output.seek(0)
     return send_file(output, mimetype="image/png")
 
+@app.route("/graph_data")
+@login_required
+def graph_data():
+    supply = request.args.get("supply", "supply1")
+    current_df = get_current_dataframe(supply)
+    description = request.args.get("description")
+    if current_df is None or not description:
+        return jsonify({"dates": [], "prices": []})
+    filtered_data = current_df[current_df["Description"].str.lower().str.strip().str.contains(description.lower().strip(), na=False)]
+    filtered_data = filtered_data.dropna(subset=["Date"]).sort_values(by="Date")
+    dates = filtered_data["Date"].dt.strftime("%Y-%m-%d").tolist()
+    prices = filtered_data["Price per Unit"].tolist()
+    return jsonify({"dates": dates, "prices": prices})
+
 @app.route("/analyze", methods=["GET", "POST"])
 @login_required
 def analyze():
@@ -390,7 +405,7 @@ def product_detail():
         return redirect(url_for("view_all", supply=supply))
     
     filtered_data = filtered_data.dropna(subset=["Date"]).sort_values(by="Date")
-    table_html = filtered_data[['Date', 'Price per Unit']].to_html(classes="table table-striped", index=False)
+    table_html = filtered_data[['Date', 'Price per Unit']].to_html(table_id="data-table", classes="table table-striped", index=False)
     ref = request.args.get("ref", "view_all")  # defaults to view_all if not provided
     query = request.args.get("query", "")       # Get the search query if available
     return render_template("product_detail.html", description=description, table=table_html, supply=supply, ref=ref, query=query)
