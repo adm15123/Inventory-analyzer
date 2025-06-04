@@ -45,7 +45,7 @@
           data: function(d){
             d.query = $('#query').val();
             d.supply = $('#supply').val();
-          }
+          dataSrc: ''
         },
         columns: [
           { data: 'Date' },
@@ -54,7 +54,8 @@
           { data: 'Price per Unit' }
         ]
       });
-       $('#searchForm').on('submit', function(e){
+      $('#searchForm').on('submit', function(e){
+
         e.preventDefault();
         table.ajax.reload();
       });
