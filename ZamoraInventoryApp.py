@@ -160,10 +160,7 @@ def view_all():
         ]
         existing_columns = [c for c in desired_order if c in df_temp.columns]
         df_temp = df_temp[existing_columns]
-    page_df = du.paginate_dataframe(df_temp, page, per_page)
-    table_html = page_df.to_html(table_id="data-table", classes="table table-striped", index=False, escape=False)
-    next_page = page + 1 if len(df_temp) > page * per_page else None
-    prev_page = page - 1 if page > 1 else None
+    table_html = df_temp.to_html(table_id="data-table", classes="table table-striped", index=False, escape=False)
     return render_template(
         "view_all.html",
         table=table_html,
