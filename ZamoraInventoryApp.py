@@ -12,6 +12,7 @@ from flask import (
 import io
 import matplotlib.pyplot as plt
 from datetime import datetime
+import pandas as pd
 import time
 import json
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
@@ -138,6 +139,8 @@ def view_all():
         return redirect(url_for("index"))
 
     df_temp = current_df.copy()
+    if "Date" in df_temp.columns:
+        df_temp["Date"] = df_temp["Date"].dt.strftime("%Y-%m-%d")
     if "Date" in df_temp.columns and "Description" in df_temp.columns:
         date_index = list(df_temp.columns).index("Date")
         df_temp.insert(
@@ -161,7 +164,7 @@ def view_all():
         df_temp = df_temp[existing_columns]
 
     page_df = du.paginate_dataframe(df_temp, page, per_page)
-    table_html = page_df.to_html(classes="table table-striped", index=False, escape=False)
+    table_html = page_df.to_html(table_id="data-table", classes="table table-striped", index=False, escape=False)
     next_page = page + 1 if len(df_temp) > page * per_page else None
     prev_page = page - 1 if page > 1 else None
     return render_template(
@@ -181,7 +184,7 @@ def search():
     """
     supply = request.args.get("supply", "supply1")
     page = request.args.get("page", 1, type=int)
-    per_page = 50
+    per_page = None
     current_df = get_current_dataframe(supply)
     if current_df is None:
         flash("⚠ Please ensure the Excel file for the selected supply is available.")
@@ -205,6 +208,8 @@ def search():
                 flash("⚠ No matching results found.")
     
     if results is not None and not results.empty:
+        if "Date" in results.columns:
+            results["Date"] = results["Date"].dt.strftime("%Y-%m-%d")
         if "Date" in results.columns and "Description" in results.columns:
             date_index = list(results.columns).index("Date")
             results.insert(
@@ -225,10 +230,13 @@ def search():
             ]
             existing_cols = [c for c in desired_order if c in results.columns]
             results = results[existing_cols]
-        page_df = du.paginate_dataframe(results, page, per_page)
-        table_html = page_df.to_html(classes="table table-striped", index=False, escape=False)
-        next_page = page + 1 if len(results) > page * per_page else None
-        prev_page = page - 1 if page > 1 else None
+        if per_page:
+            page_df = du.paginate_dataframe(results, page, per_page)
+        else:
+            page_df = results
+        table_html = page_df.to_html(table_id="data-table", classes="table table-striped", index=False, escape=False)
+        next_page = page + 1 if per_page and len(results) > page * per_page else None
+        prev_page = page - 1 if per_page and page > 1 else None
     else:
         table_html = None
         next_page = prev_page = None
@@ -249,7 +257,7 @@ def api_search():
     supply = request.args.get("supply", "supply1")
     query = request.args.get("query", "")
     page = request.args.get("page", 1, type=int)
-    per_page = 20
+    per_page = request.args.get("per_page", type=int)
 
     current_df = get_current_dataframe(supply)
     if current_df is None or not query:
@@ -281,10 +289,17 @@ def api_search():
         ]
         existing_cols = [c for c in desired_order if c in results.columns]
         results = results[existing_cols]
-    page_df = du.paginate_dataframe(results, page, per_page)
-    json_data = json.loads(page_df.to_json(orient="records", date_format="iso"))
-    next_page = page + 1 if len(results) > page * per_page else None
-    prev_page = page - 1 if page > 1 else None
+    if "Date" in results.columns:
+        results["Date"] = results["Date"].dt.strftime("%Y-%m-%d")
+
+    if per_page:
+        page_df = du.paginate_dataframe(results, page, per_page)
+    else:
+        page_df = results
+
+    json_data = json.loads(page_df.to_json(orient="records"))
+    next_page = page + 1 if per_page and len(results) > page * per_page else None
+    prev_page = page - 1 if per_page and page > 1 else None
     return jsonify({"data": json_data, "next_page": next_page, "prev_page": prev_page})
 
 @app.route("/graph")
@@ -318,6 +333,20 @@ def graph():
     plt.close(fig)
     output.seek(0)
     return send_file(output, mimetype="image/png")
+
+@app.route("/graph_data")
+@login_required
+def graph_data():
+    supply = request.args.get("supply", "supply1")
+    current_df = get_current_dataframe(supply)
+    description = request.args.get("description")
+    if current_df is None or not description:
+        return jsonify({"dates": [], "prices": []})
+    filtered_data = current_df[current_df["Description"].str.lower().str.strip().str.contains(description.lower().strip(), na=False)]
+    filtered_data = filtered_data.dropna(subset=["Date"]).sort_values(by="Date")
+    dates = filtered_data["Date"].dt.strftime("%Y-%m-%d").tolist()
+    prices = filtered_data["Price per Unit"].tolist()
+    return jsonify({"dates": dates, "prices": prices})
 
 @app.route("/analyze", methods=["GET", "POST"])
 @login_required
@@ -365,7 +394,7 @@ def analyze():
         except Exception as e:
             flash(f"❌ Error analyzing price changes: {e}")
     
-    table_html = results.to_html(classes="table table-striped", index=False) if results is not None else None
+    table_html = results.to_html(table_id="data-table", classes="table table-striped", index=False) if results is not None else None
     return render_template("analyze.html", table=table_html, supply=supply)
 
 @app.route("/product_detail", methods=["GET"])
@@ -390,7 +419,9 @@ def product_detail():
         return redirect(url_for("view_all", supply=supply))
     
     filtered_data = filtered_data.dropna(subset=["Date"]).sort_values(by="Date")
-    table_html = filtered_data[['Date', 'Price per Unit']].to_html(classes="table table-striped", index=False)
+    if "Date" in filtered_data.columns:
+        filtered_data["Date"] = filtered_data["Date"].dt.strftime("%Y-%m-%d")
+    table_html = filtered_data[['Date', 'Price per Unit']].to_html(table_id="data-table", classes="table table-striped", index=False)
     ref = request.args.get("ref", "view_all")  # defaults to view_all if not provided
     query = request.args.get("query", "")       # Get the search query if available
     return render_template("product_detail.html", description=description, table=table_html, supply=supply, ref=ref, query=query)
