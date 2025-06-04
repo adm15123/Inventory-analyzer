@@ -1,28 +1,10 @@
-<!-- Updated index.html with Material List Button -->
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Zamora Plumbing Corp Material Analyzer</title>
-  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
-</head>
-<body>
-<div class="container">
-  <h1 class="mt-4">Zamora Plumbing Corp Material Analyzer</h1>
-  {% with messages = get_flashed_messages() %}
-    {% if messages %}
-      <div class="alert alert-info">
-        {% for message in messages %}
-          <p>{{ message }}</p>
-        {% endfor %}
-      </div>
-    {% endif %}
-  {% endwith %}
-  <hr>
-  <a href="{{ url_for('view_all') }}" class="btn btn-secondary">View All Content</a>
-  <a href="{{ url_for('search') }}" class="btn btn-secondary">Search Description</a>
-  <a href="{{ url_for('analyze') }}" class="btn btn-secondary">Analyze Price Changes</a>
-  <a href="{{ url_for('material_list') }}" class="btn btn-primary">Material List</a>
-</div>
-</body>
-</html>
+{% extends 'base.html' %}
+{% block title %}Home{% endblock %}
+{% block content %}
+<h1 class="mt-4">Zamora Plumbing Corp Material Analyzer</h1>
+<hr>
+<a href="{{ url_for('view_all') }}" class="btn btn-secondary">View All Content</a>
+<a href="{{ url_for('search') }}" class="btn btn-secondary">Search Description</a>
+<a href="{{ url_for('analyze') }}" class="btn btn-secondary">Analyze Price Changes</a>
+<a href="{{ url_for('material_list') }}" class="btn btn-primary">Material List</a>
+{% endblock %}
