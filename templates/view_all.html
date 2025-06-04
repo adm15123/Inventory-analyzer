@@ -14,7 +14,10 @@
     }
     $(document).ready(function() {
       $('#resultsTable').DataTable({
-        ajax: '{{ url_for("view_all_data") }}?supply={{ supply }}',
+        ajax: {
+          url: '{{ url_for("view_all_data") }}?supply={{ supply }}',
+          dataSrc: ''
+        },
         columns: [
           { data: 'Date' },
           { data: 'Graph', orderable:false },

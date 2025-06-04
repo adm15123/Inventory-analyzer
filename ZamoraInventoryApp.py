@@ -20,7 +20,7 @@ from functools import wraps
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 app = Flask(__name__)
-app.secret_key = "your_secret_key"
+app.secret_key = os.getenv("SECRET_KEY", "change-me")
 
 # Session Timeout Configuration
 app.config["SESSION_PERMANENT"] = True
@@ -54,9 +54,9 @@ df_final = None   # Final list
 app.config["MAIL_SERVER"] = "smtp.gmail.com"
 app.config["MAIL_PORT"] = 587
 app.config["MAIL_USE_TLS"] = True
-app.config["MAIL_USERNAME"] = "aliant.delgado07@gmail.com"
-app.config["MAIL_PASSWORD"] = "lgco kmqe emqr qdrj"  # Use an app-specific password if using 2FA
-app.config["MAIL_DEFAULT_SENDER"] = "aliant.delgado07@gmail.com"
+app.config["MAIL_USERNAME"] = os.getenv("MAIL_USERNAME", "")
+app.config["MAIL_PASSWORD"] = os.getenv("MAIL_PASSWORD", "")
+app.config["MAIL_DEFAULT_SENDER"] = os.getenv("MAIL_DEFAULT_SENDER", app.config["MAIL_USERNAME"])
 
 mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.secret_key)
