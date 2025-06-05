@@ -187,7 +187,6 @@ def view_all():
         ]
         existing_columns = [c for c in desired_order if c in df_temp.columns]
         df_temp = df_temp[existing_columns]
-
     table_html = df_temp.to_html(table_id="data-table", classes="table table-striped", index=False, escape=False)
     return render_template(
         "view_all.html",
@@ -507,7 +506,6 @@ def material_list():
                     custom_templates[os.path.splitext(fname)[0]] = json.load(f)
             except Exception:
                 pass
-
     list_option_lower = list_option.lower()
     if list_option in custom_templates:
         product_list = custom_templates[list_option]
@@ -527,7 +525,6 @@ def material_list():
 
     supply1_products = du.df.to_dict("records") if du.df is not None else []
     supply2_products = du.df_supply2.to_dict("records") if du.df_supply2 is not None else []
-
     return render_template("material_list.html",
                            product_list=product_list,
                            list_option=list_option,
