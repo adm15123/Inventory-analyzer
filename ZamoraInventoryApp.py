@@ -447,7 +447,6 @@ def product_detail():
 @app.route("/material_list", methods=["GET", "POST"])
 @login_required
 def material_list():
-    global df_underground, df_rough, df_final, df
     if request.method == "POST":
         contractor = request.form.get("contractor")
         address = request.form.get("address")
@@ -512,21 +511,19 @@ def material_list():
         product_list = custom_templates[list_option]
     elif list_option == "underground":
         update_underground_prices()
-        product_list = df_underground.to_dict('records') if df_underground is not None else []
+        product_list = du.df_underground.to_dict("records") if du.df_underground is not None else []
     elif list_option == "rough":
         update_rough_prices()
-        product_list = df_rough.to_dict('records') if df_rough is not None else []
+        product_list = du.df_rough.to_dict("records") if du.df_rough is not None else []
     elif list_option == "final":
         update_final_prices()
-        product_list = df_final.to_dict('records') if df_final is not None else []
+        product_list = du.df_final.to_dict("records") if du.df_final is not None else []
     elif list_option == "new":
         product_list = []
     else:
         product_list = []
-    
-    supply1_products = df.to_dict('records') if df is not None else []
-    supply2_products = df_supply2.to_dict('records') if df_supply2 is not None else []
-
+    supply1_products = du.df.to_dict("records") if du.df is not None else []
+    supply2_products = du.df_supply2.to_dict("records") if du.df_supply2 is not None else []
     return render_template("material_list.html",
                            product_list=product_list,
                            list_option=list_option,
