@@ -508,7 +508,29 @@ def material_list():
                 pass
     list_option_lower = list_option.lower()
     if list_option in custom_templates:
-        product_list = custom_templates[list_option]
+        raw_list = custom_templates[list_option]
+        product_list = []
+        for item in raw_list:
+            desc = (
+                item.get("Product Description")
+                or item.get("description")
+                or item.get("Description")
+                or ""
+            )
+            price = (
+                item.get("Last Price")
+                or item.get("last_price")
+                or item.get("Price per Unit")
+                or 0
+            )
+            qty = item.get("quantity", 0)
+            product_list.append(
+                {
+                    "Product Description": desc,
+                    "Last Price": price,
+                    "quantity": qty,
+                }
+            )
     elif list_option_lower == "underground":
         update_underground_prices()
         product_list = du.df_underground.to_dict("records") if du.df_underground is not None else []
