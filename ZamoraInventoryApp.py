@@ -15,7 +15,10 @@ from datetime import datetime
 import pandas as pd
 import time
 import json
+import base64
+import requests
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+import os
 
 # Additional imports for login functionality
 from flask_mail import Mail, Message
@@ -106,6 +109,30 @@ get_current_dataframe = du.get_current_dataframe
 update_underground_prices = du.update_underground_prices
 update_rough_prices = du.update_rough_prices
 update_final_prices = du.update_final_prices
+
+# GitHub template saving helper
+def save_template_to_github(filename: str, content: str) -> bool:
+    """Save the given content to a GitHub repository as filename."""
+    token = config.GITHUB_TOKEN
+    repo = config.GITHUB_REPO
+    branch = config.GITHUB_BRANCH
+    if not token or not repo:
+        app.logger.error("GitHub credentials not configured")
+        return False
+
+    api_url = f"https://api.github.com/repos/{repo}/contents/{filename}"
+    headers = {"Authorization": f"Bearer {token}"}
+    get_resp = requests.get(api_url, headers=headers, params={"ref": branch})
+    sha = get_resp.json().get("sha") if get_resp.status_code == 200 else None
+    data = {
+        "message": f"Add template {filename}",
+        "content": base64.b64encode(content.encode()).decode(),
+        "branch": branch,
+    }
+    if sha:
+        data["sha"] = sha
+    resp = requests.put(api_url, headers=headers, json=data)
+    return resp.status_code in (200, 201)
 
 # Load data on startup
 load_default_file()
@@ -435,16 +462,21 @@ def material_list():
         # Retrieve include_price choice from the form:
         include_price = request.form.get("include_price", "yes")
         
-        total_cost = sum(float(item.get("total", 0)) for item in product_data)
-        
-        # Pass the include_price flag to the order summary template:
-        rendered = render_template("order_summary.html",
-                                   contractor=contractor,
-                                   address=address,
-                                   order_date=order_date,
-                                   products=product_data,
-                                   total_cost=total_cost,
-                                   include_price=include_price)
+        subtotal = sum(float(item.get("total", 0)) for item in product_data)
+        tax = subtotal * 0.07
+        total_cost = subtotal + tax
+
+        rendered = render_template(
+            "order_summary.html",
+            contractor=contractor,
+            address=address,
+            order_date=order_date,
+            products=product_data,
+            subtotal=subtotal,
+            tax=tax,
+            total_cost=total_cost,
+            include_price=include_price,
+        )
         import pdfkit
         try:
             pdf = pdfkit.from_string(rendered, False)
@@ -463,9 +495,22 @@ def material_list():
             flash(f"Error sending email: {e}", "danger")
         return redirect(url_for("material_list"))
     
-    # For GET: (existing code to load predetermined list and supply data)
+    # For GET: load predetermined or saved templates
     list_option = request.args.get("list", "underground").lower()
-    if list_option == "underground":
+    templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
+    os.makedirs(templates_dir, exist_ok=True)
+    custom_templates = {}
+    for fname in os.listdir(templates_dir):
+        if fname.endswith(".json"):
+            try:
+                with open(os.path.join(templates_dir, fname)) as f:
+                    custom_templates[os.path.splitext(fname)[0]] = json.load(f)
+            except Exception:
+                pass
+
+    if list_option in custom_templates:
+        product_list = custom_templates[list_option]
+    elif list_option == "underground":
         update_underground_prices()
         product_list = df_underground.to_dict('records') if df_underground is not None else []
     elif list_option == "rough":
@@ -481,12 +526,38 @@ def material_list():
     
     supply1_products = df.to_dict('records') if df is not None else []
     supply2_products = df_supply2.to_dict('records') if df_supply2 is not None else []
-    
-    return render_template("material_list.html", 
-                           product_list=product_list, 
+
+    return render_template("material_list.html",
+                           product_list=product_list,
                            list_option=list_option,
+                           custom_templates=list(custom_templates.keys()),
                            supply1_products=supply1_products,
                            supply2_products=supply2_products)
+
+@app.route("/save_template", methods=["POST"])
+@login_required
+def save_template():
+    template_name = request.form.get("template_name")
+    product_data = request.form.get("product_data")
+    if not template_name or not product_data:
+        flash("Template name and data are required.", "danger")
+        return redirect(url_for("material_list"))
+    filename = f"templates/{template_name}.json"
+    # Save locally
+    templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
+    os.makedirs(templates_dir, exist_ok=True)
+    try:
+        with open(os.path.join(templates_dir, f"{template_name}.json"), "w") as f:
+            f.write(product_data)
+    except Exception as e:
+        app.logger.error(f"Local template save failed: {e}")
+
+    success = save_template_to_github(filename, product_data)
+    if success:
+        flash("Template saved to GitHub.", "success")
+    else:
+        flash("Failed to save template to GitHub.", "danger")
+    return redirect(url_for("material_list"))
 # -------------------------------
 # Login and Logout Routes
 # -------------------------------

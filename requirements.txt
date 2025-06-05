@@ -7,4 +7,5 @@ openpyxl
 flask-mail
 itsdangerous
 pdfkit
+requests
 
