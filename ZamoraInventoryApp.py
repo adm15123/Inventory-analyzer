@@ -495,7 +495,7 @@ def material_list():
         return redirect(url_for("material_list"))
     
     # For GET: load predetermined or saved templates
-    list_option = request.args.get("list", "underground").lower()
+    list_option = request.args.get("list", "underground")
     templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
     os.makedirs(templates_dir, exist_ok=True)
     custom_templates = {}
@@ -506,22 +506,23 @@ def material_list():
                     custom_templates[os.path.splitext(fname)[0]] = json.load(f)
             except Exception:
                 pass
-
+    list_option_lower = list_option.lower()
     if list_option in custom_templates:
         product_list = custom_templates[list_option]
-    elif list_option == "underground":
+    elif list_option_lower == "underground":
         update_underground_prices()
         product_list = du.df_underground.to_dict("records") if du.df_underground is not None else []
-    elif list_option == "rough":
+    elif list_option_lower == "rough":
         update_rough_prices()
         product_list = du.df_rough.to_dict("records") if du.df_rough is not None else []
-    elif list_option == "final":
+    elif list_option_lower == "final":
         update_final_prices()
         product_list = du.df_final.to_dict("records") if du.df_final is not None else []
-    elif list_option == "new":
+    elif list_option_lower == "new":
         product_list = []
     else:
         product_list = []
+
     supply1_products = du.df.to_dict("records") if du.df is not None else []
     supply2_products = du.df_supply2.to_dict("records") if du.df_supply2 is not None else []
     return render_template("material_list.html",
