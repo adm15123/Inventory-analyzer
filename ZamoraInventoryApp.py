@@ -187,7 +187,6 @@ def view_all():
         ]
         existing_columns = [c for c in desired_order if c in df_temp.columns]
         df_temp = df_temp[existing_columns]
-
     table_html = df_temp.to_html(table_id="data-table", classes="table table-striped", index=False, escape=False)
     return render_template(
         "view_all.html",
