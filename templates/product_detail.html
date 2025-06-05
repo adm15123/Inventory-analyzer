@@ -1,46 +1,30 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <title>Product Detail</title>
-  <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.0/css/bootstrap.min.css">
-  <style>
-    .graph-container img {
-      width: 100%;
-      height: auto;
-    }
-  </style>
-</head>
-<body>
-<div class="container">
-  <h1 class="mt-4">Product Detail for "{{ description }}"</h1>
-  {% with messages = get_flashed_messages() %}
-    {% if messages %}
-      <div class="alert alert-info">
-        {% for message in messages %}
-          <p>{{ message }}</p>
-        {% endfor %}
-      </div>
-    {% endif %}
-  {% endwith %}
-  
-  <!-- Back button: if ref is "search", pass the query to preserve filter -->
-  {% if ref == "search" %}
-    <a href="{{ url_for(ref, supply=supply, query=query) }}" class="btn btn-secondary mb-3">Back</a>
-  {% else %}
-    <a href="{{ url_for(ref, supply=supply) }}" class="btn btn-secondary mb-3">Back</a>
-  {% endif %}
-  
-  <div class="row">
-    <!-- Graph column -->
-    <div class="col-md-8 graph-container">
-      <img src="{{ url_for('graph', description=description, supply=supply, ref=ref) }}" alt="Graph for {{ description }}" class="img-fluid">
-    </div>
-    <!-- Table column -->
-    <div class="col-md-4">
-      {{ table | safe }}
-    </div>
+{% extends 'base.html' %}
+{% block title %}Product Detail{% endblock %}
+{% block content %}
+<h1 class="mt-4">Product Detail for "{{ description }}"</h1>
+{% if ref == 'search' %}
+  <a href="{{ url_for(ref, supply=supply, query=query) }}" class="btn btn-secondary mb-3">Back</a>
+{% else %}
+  <a href="{{ url_for(ref, supply=supply) }}" class="btn btn-secondary mb-3">Back</a>
+{% endif %}
+<div class="row">
+  <div class="col-md-8">
+    <canvas id="priceChart"></canvas>
+  </div>
+  <div class="col-md-4">
+    {{ table | safe }}
   </div>
 </div>
-</body>
-</html>
+{% endblock %}
+{% block extra_scripts %}
+<script>
+fetch('{{ url_for('graph_data', description=description, supply=supply) }}')
+  .then(r=>r.json()).then(data=>{
+    new Chart(document.getElementById('priceChart'), {
+      type:'line',
+      data:{ labels:data.dates, datasets:[{ label:'Price per Unit', data:data.prices, borderColor:'rgb(75, 192, 192)', fill:false }] },
+      options:{ scales:{ x:{ title:{ display:true, text:'Date'}}, y:{ title:{ display:true, text:'Price per Unit'}}}}
+    });
+  });
+</script>
+{% endblock %}
