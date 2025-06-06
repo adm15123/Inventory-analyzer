@@ -133,13 +133,44 @@ def save_template_to_github(filename: str, content: str) -> bool:
         data["sha"] = sha
     resp = requests.put(api_url, headers=headers, json=data)
     return resp.status_code in (200, 201)
+# Helper to pull templates from GitHub when not present locally
+def load_templates_from_github():
+    """Fetch template JSON files from GitHub and cache them locally."""
+    token = config.GITHUB_TOKEN
+    repo = config.GITHUB_REPO
+    branch = config.GITHUB_BRANCH
+    if not token or not repo:
+        return
 
+    templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
+    os.makedirs(templates_dir, exist_ok=True)
+
+    api_url = f"https://api.github.com/repos/{repo}/contents/templates"
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {"ref": branch}
+    try:
+        resp = requests.get(api_url, headers=headers, params=params)
+        resp.raise_for_status()
+        for item in resp.json():
+            if item.get("name", "").endswith(".json"):
+                download_url = item.get("url")
+                if not download_url:
+                    continue
+                file_resp = requests.get(download_url, headers=headers, params=params)
+                if file_resp.status_code != 200:
+                    continue
+                content = base64.b64decode(file_resp.json().get("content", "")).decode()
+                with open(os.path.join(templates_dir, item["name"]), "w") as f:
+                    f.write(content)
+    except Exception as e:
+        app.logger.error(f"Error fetching templates from GitHub: {e}")
 # Load data on startup
 load_default_file()
 load_supply2_file()
 load_underground_list()
 load_rough_list()
 load_final_list()
+load_templates_from_github()
 
 
 # -------------------------------
@@ -496,6 +527,7 @@ def material_list():
     
     # For GET: load predetermined or saved templates
     list_option = request.args.get("list", "underground")
+    load_templates_from_github()
     templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
     os.makedirs(templates_dir, exist_ok=True)
     custom_templates = {}
