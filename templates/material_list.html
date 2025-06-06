@@ -7,6 +7,9 @@
 {% endblock %}
 {% block content %}
 <h1 class="mt-4">Material List</h1>
+{% if template_name %}
+<p class="text-info">Editing template: {{ template_name }}</p>
+{% endif %}
 <a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">Back</a>
 <div class="form-group">
   <label for="listSelector">Choose Template:</label>
@@ -20,6 +23,19 @@
     {% endfor %}
   </select>
 </div>
+{% if custom_templates %}
+<ul class="list-unstyled">
+  {% for name in custom_templates %}
+  <li>
+    {{ name }}
+    <a href="{{ url_for('edit_template', name=name) }}" class="ms-2">Edit</a>
+    <form action="{{ url_for('delete_template', name=name) }}" method="post" class="d-inline" onsubmit="return confirm('Delete template?');">
+      <button type="submit" class="btn btn-link p-0">Delete</button>
+    </form>
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
 <div class="form-group">
   <label for="lookupSupply">Choose Supply for Lookup:</label>
   <select id="lookupSupply" class="form-control">
@@ -75,7 +91,7 @@
   <button type="button" class="btn btn-primary" id="add-item">Add Manual Item</button>
   <button type="button" class="btn btn-success" id="export-pdf">Export to PDF</button>
   <div class="input-group mt-3 mb-3">
-    <input type="text" class="form-control" id="template-name" placeholder="Template name">
+    <input type="text" class="form-control" id="template-name" placeholder="Template name" value="{{ template_name }}">
     <button type="button" class="btn btn-secondary" id="save-template">Save Template</button>
   </div>
   <input type="hidden" name="product_data" id="product_data">
