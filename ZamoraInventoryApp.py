@@ -133,7 +133,6 @@ def save_template_to_github(filename: str, content: str) -> bool:
         data["sha"] = sha
     resp = requests.put(api_url, headers=headers, json=data)
     return resp.status_code in (200, 201)
-
 # Helper to pull templates from GitHub when not present locally
 def load_templates_from_github():
     """Fetch template JSON files from GitHub and cache them locally."""
@@ -165,7 +164,6 @@ def load_templates_from_github():
                     f.write(content)
     except Exception as e:
         app.logger.error(f"Error fetching templates from GitHub: {e}")
-
 # Load data on startup
 load_default_file()
 load_supply2_file()
@@ -220,7 +218,6 @@ def view_all():
         ]
         existing_columns = [c for c in desired_order if c in df_temp.columns]
         df_temp = df_temp[existing_columns]
-
     table_html = df_temp.to_html(table_id="data-table", classes="table table-striped", index=False, escape=False)
     return render_template(
         "view_all.html",
@@ -541,7 +538,6 @@ def material_list():
                     custom_templates[os.path.splitext(fname)[0]] = json.load(f)
             except Exception:
                 pass
-
     list_option_lower = list_option.lower()
     if list_option in custom_templates:
         raw_list = custom_templates[list_option]
@@ -583,7 +579,6 @@ def material_list():
 
     supply1_products = du.df.to_dict("records") if du.df is not None else []
     supply2_products = du.df_supply2.to_dict("records") if du.df_supply2 is not None else []
-
     return render_template("material_list.html",
                            product_list=product_list,
                            list_option=list_option,
