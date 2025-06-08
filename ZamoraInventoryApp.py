@@ -55,7 +55,8 @@ ALLOWED_EMAILS = config.ALLOWED_EMAILS
 
 # Buffer to temporarily store generated order summary PDFs
 pdf_buffer: io.BytesIO | None = None
-
+# In-memory store for PDFs keyed by session token
+pdf_store: dict[str, bytes] = {}
 # -------------------------------
 # Global Before-Request Handler (Session Timeout)
 # -------------------------------
@@ -537,6 +538,14 @@ def material_list():
             global pdf_buffer
             pdf_buffer = io.BytesIO(pdf)
             pdf_buffer.seek(0)
+            # Store in-memory using a token in the session
+            old_token = session.pop("pdf_token", None)
+            if old_token:
+                pdf_store.pop(old_token, None)
+            import uuid
+            token = uuid.uuid4().hex
+            pdf_store[token] = pdf
+            session["pdf_token"] = token
             # Persist PDF to a temporary file for reliability across workers
             old_path = session.pop("pdf_path", None)
             if old_path and os.path.exists(old_path):
@@ -544,7 +553,6 @@ def material_list():
                     os.remove(old_path)
                 except OSError:
                     pass
-            import uuid
             pdf_filename = f"order_summary_{uuid.uuid4().hex}.pdf"
             pdf_path = os.path.join(app.config["UPLOAD_FOLDER"], pdf_filename)
             with open(pdf_path, "wb") as f:
@@ -735,7 +743,16 @@ def download_summary():
             as_attachment=True,
             download_name="order_summary.pdf",
         )
-
+    token = session.get("pdf_token")
+    if token:
+        data = pdf_store.get(token)
+        if data is not None:
+            return send_file(
+                io.BytesIO(data),
+                mimetype="application/pdf",
+                as_attachment=True,
+                download_name="order_summary.pdf",
+            )
     pdf_path = session.get("pdf_path")
     if pdf_path and os.path.exists(pdf_path):
         return send_file(
