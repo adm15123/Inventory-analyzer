@@ -33,3 +33,8 @@ ALLOWED_EMAILS = [
     "aliant.delgado01@yahoo.com",
 ]
 
+# GitHub API configuration for saving templates
+GITHUB_TOKEN = os.environ.get("GITHUB_TOKEN", "")
+GITHUB_REPO = os.environ.get("GITHUB_REPO", "username/repo")
+GITHUB_BRANCH = os.environ.get("GITHUB_BRANCH", "main")
+
