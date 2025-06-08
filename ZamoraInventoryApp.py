@@ -562,7 +562,14 @@ def material_list():
             flash("Order summary PDF sent to your email.", "success")
         except Exception as e:
             flash(f"Error sending email: {e}", "danger")
-        return redirect(url_for("material_list"))
+
+        pdf_buffer.seek(0)
+        return send_file(
+            pdf_buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name="order_summary.pdf",
+        )
     
     # For GET: load predetermined or saved templates
     list_option = request.args.get("list", "underground")
