@@ -537,6 +537,19 @@ def material_list():
             global pdf_buffer
             pdf_buffer = io.BytesIO(pdf)
             pdf_buffer.seek(0)
+            # Persist PDF to a temporary file for reliability across workers
+            old_path = session.pop("pdf_path", None)
+            if old_path and os.path.exists(old_path):
+                try:
+                    os.remove(old_path)
+                except OSError:
+                    pass
+            import uuid
+            pdf_filename = f"order_summary_{uuid.uuid4().hex}.pdf"
+            pdf_path = os.path.join(app.config["UPLOAD_FOLDER"], pdf_filename)
+            with open(pdf_path, "wb") as f:
+                f.write(pdf)
+            session["pdf_path"] = pdf_path
         except Exception as e:
             flash(f"PDF generation failed: {e}", "danger")
             return redirect(url_for("material_list"))
@@ -714,16 +727,26 @@ def rename_template(name):
 def download_summary():
     """Return the last generated order summary PDF."""
     global pdf_buffer
-    if pdf_buffer is None:
-        flash("No PDF available for download.", "warning")
-        return redirect(url_for("material_list"))
-    pdf_buffer.seek(0)
-    return send_file(
-        pdf_buffer,
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name="order_summary.pdf",
-    )
+    if pdf_buffer is not None:
+        pdf_buffer.seek(0)
+        return send_file(
+            pdf_buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name="order_summary.pdf",
+        )
+
+    pdf_path = session.get("pdf_path")
+    if pdf_path and os.path.exists(pdf_path):
+        return send_file(
+            pdf_path,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name="order_summary.pdf",
+        )
+
+    flash("No PDF available for download.", "warning")
+    return redirect(url_for("material_list"))
 # -------------------------------
 # Login and Logout Routes
 # -------------------------------
