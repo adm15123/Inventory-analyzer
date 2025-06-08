@@ -56,7 +56,6 @@ ALLOWED_EMAILS = config.ALLOWED_EMAILS
 
 # Buffer to temporarily store generated order summary PDFs
 pdf_buffer: io.BytesIO | None = None
-
 # -------------------------------
 # Global Before-Request Handler (Session Timeout)
 # -------------------------------
@@ -735,8 +734,6 @@ def download_summary():
             as_attachment=True,
             download_name="order_summary.pdf",
         )
-
-
     pdf_path = session.get("pdf_path")
     if pdf_path and os.path.exists(pdf_path):
         return send_file(
