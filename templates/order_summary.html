@@ -50,8 +50,8 @@
           <td>{{ product.quantity }}</td>
           <td>{{ product.description }}</td>
           {% if include_price == "yes" %}
-            <td>{{ "$%.2f"|format(product.last_price) }}</td>
-            <td>{{ "$%.2f"|format(product.total) }}</td>
+            <td>{{ "$%.2f"|format(product.last_price|float) }}</td>
+            <td>{{ "$%.2f"|format(product.total|float) }}</td>
           {% endif %}
         </tr>
         {% endif %}
