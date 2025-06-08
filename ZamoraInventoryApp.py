@@ -134,12 +134,64 @@ def save_template_to_github(filename: str, content: str) -> bool:
     resp = requests.put(api_url, headers=headers, json=data)
     return resp.status_code in (200, 201)
 
+# Helper to delete templates from GitHub
+def delete_template_from_github(filename: str) -> bool:
+    """Delete a template file from GitHub."""
+    token = config.GITHUB_TOKEN
+    repo = config.GITHUB_REPO
+    branch = config.GITHUB_BRANCH
+    if not token or not repo:
+        return False
+
+    api_url = f"https://api.github.com/repos/{repo}/contents/{filename}"
+    headers = {"Authorization": f"Bearer {token}"}
+    get_resp = requests.get(api_url, headers=headers, params={"ref": branch})
+    if get_resp.status_code != 200:
+        return False
+    sha = get_resp.json().get("sha")
+    if not sha:
+        return False
+    data = {"message": f"Delete template {filename}", "sha": sha, "branch": branch}
+    resp = requests.delete(api_url, headers=headers, json=data)
+    return resp.status_code == 200
+# Helper to pull templates from GitHub when not present locally
+def load_templates_from_github():
+    """Fetch template JSON files from GitHub and cache them locally."""
+    token = config.GITHUB_TOKEN
+    repo = config.GITHUB_REPO
+    branch = config.GITHUB_BRANCH
+    if not token or not repo:
+        return
+
+    templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
+    os.makedirs(templates_dir, exist_ok=True)
+
+    api_url = f"https://api.github.com/repos/{repo}/contents/templates"
+    headers = {"Authorization": f"Bearer {token}"}
+    params = {"ref": branch}
+    try:
+        resp = requests.get(api_url, headers=headers, params=params)
+        resp.raise_for_status()
+        for item in resp.json():
+            if item.get("name", "").endswith(".json"):
+                download_url = item.get("url")
+                if not download_url:
+                    continue
+                file_resp = requests.get(download_url, headers=headers, params=params)
+                if file_resp.status_code != 200:
+                    continue
+                content = base64.b64decode(file_resp.json().get("content", "")).decode()
+                with open(os.path.join(templates_dir, item["name"]), "w") as f:
+                    f.write(content)
+    except Exception as e:
+        app.logger.error(f"Error fetching templates from GitHub: {e}")
 # Load data on startup
 load_default_file()
 load_supply2_file()
 load_underground_list()
 load_rough_list()
 load_final_list()
+load_templates_from_github()
 
 
 # -------------------------------
@@ -495,7 +547,8 @@ def material_list():
         return redirect(url_for("material_list"))
     
     # For GET: load predetermined or saved templates
-    list_option = request.args.get("list", "underground").lower()
+    list_option = request.args.get("list", "underground")
+    load_templates_from_github()
     templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
     os.makedirs(templates_dir, exist_ok=True)
     custom_templates = {}
@@ -506,30 +559,59 @@ def material_list():
                     custom_templates[os.path.splitext(fname)[0]] = json.load(f)
             except Exception:
                 pass
-
+    list_option_lower = list_option.lower()
     if list_option in custom_templates:
-        product_list = custom_templates[list_option]
-    elif list_option == "underground":
+        raw_list = custom_templates[list_option]
+        product_list = []
+        for item in raw_list:
+            desc = (
+                item.get("Product Description")
+                or item.get("description")
+                or item.get("Description")
+                or ""
+            )
+            price = (
+                item.get("Last Price")
+                or item.get("last_price")
+                or item.get("Price per Unit")
+                or 0
+            )
+            qty = item.get("quantity", 0)
+            product_list.append(
+                {
+                    "Product Description": desc,
+                    "Last Price": price,
+                    "quantity": qty,
+                }
+            )
+    elif list_option_lower == "underground":
         update_underground_prices()
         product_list = du.df_underground.to_dict("records") if du.df_underground is not None else []
-    elif list_option == "rough":
+    elif list_option_lower == "rough":
         update_rough_prices()
         product_list = du.df_rough.to_dict("records") if du.df_rough is not None else []
-    elif list_option == "final":
+    elif list_option_lower == "final":
         update_final_prices()
         product_list = du.df_final.to_dict("records") if du.df_final is not None else []
-    elif list_option == "new":
+    elif list_option_lower == "new":
         product_list = []
     else:
         product_list = []
+
     supply1_products = du.df.to_dict("records") if du.df is not None else []
     supply2_products = du.df_supply2.to_dict("records") if du.df_supply2 is not None else []
-    return render_template("material_list.html",
-                           product_list=product_list,
-                           list_option=list_option,
-                           custom_templates=list(custom_templates.keys()),
-                           supply1_products=supply1_products,
-                           supply2_products=supply2_products)
+    template_name = request.args.get("template_name", "")
+    if not template_name and list_option_lower not in ["underground", "rough", "final", "new"]:
+        template_name = list_option
+    return render_template(
+        "material_list.html",
+        product_list=product_list,
+        list_option=list_option,
+        custom_templates=list(custom_templates.keys()),
+        supply1_products=supply1_products,
+        supply2_products=supply2_products,
+        template_name=template_name,
+    )
 
 @app.route("/save_template", methods=["POST"])
 @login_required
@@ -555,6 +637,67 @@ def save_template():
     else:
         flash("Failed to save template to GitHub.", "danger")
     return redirect(url_for("material_list"))
+
+# -------------------------------
+# Template Management Routes
+# -------------------------------
+
+@app.route("/templates")
+@login_required
+def templates_list():
+    load_templates_from_github()
+    templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
+    os.makedirs(templates_dir, exist_ok=True)
+    names = [os.path.splitext(f)[0] for f in os.listdir(templates_dir) if f.endswith(".json")]
+    return render_template("templates_list.html", template_names=names)
+
+
+@app.route("/edit_template/<name>")
+@login_required
+def edit_template(name):
+    return redirect(url_for("material_list", list=name, template_name=name))
+
+
+@app.route("/delete_template/<name>", methods=["POST"])
+@login_required
+def delete_template(name):
+    templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
+    filepath = os.path.join(templates_dir, f"{name}.json")
+    if os.path.exists(filepath):
+        os.remove(filepath)
+    delete_template_from_github(f"templates/{name}.json")
+    flash("Template deleted.", "info")
+    return redirect(request.referrer or url_for("templates_list"))
+
+
+@app.route("/rename_template/<name>", methods=["POST"])
+@login_required
+def rename_template(name):
+    new_name = request.form.get("new_name")
+    if not new_name:
+        flash("New name required.", "danger")
+        return redirect(request.referrer or url_for("templates_list"))
+    templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
+    old_path = os.path.join(templates_dir, f"{name}.json")
+    new_path = os.path.join(templates_dir, f"{new_name}.json")
+    if not os.path.exists(old_path):
+        flash("Template not found.", "danger")
+        return redirect(request.referrer or url_for("templates_list"))
+    try:
+        with open(old_path) as f:
+            content = f.read()
+        os.rename(old_path, new_path)
+    except Exception as e:
+        flash(f"Rename failed: {e}", "danger")
+        return redirect(request.referrer or url_for("templates_list"))
+    success = save_template_to_github(f"templates/{new_name}.json", content)
+    if success:
+        delete_template_from_github(f"templates/{name}.json")
+        flash("Template renamed.", "success")
+    else:
+        flash("Failed to update GitHub.", "danger")
+    load_templates_from_github()
+    return redirect(url_for("templates_list"))
 # -------------------------------
 # Login and Logout Routes
 # -------------------------------

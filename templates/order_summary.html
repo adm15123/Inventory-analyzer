@@ -5,6 +5,12 @@
   <title>Order Summary</title>
   <style>
     /* Add margins to ensure nothing is cut off in the PDF */
+    @page {
+      margin-top: 0.5in;
+      margin-bottom: 0.5in;
+      margin-left: 1in;
+      margin-right: 1in;
+    }
     body {
       font-family: Arial, sans-serif;
       margin: 1in;
@@ -24,6 +30,8 @@
       padding: 8px;
       text-align: left;
     }
+    /* Keep table rows intact across pages */
+    tr { page-break-inside: avoid; }
   </style>
 </head>
 <body>
@@ -50,8 +58,8 @@
           <td>{{ product.quantity }}</td>
           <td>{{ product.description }}</td>
           {% if include_price == "yes" %}
-            <td>{{ product.last_price }}</td>
-            <td>{{ product.total }}</td>
+            <td>{{ "$%.2f"|format(product.last_price|float) }}</td>
+            <td>{{ "$%.2f"|format(product.total|float) }}</td>
           {% endif %}
         </tr>
         {% endif %}
@@ -59,9 +67,9 @@
     </tbody>
   </table>
   {% if include_price == "yes" %}
-  <h3>Subtotal: {{ '%.2f'|format(subtotal) }}</h3>
-  <h3>Tax (7%): {{ '%.2f'|format(tax) }}</h3>
-  <h3>Total: {{ '%.2f'|format(total_cost) }}</h3>
+  <h3>Subtotal: {{ "$%.2f"|format(subtotal) }}</h3>
+  <h3>Tax (7%): {{ "$%.2f"|format(tax) }}</h3>
+  <h3>Total: {{ "$%.2f"|format(total_cost) }}</h3>
   {% endif %}
 </body>
 </html>
