@@ -55,10 +55,8 @@ ALLOWED_EMAILS = config.ALLOWED_EMAILS
 
 # Buffer to temporarily store generated order summary PDFs
 pdf_buffer: io.BytesIO | None = None
-
 # In-memory store for PDFs keyed by session token
 pdf_store: dict[str, bytes] = {}
-
 # -------------------------------
 # Global Before-Request Handler (Session Timeout)
 # -------------------------------
@@ -540,7 +538,6 @@ def material_list():
             global pdf_buffer
             pdf_buffer = io.BytesIO(pdf)
             pdf_buffer.seek(0)
-
             # Store in-memory using a token in the session
             old_token = session.pop("pdf_token", None)
             if old_token:
@@ -549,7 +546,6 @@ def material_list():
             token = uuid.uuid4().hex
             pdf_store[token] = pdf
             session["pdf_token"] = token
-
             # Persist PDF to a temporary file for reliability across workers
             old_path = session.pop("pdf_path", None)
             if old_path and os.path.exists(old_path):
@@ -747,7 +743,6 @@ def download_summary():
             as_attachment=True,
             download_name="order_summary.pdf",
         )
-
     token = session.get("pdf_token")
     if token:
         data = pdf_store.get(token)
@@ -758,7 +753,6 @@ def download_summary():
                 as_attachment=True,
                 download_name="order_summary.pdf",
             )
-
     pdf_path = session.get("pdf_path")
     if pdf_path and os.path.exists(pdf_path):
         return send_file(
