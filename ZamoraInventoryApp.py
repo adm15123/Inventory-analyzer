@@ -53,6 +53,9 @@ mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.secret_key)
 ALLOWED_EMAILS = config.ALLOWED_EMAILS
 
+# Buffer to temporarily store generated order summary PDFs
+pdf_buffer: io.BytesIO | None = None
+
 # -------------------------------
 # Global Before-Request Handler (Session Timeout)
 # -------------------------------
@@ -531,6 +534,9 @@ def material_list():
         import pdfkit
         try:
             pdf = pdfkit.from_string(rendered, False)
+            global pdf_buffer
+            pdf_buffer = io.BytesIO(pdf)
+            pdf_buffer.seek(0)
         except Exception as e:
             flash(f"PDF generation failed: {e}", "danger")
             return redirect(url_for("material_list"))
@@ -698,6 +704,26 @@ def rename_template(name):
         flash("Failed to update GitHub.", "danger")
     load_templates_from_github()
     return redirect(url_for("templates_list"))
+
+# -------------------------------
+# PDF Download Route
+# -------------------------------
+
+@app.route("/download_summary")
+@login_required
+def download_summary():
+    """Return the last generated order summary PDF."""
+    global pdf_buffer
+    if pdf_buffer is None:
+        flash("No PDF available for download.", "warning")
+        return redirect(url_for("material_list"))
+    pdf_buffer.seek(0)
+    return send_file(
+        pdf_buffer,
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name="order_summary.pdf",
+    )
 # -------------------------------
 # Login and Logout Routes
 # -------------------------------
