@@ -537,7 +537,6 @@ def material_list():
             global pdf_buffer
             pdf_buffer = io.BytesIO(pdf)
             pdf_buffer.seek(0)
-
             # Persist PDF to a temporary file for reliability across workers
             old_path = session.pop("pdf_path", None)
             if old_path and os.path.exists(old_path):
