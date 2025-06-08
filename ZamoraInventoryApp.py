@@ -53,6 +53,12 @@ mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.secret_key)
 ALLOWED_EMAILS = config.ALLOWED_EMAILS
 
+# Buffer to temporarily store generated order summary PDFs
+pdf_buffer: io.BytesIO | None = None
+
+# In-memory store for PDFs keyed by session token
+pdf_store: dict[str, bytes] = {}
+
 # -------------------------------
 # Global Before-Request Handler (Session Timeout)
 # -------------------------------
@@ -531,6 +537,31 @@ def material_list():
         import pdfkit
         try:
             pdf = pdfkit.from_string(rendered, False)
+            global pdf_buffer
+            pdf_buffer = io.BytesIO(pdf)
+            pdf_buffer.seek(0)
+
+            # Store in-memory using a token in the session
+            old_token = session.pop("pdf_token", None)
+            if old_token:
+                pdf_store.pop(old_token, None)
+            import uuid
+            token = uuid.uuid4().hex
+            pdf_store[token] = pdf
+            session["pdf_token"] = token
+
+            # Persist PDF to a temporary file for reliability across workers
+            old_path = session.pop("pdf_path", None)
+            if old_path and os.path.exists(old_path):
+                try:
+                    os.remove(old_path)
+                except OSError:
+                    pass
+            pdf_filename = f"order_summary_{uuid.uuid4().hex}.pdf"
+            pdf_path = os.path.join(app.config["UPLOAD_FOLDER"], pdf_filename)
+            with open(pdf_path, "wb") as f:
+                f.write(pdf)
+            session["pdf_path"] = pdf_path
         except Exception as e:
             flash(f"PDF generation failed: {e}", "danger")
             return redirect(url_for("material_list"))
@@ -698,6 +729,47 @@ def rename_template(name):
         flash("Failed to update GitHub.", "danger")
     load_templates_from_github()
     return redirect(url_for("templates_list"))
+
+# -------------------------------
+# PDF Download Route
+# -------------------------------
+
+@app.route("/download_summary")
+@login_required
+def download_summary():
+    """Return the last generated order summary PDF."""
+    global pdf_buffer
+    if pdf_buffer is not None:
+        pdf_buffer.seek(0)
+        return send_file(
+            pdf_buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name="order_summary.pdf",
+        )
+
+    token = session.get("pdf_token")
+    if token:
+        data = pdf_store.get(token)
+        if data is not None:
+            return send_file(
+                io.BytesIO(data),
+                mimetype="application/pdf",
+                as_attachment=True,
+                download_name="order_summary.pdf",
+            )
+
+    pdf_path = session.get("pdf_path")
+    if pdf_path and os.path.exists(pdf_path):
+        return send_file(
+            pdf_path,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name="order_summary.pdf",
+        )
+
+    flash("No PDF available for download.", "warning")
+    return redirect(url_for("material_list"))
 # -------------------------------
 # Login and Logout Routes
 # -------------------------------
