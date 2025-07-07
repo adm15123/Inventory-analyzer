@@ -48,6 +48,7 @@
       <tr>
         <th>Quantity</th>
         <th>Product Description</th>
+        <th>Unit</th>
         {% if include_price == "yes" %}
           <th>Last Price</th>
           <th>Total</th>
@@ -60,6 +61,7 @@
         <tr>
           <td>{{ product.quantity }}</td>
           <td>{{ product.description }}</td>
+          <td>{{ product.get('unit') or product.get('Unit', '') }}</td>
           {% if include_price == "yes" %}
             <td>{{ "$%.2f"|format(product.last_price|float) }}</td>
             <td>{{ "$%.2f"|format(product.total|float) }}</td>
