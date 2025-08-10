@@ -166,10 +166,10 @@ def load_templates_from_github():
     if not token or not repo:
         return
 
-    templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
+    templates_dir = config.TEMPLATE_DATA_DIR
     os.makedirs(templates_dir, exist_ok=True)
 
-    api_url = f"https://api.github.com/repos/{repo}/contents/templates"
+    api_url = f"https://api.github.com/repos/{repo}/contents/data"
     headers = {"Authorization": f"Bearer {token}"}
     params = {"ref": branch}
     try:
@@ -243,6 +243,7 @@ def view_all():
         existing_columns = [c for c in desired_order if c in df_temp.columns]
         df_temp = df_temp[existing_columns]
     table_html = df_temp.to_html(table_id="data-table", classes="table table-striped", index=False, escape=False)
+    table_html = table_html.replace('<table ', '<table data-page-length="50" ')
     return render_template(
         "view_all.html",
         table=table_html,
@@ -308,6 +309,7 @@ def search():
         else:
             page_df = results
         table_html = page_df.to_html(table_id="data-table", classes="table table-striped", index=False, escape=False)
+        table_html = table_html.replace('<table ', '<table data-page-length="20" ')
         next_page = page + 1 if per_page and len(results) > page * per_page else None
         prev_page = page - 1 if per_page and page > 1 else None
     else:
@@ -468,6 +470,8 @@ def analyze():
             flash(f"❌ Error analyzing price changes: {e}")
     
     table_html = results.to_html(table_id="data-table", classes="table table-striped", index=False) if results is not None else None
+    if table_html:
+        table_html = table_html.replace('<table ', '<table data-page-length="20" ')
     return render_template("analyze.html", table=table_html, supply=supply)
 
 @app.route("/product_detail", methods=["GET"])
@@ -495,6 +499,7 @@ def product_detail():
     if "Date" in filtered_data.columns:
         filtered_data["Date"] = filtered_data["Date"].dt.strftime("%Y-%m-%d")
     table_html = filtered_data[['Date', 'Price per Unit']].to_html(table_id="data-table", classes="table table-striped", index=False)
+    table_html = table_html.replace('<table ', '<table data-page-length="20" ')
     ref = request.args.get("ref", "view_all")  # defaults to view_all if not provided
     query = request.args.get("query", "")       # Get the search query if available
     return render_template("product_detail.html", description=description, table=table_html, supply=supply, ref=ref, query=query)
@@ -574,7 +579,7 @@ def material_list():
     # For GET: load predetermined or saved templates
     list_option = request.args.get("list", "underground")
     load_templates_from_github()
-    templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
+    templates_dir = config.TEMPLATE_DATA_DIR
     os.makedirs(templates_dir, exist_ok=True)
     custom_templates = {}
     for fname in os.listdir(templates_dir):
@@ -646,9 +651,9 @@ def save_template():
     if not template_name or not product_data:
         flash("Template name and data are required.", "danger")
         return redirect(url_for("material_list"))
-    filename = f"templates/{template_name}.json"
+    filename = f"data/{template_name}.json"
     # Save locally
-    templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
+    templates_dir = config.TEMPLATE_DATA_DIR
     os.makedirs(templates_dir, exist_ok=True)
     try:
         with open(os.path.join(templates_dir, f"{template_name}.json"), "w") as f:
@@ -671,7 +676,7 @@ def save_template():
 @login_required
 def templates_list():
     load_templates_from_github()
-    templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
+    templates_dir = config.TEMPLATE_DATA_DIR
     os.makedirs(templates_dir, exist_ok=True)
     names = [os.path.splitext(f)[0] for f in os.listdir(templates_dir) if f.endswith(".json")]
     return render_template("templates_list.html", template_names=names)
@@ -686,11 +691,11 @@ def edit_template(name):
 @app.route("/delete_template/<name>", methods=["POST"])
 @login_required
 def delete_template(name):
-    templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
+    templates_dir = config.TEMPLATE_DATA_DIR
     filepath = os.path.join(templates_dir, f"{name}.json")
     if os.path.exists(filepath):
         os.remove(filepath)
-    delete_template_from_github(f"templates/{name}.json")
+    delete_template_from_github(f"data/{name}.json")
     flash("Template deleted.", "info")
     return redirect(request.referrer or url_for("templates_list"))
 
@@ -702,7 +707,7 @@ def rename_template(name):
     if not new_name:
         flash("New name required.", "danger")
         return redirect(request.referrer or url_for("templates_list"))
-    templates_dir = os.path.join(config.UPLOAD_FOLDER, "templates")
+    templates_dir = config.TEMPLATE_DATA_DIR
     old_path = os.path.join(templates_dir, f"{name}.json")
     new_path = os.path.join(templates_dir, f"{new_name}.json")
     if not os.path.exists(old_path):
@@ -715,9 +720,9 @@ def rename_template(name):
     except Exception as e:
         flash(f"Rename failed: {e}", "danger")
         return redirect(request.referrer or url_for("templates_list"))
-    success = save_template_to_github(f"templates/{new_name}.json", content)
+    success = save_template_to_github(f"data/{new_name}.json", content)
     if success:
-        delete_template_from_github(f"templates/{name}.json")
+        delete_template_from_github(f"data/{name}.json")
         flash("Template renamed.", "success")
     else:
         flash("Failed to update GitHub.", "danger")

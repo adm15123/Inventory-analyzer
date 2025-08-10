@@ -1,0 +1,28 @@
+@page {
+  margin-top: 0.5in;
+  margin-bottom: 0.5in;
+  margin-left: 1in;
+  margin-right: 1in;
+}
+body {
+  font-family: Arial, sans-serif;
+  margin: 1in;
+}
+h1, h2, h3, p {
+  margin-bottom: 0.5em;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 20px;
+}
+table, th, td {
+  border: 1px solid #000;
+}
+th, td {
+  padding: 8px;
+  text-align: left;
+}
+tr { page-break-inside: avoid; }
+thead { display: table-header-group; }
+tfoot { display: table-footer-group; }
