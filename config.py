@@ -8,6 +8,9 @@ SECRET_KEY = "your_secret_key"
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
+TEMPLATE_DATA_DIR = os.path.join(BASE_DIR, "data")
+os.makedirs(TEMPLATE_DATA_DIR, exist_ok=True)
+
 EXCEL_FILENAME = "Final_Extracted_Data_Fixed_Logic4.xlsx"
 DEFAULT_FILE = os.path.join(UPLOAD_FOLDER, EXCEL_FILENAME)
 

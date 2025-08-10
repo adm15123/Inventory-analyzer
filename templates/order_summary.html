@@ -3,39 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <title>Order Summary</title>
-  <style>
-    /* Add margins to ensure nothing is cut off in the PDF */
-    @page {
-      margin-top: 0.5in;
-      margin-bottom: 0.5in;
-      margin-left: 1in;
-      margin-right: 1in;
-    }
-    body {
-      font-family: Arial, sans-serif;
-      margin: 1in;
-    }
-    h1, h2, h3, p {
-      margin-bottom: 0.5em;
-    }
-    table {
-      width: 100%;
-      border-collapse: collapse;
-      margin-top: 20px;
-    }
-    table, th, td {
-      border: 1px solid #000;
-    }
-    th, td {
-      padding: 8px;
-      text-align: left;
-    }
-    /* Keep table rows intact across pages */
-    tr { page-break-inside: avoid; }
-    thead { display: table-header-group; }
-    tfoot { display: table-footer-group; }
-
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/order_summary.css') }}">
 </head>
 <body>
   <h1>Zamora Plumbing Corp</h1>

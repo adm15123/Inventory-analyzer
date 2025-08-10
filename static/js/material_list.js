@@ -1,0 +1,143 @@
+function changeList(selectedList) {
+  const baseUrl = typeof baseMaterialUrl !== 'undefined' ? baseMaterialUrl : '';
+  window.location.href = baseUrl + '?list=' + selectedList;
+}
+
+function recalcRow(row) {
+  const lp = parseFloat(row.querySelector('input.last-price').value) || 0;
+  const qty = parseFloat(row.querySelector('input.quantity').value) || 0;
+  row.querySelector('.total').innerText = (lp * qty).toFixed(2);
+}
+
+let draggedRow = null;
+
+function handleDragStart(e) {
+  draggedRow = e.target.closest('tr');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  const target = e.target.closest('tr');
+  if (draggedRow && target && target !== draggedRow) {
+    const rect = target.getBoundingClientRect();
+    const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
+    target.parentNode.insertBefore(draggedRow, next ? target.nextSibling : target);
+  }
+}
+
+function handleDragEnd() {
+  draggedRow = null;
+}
+
+function attachRowEvents(row) {
+  const qty = row.querySelector('input.quantity');
+  if (qty) {
+    qty.addEventListener('change', function () { recalcRow(row); });
+  }
+  const prod = row.querySelector('input.product');
+  if (prod) {
+    prod.addEventListener('change', function () {
+      const val = this.value.trim().toLowerCase();
+      const lookup = document.getElementById('lookupSupply').value;
+      const prodArray = (lookup === 'supply2') ? supply2Products : supply1Products;
+      const matches = prodArray.filter(p => (p.Description || p.description || '').toLowerCase() === val);
+      if (matches.length) {
+        const latest = matches.reduce((a, b) => new Date(b.Date || b.date) > new Date(a.Date || a.date) ? b : a);
+        row.querySelector('input.last-price').value = latest['Price per Unit'] || latest['price per unit'] || latest.Price || latest.price;
+        const unitInput = row.querySelector('input.unit');
+        if (unitInput) { unitInput.value = latest.Unit || latest.unit || ''; }
+        recalcRow(row);
+      }
+    });
+  }
+  const lp = row.querySelector('input.last-price');
+  if (lp) {
+    lp.addEventListener('change', function () { recalcRow(row); });
+  }
+  const rm = row.querySelector('.remove-item');
+  if (rm) {
+    rm.addEventListener('click', function () { row.remove(); });
+  }
+  const drag = row.querySelector('.drag-handle');
+  if (drag) {
+    drag.addEventListener('dragstart', handleDragStart);
+    row.addEventListener('dragover', handleDragOver);
+    row.addEventListener('dragend', handleDragEnd);
+  }
+}
+
+function updatePredeterminedRows() {
+  const lookup = document.getElementById('lookupSupply').value;
+  const prodArray = (lookup === 'supply2') ? supply2Products : supply1Products;
+  const rows = document.querySelectorAll('#material-list tr.predetermined');
+  rows.forEach(function (r) {
+    const desc = r.querySelector('input.product').value.trim().toLowerCase();
+    const matches = prodArray.filter(p => (p.Description || p.description || '').toLowerCase() === desc);
+    if (matches.length) {
+      const latest = matches.reduce((a, b) => {
+        const da = new Date(a.Date || a.date);
+        const db = new Date(b.Date || b.date);
+        return db > da ? b : a;
+      });
+      r.querySelector('input.last-price').value = latest['Price per Unit'] || latest['price per unit'] || latest.Price || latest.price;
+      const unitInput = r.querySelector('input.unit');
+      if (unitInput) { unitInput.value = latest.Unit || latest.unit || ''; }
+      recalcRow(r);
+    }
+  });
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+  updatePredeterminedRows();
+  document.getElementById('lookupSupply').addEventListener('change', updatePredeterminedRows);
+  const predRows = document.querySelectorAll('#material-list tr.predetermined');
+  predRows.forEach(r => attachRowEvents(r));
+  document.getElementById('add-item').addEventListener('click', function () {
+    const table = document.getElementById('material-list');
+    const row = table.insertRow();
+    row.innerHTML = '<td><input type="number" class="form-control quantity" placeholder="Quantity"></td>' +
+      '<td><input type="text" class="form-control product" placeholder="Enter product" list="supply1List"></td>' +
+      '<td><input type="text" class="form-control unit" placeholder="Unit"></td>' +
+      '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
+      '<td class="total">0.00</td>' +
+      '<td><span class="btn btn-secondary drag-handle" draggable="true" aria-label="Drag"><i class="bi bi-arrows-move"></i></span> ' +
+      '<button type="button" class="btn btn-danger remove-item" aria-label="Remove"><i class="bi bi-trash"></i></button></td>';
+    attachRowEvents(row);
+  });
+  document.getElementById('export-pdf').addEventListener('click', function () {
+    const includePrice = confirm('Would you like to include the price in the PDF?');
+    document.getElementById('include_price').value = includePrice ? 'yes' : 'no';
+    const productData = [];
+    const rows = document.querySelectorAll('#material-list tr');
+    rows.forEach(function (r) {
+      const product = r.querySelector('input.product').value;
+      const unit = r.querySelector('input.unit').value;
+      const lastPrice = r.querySelector('input.last-price').value;
+      const quantity = r.querySelector('input.quantity').value;
+      const total = r.querySelector('.total').innerText;
+      productData.push({ description: product, unit: unit, last_price: lastPrice, quantity: quantity, total: total });
+    });
+    document.getElementById('product_data').value = JSON.stringify(productData);
+    document.getElementById('material-form').submit();
+  });
+  document.getElementById('save-template').addEventListener('click', function () {
+    const name = document.getElementById('template-name').value.trim();
+    if (!name) { alert('Template name required'); return; }
+    const rows = document.querySelectorAll('#material-list tr');
+    const productData = [];
+    rows.forEach(function (r) {
+      const product = r.querySelector('input.product').value;
+      const unit = r.querySelector('input.unit').value;
+      const lastPrice = r.querySelector('input.last-price').value;
+      const quantity = r.querySelector('input.quantity').value;
+      const total = r.querySelector('.total').innerText;
+      productData.push({ description: product, unit: unit, last_price: lastPrice, quantity: quantity, total: total });
+    });
+    fetch('/save_template', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: 'template_name=' + encodeURIComponent(name) + '&product_data=' + encodeURIComponent(JSON.stringify(productData))
+    }).then(() => location.reload());
+  });
+});

@@ -2,9 +2,12 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Inventory App{% endblock %}</title>
   <link href="https://cdn.jsdelivr.net/npm/bootswatch@5.3.1/dist/flatly/bootstrap.min.css" rel="stylesheet">
   <link href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
 
   <!-- ✅ PWA Manifest and iOS Support -->
   <link rel="manifest" href="{{ url_for('static', filename='manifest.json') }}">
@@ -13,10 +16,6 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icons/icon-192.png') }}">
 
-  <style>
-    body { padding-top: 4.5rem; }
-    table.table td, table.table th { text-align: center; }
-  </style>
   {% block extra_head %}{% endblock %}
 </head>
 <body>
@@ -28,11 +27,11 @@
     </button>
     <div class="collapse navbar-collapse" id="navbarNav">
       <ul class="navbar-nav">
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('view_all') }}">View All</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('search') }}">Search</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('analyze') }}">Analyze</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('material_list') }}">Material List</a></li>
-        <li class="nav-item"><a class="nav-link" href="{{ url_for('templates_list') }}">Templates</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint=='view_all' %}active{% endif %}" href="{{ url_for('view_all') }}">View All</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint=='search' %}active{% endif %}" href="{{ url_for('search') }}">Search</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint=='analyze' %}active{% endif %}" href="{{ url_for('analyze') }}">Analyze</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint=='material_list' %}active{% endif %}" href="{{ url_for('material_list') }}">Material List</a></li>
+        <li class="nav-item"><a class="nav-link {% if request.endpoint=='templates_list' %}active{% endif %}" href="{{ url_for('templates_list') }}">Templates</a></li>
         <li class="nav-item"><a class="nav-link" href="{{ url_for('logout') }}">Logout</a></li>
       </ul>
     </div>
@@ -41,7 +40,7 @@
 <div class="container mt-4">
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
-      <div class="toast-container position-fixed top-0 end-0 p-3" style="z-index: 1100;">
+      <div class="toast-container custom-toast-container position-fixed top-0 end-0 p-3">
         {% for category, message in messages %}
         <div class="toast align-items-center text-bg-{{ 'success' if category=='success' else 'primary' }} border-0 mb-2" role="alert" aria-live="assertive" aria-atomic="true">
           <div class="d-flex">
@@ -62,6 +61,7 @@
 <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
 <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/datatables.js') }}"></script>
 
 <script>
   const toastElList = [].slice.call(document.querySelectorAll('.toast'))
