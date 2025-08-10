@@ -8,7 +8,6 @@ function recalcRow(row) {
   const qty = parseFloat(row.querySelector('input.quantity').value) || 0;
   row.querySelector('.total').innerText = (lp * qty).toFixed(2);
 }
-
 let draggedRow = null;
 
 function handleDragStart(e) {
@@ -28,6 +27,7 @@ function handleDragOver(e) {
 
 function handleDragEnd() {
   draggedRow = null;
+  main
 }
 
 function attachRowEvents(row) {
@@ -64,6 +64,7 @@ function attachRowEvents(row) {
     drag.addEventListener('dragstart', handleDragStart);
     row.addEventListener('dragover', handleDragOver);
     row.addEventListener('dragend', handleDragEnd);
+    main
   }
 }
 
@@ -102,6 +103,7 @@ document.addEventListener('DOMContentLoaded', function () {
       '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
       '<td class="total">0.00</td>' +
       '<td><span class="btn btn-secondary drag-handle" draggable="true" aria-label="Drag"><i class="bi bi-arrows-move"></i></span> ' +
+      main
       '<button type="button" class="btn btn-danger remove-item" aria-label="Remove"><i class="bi bi-trash"></i></button></td>';
     attachRowEvents(row);
   });
