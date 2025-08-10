@@ -1,10 +1,5 @@
 {% extends 'base.html' %}
 {% block title %}Material List{% endblock %}
-{% block extra_head %}
-<script>
-  function changeList(selectedList) { window.location.href = "{{ url_for('material_list') }}" + "?list=" + selectedList; }
-</script>
-{% endblock %}
 {% block content %}
 <h1 class="mt-4">Material List</h1>
 {% if template_name %}
@@ -13,7 +8,7 @@
 <a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">Back</a>
 <div class="form-group">
   <label for="listSelector">Choose Template:</label>
-  <select id="listSelector" class="form-control" onchange="changeList(this.value)">
+    <select id="listSelector" class="form-control" data-url="{{ url_for('material_list') }}" onchange="changeList(this.value)">
     <option value="underground" {% if list_option == 'underground' %}selected{% endif %}>Underground List</option>
     <option value="rough" {% if list_option == 'rough' %}selected{% endif %}>Rough List</option>
     <option value="final" {% if list_option == 'final' %}selected{% endif %}>Final List</option>
@@ -53,6 +48,7 @@
       </div>
     </div>
   </div>
+  <div class="table-responsive">
   <table class="table table-striped">
     <thead>
       <tr>
@@ -73,14 +69,14 @@
         <td><input type="number" step="0.01" class="form-control last-price" value="{{ product["Last Price"] }}" readonly></td>
         <td class="total">0.00</td>
         <td>
-          <button type="button" class="btn btn-secondary move-up">Move Up</button>
-          <button type="button" class="btn btn-secondary move-down">Move Down</button>
-          <button type="button" class="btn btn-danger remove-item">Remove</button>
+          <span class="btn btn-secondary drag-handle" aria-label="Drag"><i class="bi bi-arrows-move"></i></span>
+          <button type="button" class="btn btn-danger remove-item" aria-label="Remove"><i class="bi bi-trash"></i></button>
         </td>
-      </tr>
+        </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
   <button type="button" class="btn btn-primary" id="add-item">Add Manual Item</button>
   <button type="button" class="btn btn-success" id="export-pdf">Export to PDF</button>
   <a href="{{ url_for('download_summary') }}" class="btn btn-info">Download PDF</a>
@@ -90,98 +86,14 @@
   </div>
   <input type="hidden" name="product_data" id="product_data">
   <input type="hidden" name="include_price" id="include_price" value="yes">
-</form>
-{% endblock %}
-{% block extra_scripts %}
-<script>
-var supply1Products = {{ supply1_products|tojson }};
-var supply2Products = {{ supply2_products|tojson }};
-function recalcRow(row){ var lp=parseFloat(row.querySelector('input.last-price').value)||0; var qty=parseFloat(row.querySelector('input.quantity').value)||0; row.querySelector('.total').innerText=(lp*qty).toFixed(2); }
-function moveUp(row){ var prev=row.previousElementSibling; if(prev){ row.parentNode.insertBefore(row, prev); }}
-function moveDown(row){ var next=row.nextElementSibling; if(next){ row.parentNode.insertBefore(next, row); }}
-function attachRowEvents(row){
-  var qty=row.querySelector('input.quantity'); if(qty){ qty.addEventListener('change',function(){ recalcRow(row); }); }
-  var prod=row.querySelector('input.product');
-  if(prod){
-    prod.addEventListener('change',function(){
-      var val=this.value.trim().toLowerCase();
-      var lookup=document.getElementById('lookupSupply').value;
-      var prodArray=(lookup==='supply2')?supply2Products:supply1Products;
-      var matches=prodArray.filter(function(p){ return (p.Description||p.description||'').toLowerCase()===val; });
-      if(matches.length){
-        var latest=matches.reduce(function(a,b){ return new Date((b.Date||b.date))>new Date((a.Date||a.date))?b:a; });
-        row.querySelector('input.last-price').value=latest['Price per Unit']||latest['price per unit']||latest.Price||latest.price;
-        var unitInput=row.querySelector('input.unit');
-        if(unitInput){ unitInput.value=latest.Unit||latest.unit||''; }
-        recalcRow(row);
-      }
-    });
-  }
-  var lp=row.querySelector('input.last-price'); if(lp){ lp.addEventListener('change',function(){ recalcRow(row); }); }
-  var rm=row.querySelector('.remove-item'); if(rm){ rm.addEventListener('click',function(){ row.remove(); }); }
-  var up=row.querySelector('.move-up'); if(up){ up.addEventListener('click',function(){ moveUp(row); }); }
-  var down=row.querySelector('.move-down'); if(down){ down.addEventListener('click',function(){ moveDown(row); }); }
-}
-function updatePredeterminedRows(){
-  var lookup=document.getElementById('lookupSupply').value;
-  var prodArray=(lookup==='supply2')?supply2Products:supply1Products;
-  var rows=document.querySelectorAll('#material-list tr.predetermined');
-  rows.forEach(function(r){
-    var desc=r.querySelector('input.product').value.trim().toLowerCase();
-    var matches=prodArray.filter(function(p){return (p.Description||p.description||'').toLowerCase()===desc;});
-    if(matches.length){
-      var latest=matches.reduce(function(a,b){ var da=new Date(a.Date||a.date); var db=new Date(b.Date||b.date); return db>da?b:a; });
-      r.querySelector('input.last-price').value=latest['Price per Unit']||latest['price per unit']||latest.Price||latest.price;
-      var unitInput=r.querySelector('input.unit');
-      if(unitInput){ unitInput.value=latest.Unit||latest.unit||''; }
-      recalcRow(r);
-    }
-  });
-}
-updatePredeterminedRows();
-document.getElementById('lookupSupply').addEventListener('change', updatePredeterminedRows);
-var predRows=document.querySelectorAll('#material-list tr.predetermined');
-predRows.forEach(function(r){ attachRowEvents(r); });
-document.getElementById('add-item').addEventListener('click', function(){
-  var table=document.getElementById('material-list');
-  var row=table.insertRow();
-  row.innerHTML='<td><input type="number" class="form-control quantity" placeholder="Quantity"></td><td><input type="text" class="form-control product" placeholder="Enter product" list="supply1List"></td><td><input type="text" class="form-control unit" placeholder="Unit"></td><td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td><td class="total">0.00</td><td><button type="button" class="btn btn-secondary move-up">Move Up</button> <button type="button" class="btn btn-secondary move-down">Move Down</button> <button type="button" class="btn btn-danger remove-item">Remove</button></td>';
-  attachRowEvents(row);
-});
-document.getElementById('export-pdf').addEventListener('click', function(){
-  var includePrice=confirm('Would you like to include the price in the PDF?');
-  document.getElementById('include_price').value=includePrice?'yes':'no';
-  var productData=[];
-  var rows=document.querySelectorAll('#material-list tr');
-  rows.forEach(function(r){
-    var product=r.querySelector('input.product').value;
-    var unit=r.querySelector('input.unit').value;
-    var lastPrice=r.querySelector('input.last-price').value;
-    var quantity=r.querySelector('input.quantity').value;
-    var total=r.querySelector('.total').innerText;
-    productData.push({description:product,unit:unit,last_price:lastPrice,quantity:quantity,total:total});
-  });
-  document.getElementById('product_data').value=JSON.stringify(productData);
-  document.getElementById('material-form').submit();
-});
-document.getElementById('save-template').addEventListener('click', function(){
-  var name=document.getElementById('template-name').value.trim();
-  if(!name){ alert('Template name required'); return; }
-  var rows=document.querySelectorAll('#material-list tr');
-  var productData=[];
-  rows.forEach(function(r){
-    var product=r.querySelector('input.product').value;
-    var unit=r.querySelector('input.unit').value;
-    var lastPrice=r.querySelector('input.last-price').value;
-    var quantity=r.querySelector('input.quantity').value;
-    var total=r.querySelector('.total').innerText;
-    productData.push({description:product,unit:unit,last_price:lastPrice,quantity:quantity,total:total});
-  });
-  fetch('/save_template', {
-    method:'POST',
-    headers:{'Content-Type':'application/x-www-form-urlencoded'},
-    body:'template_name='+encodeURIComponent(name)+'&product_data='+encodeURIComponent(JSON.stringify(productData))
-  }).then(()=>location.reload());
-});
-</script>
-{% endblock %}
+  </form>
+  {% endblock %}
+  {% block extra_scripts %}
+  <script>
+    const supply1Products = {{ supply1_products|tojson }};
+    const supply2Products = {{ supply2_products|tojson }};
+    const baseMaterialUrl = "{{ url_for('material_list') }}";
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+  <script src="{{ url_for('static', filename='js/material_list.js') }}"></script>
+  {% endblock %}
