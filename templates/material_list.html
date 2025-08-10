@@ -72,6 +72,7 @@
           <span class="btn btn-secondary drag-handle" aria-label="Drag"><i class="bi bi-arrows-move"></i></span>
           <button type="button" class="btn btn-danger remove-item" aria-label="Remove"><i class="bi bi-trash"></i></button>
         </td>
+    main
         </tr>
       {% endfor %}
     </tbody>
@@ -87,6 +88,7 @@
   <input type="hidden" name="product_data" id="product_data">
   <input type="hidden" name="include_price" id="include_price" value="yes">
   </form>
+main
   {% endblock %}
   {% block extra_scripts %}
   <script>
@@ -95,5 +97,6 @@
     const baseMaterialUrl = "{{ url_for('material_list') }}";
   </script>
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+main
   <script src="{{ url_for('static', filename='js/material_list.js') }}"></script>
   {% endblock %}

@@ -8,6 +8,7 @@ function recalcRow(row) {
   const qty = parseFloat(row.querySelector('input.quantity').value) || 0;
   row.querySelector('.total').innerText = (lp * qty).toFixed(2);
 }
+ main
 
 function attachRowEvents(row) {
   const qty = row.querySelector('input.quantity');
@@ -38,6 +39,7 @@ function attachRowEvents(row) {
   if (rm) {
     rm.addEventListener('click', function () { row.remove(); });
   }
+ main
 }
 
 function updatePredeterminedRows() {
@@ -70,6 +72,7 @@ document.addEventListener('DOMContentLoaded', function () {
     handle: '.drag-handle',
     animation: 150
   });
+ main
   document.getElementById('add-item').addEventListener('click', function () {
     const table = document.getElementById('material-list');
     const row = table.insertRow();
@@ -79,6 +82,7 @@ document.addEventListener('DOMContentLoaded', function () {
       '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
       '<td class="total">0.00</td>' +
       '<td><span class="btn btn-secondary drag-handle" aria-label="Drag"><i class="bi bi-arrows-move"></i></span> ' +
+        main
       '<button type="button" class="btn btn-danger remove-item" aria-label="Remove"><i class="bi bi-trash"></i></button></td>';
     attachRowEvents(row);
   });
