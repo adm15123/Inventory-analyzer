@@ -8,7 +8,22 @@ table.table td, table.table th { text-align: center; }
   word-break: break-word;
 }
 
+#material-table th:first-child,
+#material-table td:first-child {
+  width: 10%;
+}
+
+#material-table th:nth-child(2),
+#material-table td:nth-child(2) {
+  width: 50%;
+}
+
+#material-list .quantity {
+  width: 80px;
+}
+
 #material-list .product {
   white-space: normal;
   overflow-wrap: anywhere;
+  width: 100%;
 }
