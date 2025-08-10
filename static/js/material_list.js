@@ -8,19 +8,26 @@ function recalcRow(row) {
   const qty = parseFloat(row.querySelector('input.quantity').value) || 0;
   row.querySelector('.total').innerText = (lp * qty).toFixed(2);
 }
+let draggedRow = null;
 
-function moveUp(row) {
-  const prev = row.previousElementSibling;
-  if (prev) {
-    row.parentNode.insertBefore(row, prev);
+function handleDragStart(e) {
+  draggedRow = e.target.closest('tr');
+  e.dataTransfer.effectAllowed = 'move';
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  const target = e.target.closest('tr');
+  if (draggedRow && target && target !== draggedRow) {
+    const rect = target.getBoundingClientRect();
+    const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
+    target.parentNode.insertBefore(draggedRow, next ? target.nextSibling : target);
   }
 }
 
-function moveDown(row) {
-  const next = row.nextElementSibling;
-  if (next) {
-    row.parentNode.insertBefore(next, row);
-  }
+function handleDragEnd() {
+  draggedRow = null;
+  main
 }
 
 function attachRowEvents(row) {
@@ -52,13 +59,12 @@ function attachRowEvents(row) {
   if (rm) {
     rm.addEventListener('click', function () { row.remove(); });
   }
-  const up = row.querySelector('.move-up');
-  if (up) {
-    up.addEventListener('click', function () { moveUp(row); });
-  }
-  const down = row.querySelector('.move-down');
-  if (down) {
-    down.addEventListener('click', function () { moveDown(row); });
+  const drag = row.querySelector('.drag-handle');
+  if (drag) {
+    drag.addEventListener('dragstart', handleDragStart);
+    row.addEventListener('dragover', handleDragOver);
+    row.addEventListener('dragend', handleDragEnd);
+    main
   }
 }
 
@@ -96,8 +102,8 @@ document.addEventListener('DOMContentLoaded', function () {
       '<td><input type="text" class="form-control unit" placeholder="Unit"></td>' +
       '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
       '<td class="total">0.00</td>' +
-      '<td><button type="button" class="btn btn-secondary move-up" aria-label="Move up"><i class="bi bi-arrow-up"></i></button> ' +
-      '<button type="button" class="btn btn-secondary move-down" aria-label="Move down"><i class="bi bi-arrow-down"></i></button> ' +
+      '<td><span class="btn btn-secondary drag-handle" draggable="true" aria-label="Drag"><i class="bi bi-arrows-move"></i></span> ' +
+      main
       '<button type="button" class="btn btn-danger remove-item" aria-label="Remove"><i class="bi bi-trash"></i></button></td>';
     attachRowEvents(row);
   });

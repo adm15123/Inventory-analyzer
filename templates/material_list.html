@@ -48,6 +48,7 @@
       </div>
     </div>
   </div>
+  <div class="table-responsive">
   <table class="table table-striped">
     <thead>
       <tr>
@@ -67,15 +68,16 @@
         <td><input type="text" class="form-control unit" value="{{ product.get('Unit', product.get('unit', '')) }}"></td>
         <td><input type="number" step="0.01" class="form-control last-price" value="{{ product["Last Price"] }}" readonly></td>
         <td class="total">0.00</td>
-          <td>
-            <button type="button" class="btn btn-secondary move-up" aria-label="Move up"><i class="bi bi-arrow-up"></i></button>
-            <button type="button" class="btn btn-secondary move-down" aria-label="Move down"><i class="bi bi-arrow-down"></i></button>
-            <button type="button" class="btn btn-danger remove-item" aria-label="Remove"><i class="bi bi-trash"></i></button>
-          </td>
+        <td>
+          <span class="btn btn-secondary drag-handle" draggable="true" aria-label="Drag"><i class="bi bi-arrows-move"></i></span>
+          <button type="button" class="btn btn-danger remove-item" aria-label="Remove"><i class="bi bi-trash"></i></button>
+        </td>
+        main
         </tr>
       {% endfor %}
     </tbody>
   </table>
+  </div>
   <button type="button" class="btn btn-primary" id="add-item">Add Manual Item</button>
   <button type="button" class="btn btn-success" id="export-pdf">Export to PDF</button>
   <a href="{{ url_for('download_summary') }}" class="btn btn-info">Download PDF</a>
