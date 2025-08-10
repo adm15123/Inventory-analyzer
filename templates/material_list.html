@@ -64,7 +64,7 @@
       {% for product in product_list %}
       <tr class="predetermined">
         <td><input type="number" class="form-control quantity" value="{{ product.get('quantity', 0) }}"></td>
-        <td><input type="text" class="form-control product" value="{{ product['Product Description'] }}" list="supply1List"></td>
+        <td><textarea class="form-control product" rows="2">{{ product['Product Description'] }}</textarea></td>
         <td><input type="text" class="form-control unit" value="{{ product.get('Unit', product.get('unit', '')) }}"></td>
         <td><input type="number" step="0.01" class="form-control last-price" value="{{ product["Last Price"] }}" readonly></td>
         <td class="total">0.00</td>
