@@ -14,7 +14,7 @@ function attachRowEvents(row) {
   if (qty) {
     qty.addEventListener('change', function () { recalcRow(row); });
   }
-  const prod = row.querySelector('input.product');
+  const prod = row.querySelector('.product');
   if (prod) {
     prod.addEventListener('change', function () {
       const val = this.value.trim().toLowerCase();
@@ -45,7 +45,7 @@ function updatePredeterminedRows() {
   const prodArray = (lookup === 'supply2') ? supply2Products : supply1Products;
   const rows = document.querySelectorAll('#material-list tr.predetermined');
   rows.forEach(function (r) {
-    const desc = r.querySelector('input.product').value.trim().toLowerCase();
+    const desc = r.querySelector('.product').value.trim().toLowerCase();
     const matches = prodArray.filter(p => (p.Description || p.description || '').toLowerCase() === desc);
     if (matches.length) {
       const latest = matches.reduce((a, b) => {
@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const table = document.getElementById('material-list');
     const row = table.insertRow();
     row.innerHTML = '<td><input type="number" class="form-control quantity" placeholder="Quantity"></td>' +
-      '<td><input type="text" class="form-control product" placeholder="Enter product" list="supply1List"></td>' +
+      '<td><textarea class="form-control product" placeholder="Enter product" rows="2"></textarea></td>' +
       '<td><input type="text" class="form-control unit" placeholder="Unit"></td>' +
       '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
       '<td class="total">0.00</td>' +
@@ -88,7 +88,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const productData = [];
     const rows = document.querySelectorAll('#material-list tr');
     rows.forEach(function (r) {
-      const product = r.querySelector('input.product').value;
+      const product = r.querySelector('.product').value;
       const unit = r.querySelector('input.unit').value;
       const lastPrice = r.querySelector('input.last-price').value;
       const quantity = r.querySelector('input.quantity').value;
@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const rows = document.querySelectorAll('#material-list tr');
     const productData = [];
     rows.forEach(function (r) {
-      const product = r.querySelector('input.product').value;
+      const product = r.querySelector('.product').value;
       const unit = r.querySelector('input.unit').value;
       const lastPrice = r.querySelector('input.last-price').value;
       const quantity = r.querySelector('input.quantity').value;
