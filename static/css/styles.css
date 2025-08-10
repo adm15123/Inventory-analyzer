@@ -1,0 +1,13 @@
+body { padding-top: 4.5rem; }
+table.table td, table.table th { text-align: center; }
+.custom-toast-container { z-index: 1100; }
+.inline-input { width: auto; display: inline-block; }
+
+#material-list td {
+  white-space: normal;
+  word-break: break-word;
+}
+
+#material-list .product {
+  white-space: normal;
+}
