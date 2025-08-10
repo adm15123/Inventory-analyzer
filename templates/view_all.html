@@ -12,9 +12,4 @@
 </div>
 <hr>
 {{ table | safe }}
-{% endblock %}
-{% block extra_scripts %}
-<script>
-$(document).ready(function(){ if ($('#data-table').length){ $('#data-table').DataTable({pageLength:50,lengthMenu:[[50,100,200,-1],[50,100,200,'All']]}); } });
-</script>
-{% endblock %}
+  {% endblock %}
