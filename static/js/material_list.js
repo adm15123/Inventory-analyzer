@@ -8,27 +8,7 @@ function recalcRow(row) {
   const qty = parseFloat(row.querySelector('input.quantity').value) || 0;
   row.querySelector('.total').innerText = (lp * qty).toFixed(2);
 }
-let draggedRow = null;
-
-function handleDragStart(e) {
-  draggedRow = e.target.closest('tr');
-  e.dataTransfer.effectAllowed = 'move';
-}
-
-function handleDragOver(e) {
-  e.preventDefault();
-  const target = e.target.closest('tr');
-  if (draggedRow && target && target !== draggedRow) {
-    const rect = target.getBoundingClientRect();
-    const next = (e.clientY - rect.top) / (rect.bottom - rect.top) > 0.5;
-    target.parentNode.insertBefore(draggedRow, next ? target.nextSibling : target);
-  }
-}
-
-function handleDragEnd() {
-  draggedRow = null;
-  main
-}
+ main
 
 function attachRowEvents(row) {
   const qty = row.querySelector('input.quantity');
@@ -59,13 +39,7 @@ function attachRowEvents(row) {
   if (rm) {
     rm.addEventListener('click', function () { row.remove(); });
   }
-  const drag = row.querySelector('.drag-handle');
-  if (drag) {
-    drag.addEventListener('dragstart', handleDragStart);
-    row.addEventListener('dragover', handleDragOver);
-    row.addEventListener('dragend', handleDragEnd);
-    main
-  }
+ main
 }
 
 function updatePredeterminedRows() {
@@ -94,6 +68,11 @@ document.addEventListener('DOMContentLoaded', function () {
   document.getElementById('lookupSupply').addEventListener('change', updatePredeterminedRows);
   const predRows = document.querySelectorAll('#material-list tr.predetermined');
   predRows.forEach(r => attachRowEvents(r));
+  new Sortable(document.getElementById('material-list'), {
+    handle: '.drag-handle',
+    animation: 150
+  });
+ main
   document.getElementById('add-item').addEventListener('click', function () {
     const table = document.getElementById('material-list');
     const row = table.insertRow();
@@ -102,8 +81,8 @@ document.addEventListener('DOMContentLoaded', function () {
       '<td><input type="text" class="form-control unit" placeholder="Unit"></td>' +
       '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
       '<td class="total">0.00</td>' +
-      '<td><span class="btn btn-secondary drag-handle" draggable="true" aria-label="Drag"><i class="bi bi-arrows-move"></i></span> ' +
-      main
+      '<td><span class="btn btn-secondary drag-handle" aria-label="Drag"><i class="bi bi-arrows-move"></i></span> ' +
+        main
       '<button type="button" class="btn btn-danger remove-item" aria-label="Remove"><i class="bi bi-trash"></i></button></td>';
     attachRowEvents(row);
   });
