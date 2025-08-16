@@ -9,6 +9,17 @@ function recalcRow(row) {
   row.querySelector('.total').innerText = (lp * qty).toFixed(2);
 }
 
+function currentListId() {
+  const lookup = document.getElementById('lookupSupply').value;
+  return lookup === 'supply3' ? 'supply3List' :
+    lookup === 'supply2' ? 'supply2List' : 'supply1List';
+}
+
+function updateListAttributes() {
+  const listId = currentListId();
+  document.querySelectorAll('.product').forEach(p => p.setAttribute('list', listId));
+}
+
 function attachRowEvents(row) {
   const qty = row.querySelector('input.quantity');
   if (qty) {
@@ -16,6 +27,7 @@ function attachRowEvents(row) {
   }
   const prod = row.querySelector('.product');
   if (prod) {
+    prod.setAttribute('list', currentListId());
     prod.addEventListener('change', function () {
       const val = this.value.trim().toLowerCase();
       const lookup = document.getElementById('lookupSupply').value;
@@ -65,11 +77,16 @@ function updatePredeterminedRows() {
       recalcRow(r);
     }
   });
+  updateListAttributes();
 }
 
 document.addEventListener('DOMContentLoaded', function () {
   updatePredeterminedRows();
-  document.getElementById('lookupSupply').addEventListener('change', updatePredeterminedRows);
+  updateListAttributes();
+  document.getElementById('lookupSupply').addEventListener('change', function () {
+    updatePredeterminedRows();
+    updateListAttributes();
+  });
   const predRows = document.querySelectorAll('#material-list tr.predetermined');
   predRows.forEach(r => attachRowEvents(r));
   new Sortable(document.getElementById('material-list'), {
@@ -80,13 +97,14 @@ document.addEventListener('DOMContentLoaded', function () {
     const table = document.getElementById('material-list');
     const row = table.insertRow();
     row.innerHTML = '<td><input type="number" class="form-control quantity" placeholder="Quantity"></td>' +
-      '<td><textarea class="form-control product" placeholder="Enter product" rows="2"></textarea></td>' +
+      '<td><input type="text" class="form-control product" placeholder="Enter product" list="' + currentListId() + '"></td>' +
       '<td><input type="text" class="form-control unit" placeholder="Unit"></td>' +
       '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
       '<td class="total">0.00</td>' +
       '<td><span class="btn btn-secondary drag-handle" aria-label="Drag"><i class="bi bi-arrows-move"></i></span> ' +
       '<button type="button" class="btn btn-danger remove-item" aria-label="Remove"><i class="bi bi-trash"></i></button></td>';
     attachRowEvents(row);
+    updateListAttributes();
   });
   document.getElementById('export-pdf').addEventListener('click', function () {
     const includePrice = confirm('Would you like to include the price in the PDF?');

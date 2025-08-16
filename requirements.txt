@@ -8,4 +8,4 @@ flask-mail
 itsdangerous
 pdfkit
 requests
-
+openai
