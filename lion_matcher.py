@@ -85,7 +85,7 @@ def match_to_lion(
         )
 
     lion_df = pd.read_excel(lion_catalog_file)
-    
+
     # Prepare the OpenAI client and compute Lion's embeddings once.
     api_key = os.environ.get("OPENAI_API_KEY")
     if not api_key:
@@ -93,24 +93,39 @@ def match_to_lion(
             "Missing OpenAI API key. Please set the OPENAI_API_KEY environment variable."
         )
     client = OpenAI(api_key=api_key)
-    lion_embeddings = np.array(
+
+    # Cache Lion catalog embeddings to disk for reuse across runs.
+    cache_file = lion_catalog_file.with_suffix(".embeddings.npy")
+    if cache_file.exists():
+        lion_embeddings = np.load(cache_file)
+    else:
+        lion_embeddings = np.array(
+            [
+                d.embedding
+                for d in client.embeddings.create(
+                    model=model_name,
+                    input=lion_df["Description"].astype(str).tolist(),
+                ).data
+            ]
+        )
+        np.save(cache_file, lion_embeddings)
+
+    # Compute embeddings for all supply descriptions with a single request.
+    supply_descriptions = supply_df["Description"].astype(str).tolist()
+    supply_embeddings = np.array(
         [
             d.embedding
             for d in client.embeddings.create(
-                model=model_name,
-                input=lion_df["Description"].astype(str).tolist(),
+                model=model_name, input=supply_descriptions
             ).data
         ]
     )
 
     matched_rows: List[dict] = []
-    for _, row in supply_df.iterrows():
+    for (_, row), embed in zip(supply_df.iterrows(), supply_embeddings):
         description = str(row["Description"])
         quantity = row.get("Quantity", 0)
         price = row.get("price", 0)
-        embed = np.array(
-            client.embeddings.create(model=model_name, input=[description]).data[0].embedding
-        )
         similarities = _cosine_similarity(embed, lion_embeddings)
         best_idx = int(np.argmax(similarities))
         best_lion = lion_df.iloc[best_idx]
