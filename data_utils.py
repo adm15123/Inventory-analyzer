@@ -97,7 +97,42 @@ def get_current_dataframe(supply: str) -> Optional[pd.DataFrame]:
         return df_supply2
     if supply == "supply3":
         return df_supply3
+    if supply == "all":
+        return get_combined_dataframe()
     return df
+
+
+def get_combined_dataframe() -> Optional[pd.DataFrame]:
+    """Merge all supplier DataFrames on their shared ``Description`` column.
+
+    Returns a DataFrame containing the ``Description`` column and one price
+    column per supplier. Missing DataFrames are ignored. ``None`` is returned
+    if no data is available.
+    """
+
+    frames = []
+    if df is not None:
+        frames.append(
+            df[["Description", "Price per Unit"]]
+            .rename(columns={"Price per Unit": "Supply 1 Price"})
+        )
+    if df_supply2 is not None:
+        frames.append(
+            df_supply2[["Description", "Price per Unit"]]
+            .rename(columns={"Price per Unit": "Supply 2 Price"})
+        )
+    if df_supply3 is not None:
+        frames.append(
+            df_supply3[["Description", "Price per Unit"]]
+            .rename(columns={"Price per Unit": "Supply 3 Price"})
+        )
+    if not frames:
+        return None
+
+    combined = frames[0]
+    for frame in frames[1:]:
+        combined = pd.merge(combined, frame, on="Description", how="outer")
+    return combined
 
 
 def update_list_prices(df_list: Optional[pd.DataFrame]):
