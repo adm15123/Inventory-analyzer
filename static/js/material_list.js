@@ -19,11 +19,10 @@ function attachRowEvents(row) {
     prod.addEventListener('change', function () {
       const val = this.value.trim().toLowerCase();
       const lookup = document.getElementById('lookupSupply').value;
-      const prodArray = lookup === 'supply2'
-        ? supply2Products
-        : lookup === 'supply3'
-          ? supply3Products
-          : supply1Products;
+      const prodArray =
+        lookup === 'supply3' ? supply3Products :
+        lookup === 'supply2' ? supply2Products :
+        supply1Products;
       const matches = prodArray.filter(p => (p.Description || p.description || '').toLowerCase() === val);
       if (matches.length) {
         const latest = matches.reduce((a, b) => new Date(b.Date || b.date) > new Date(a.Date || a.date) ? b : a);
@@ -46,11 +45,10 @@ function attachRowEvents(row) {
 
 function updatePredeterminedRows() {
   const lookup = document.getElementById('lookupSupply').value;
-  const prodArray = lookup === 'supply2'
-    ? supply2Products
-    : lookup === 'supply3'
-      ? supply3Products
-      : supply1Products;
+  const prodArray =
+    lookup === 'supply3' ? supply3Products :
+    lookup === 'supply2' ? supply2Products :
+    supply1Products;
   const rows = document.querySelectorAll('#material-list tr.predetermined');
   rows.forEach(function (r) {
     const desc = r.querySelector('.product').value.trim().toLowerCase();
