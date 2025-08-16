@@ -31,9 +31,6 @@ $(document).ready(function(){
   const input = document.getElementById('query');
   const supply = document.getElementById('supply');
   const resultsDiv = document.getElementById('results');
-    if ($('#data-table').length) {
-      initDataTable('#data-table', 20);
-    }
   input.addEventListener('input', function() {
     const val = input.value.trim();
     const supplyVal = supply.value;
