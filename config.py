@@ -3,7 +3,7 @@ from datetime import timedelta
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 
-SECRET_KEY = os.environ.get("SECRET_KEY", "your_secret_key")
+SECRET_KEY = os.environ["SECRET_KEY"]
 
 UPLOAD_FOLDER = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
@@ -23,8 +23,8 @@ DEFAULT_SUPPLY3_FILE = os.path.join(UPLOAD_FOLDER, SUPPLY3_FILENAME)
 MAIL_SERVER = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
 MAIL_PORT = int(os.environ.get("MAIL_PORT", 587))
 MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS", "True").lower() in ["true", "1", "t"]
-MAIL_USERNAME = os.environ.get("MAIL_USERNAME", "aliant.delgado07@gmail.com")
-MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "lgco kmqe emqr qdrj")
+MAIL_USERNAME = os.environ["MAIL_USERNAME"]
+MAIL_PASSWORD = os.environ["MAIL_PASSWORD"]
 MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER", MAIL_USERNAME)
 
 SESSION_PERMANENT = True
