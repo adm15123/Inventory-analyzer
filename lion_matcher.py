@@ -1,5 +1,7 @@
 """Utilities for matching items in an arbitrary supply file to
-Lion's catalog using sentence-transformer embeddings.
+
+Lion's catalog using OpenAI embeddings.
+
 
 The module exposes a single convenience function :func:`match_to_lion`
 which loads the two Excel workbooks, computes embeddings and cosine
@@ -13,8 +15,8 @@ from typing import List
 
 import numpy as np
 import pandas as pd
-from sentence_transformers import SentenceTransformer
-
+from openai import OpenAI
+import os
 __all__ = ["match_to_lion"]
 
 
@@ -38,7 +40,7 @@ def match_to_lion(
     supply_file: str | Path,
     lion_catalog_file: str | Path,
     output_file: str | Path,
-    model_name: str = "all-MiniLM-L6-v2",
+    model_name: str = "text-embedding-3-small",
 ) -> pd.DataFrame:
     """Match a supply list to Lion's catalog.
 
@@ -53,7 +55,7 @@ def match_to_lion(
     output_file:
         Where to write the resulting workbook.
     model_name:
-        Name of the sentence-transformer model to use when generating
+        Name of the OpenAI embedding model to use when generating
         embeddings. The default uses a lightweight, general-purpose
         English model.
 
@@ -70,12 +72,17 @@ def match_to_lion(
 
     supply_df = pd.read_excel(supply_file)
     lion_df = pd.read_excel(lion_catalog_file)
-
-    # Prepare the model and compute Lion's embeddings once for the run.
-    model = SentenceTransformer(model_name)
-    lion_embeddings = model.encode(
-        lion_df["Description"].astype(str).tolist(),
-        convert_to_numpy=True,
+    
+    # Prepare the OpenAI client and compute Lion's embeddings once.
+    client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    lion_embeddings = np.array(
+        [
+            d.embedding
+            for d in client.embeddings.create(
+                model=model_name,
+                input=lion_df["Description"].astype(str).tolist(),
+            ).data
+        ]
     )
 
     matched_rows: List[dict] = []
@@ -83,8 +90,9 @@ def match_to_lion(
         description = str(row["Description"])
         quantity = row.get("Quantity", 0)
         price = row.get("Price", 0)
-
-        embed = model.encode([description], convert_to_numpy=True)[0]
+        embed = np.array(
+            client.embeddings.create(model=model_name, input=[description]).data[0].embedding
+        )
         similarities = _cosine_similarity(embed, lion_embeddings)
         best_idx = int(np.argmax(similarities))
         best_lion = lion_df.iloc[best_idx]
