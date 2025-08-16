@@ -74,7 +74,12 @@ def match_to_lion(
     lion_df = pd.read_excel(lion_catalog_file)
     
     # Prepare the OpenAI client and compute Lion's embeddings once.
-            client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    api_key = os.environ.get("OPENAI_API_KEY")
+    if not api_key:
+        raise RuntimeError(
+            "Missing OpenAI API key. Please set the OPENAI_API_KEY environment variable."
+        )
+    client = OpenAI(api_key=api_key)
     lion_embeddings = np.array(
         [
             d.embedding
