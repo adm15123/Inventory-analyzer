@@ -4,11 +4,13 @@ from typing import Optional
 from config import (
     DEFAULT_FILE,
     DEFAULT_SUPPLY2_FILE,
+    DEFAULT_SUPPLY3_FILE,
     UPLOAD_FOLDER,
 )
 # Global DataFrames
 df: Optional[pd.DataFrame] = None
 df_supply2: Optional[pd.DataFrame] = None
+df_supply3: Optional[pd.DataFrame] = None
 df_underground: Optional[pd.DataFrame] = None
 df_rough: Optional[pd.DataFrame] = None
 df_final: Optional[pd.DataFrame] = None
@@ -50,6 +52,21 @@ def load_supply2_file():
             )
 
 
+def load_supply3_file():
+    global df_supply3
+    if os.path.exists(DEFAULT_SUPPLY3_FILE):
+        df_supply3 = pd.read_excel(DEFAULT_SUPPLY3_FILE, engine="openpyxl")
+        if "Date" in df_supply3.columns:
+            df_supply3["Date"] = pd.to_datetime(df_supply3["Date"], errors="coerce")
+        if "Description" in df_supply3.columns:
+            df_supply3["Description"] = df_supply3["Description"].astype(str).str.strip()
+        if "Price per Unit" in df_supply3.columns:
+            df_supply3["Price per Unit"] = pd.to_numeric(
+                df_supply3["Price per Unit"].astype(str).str.replace(',', '', regex=False),
+                errors="coerce",
+            )
+
+
 def load_predetermined_list(filename: str) -> Optional[pd.DataFrame]:
     file_path = os.path.join(UPLOAD_FOLDER, filename)
     if os.path.exists(file_path):
@@ -78,6 +95,8 @@ def load_final_list():
 def get_current_dataframe(supply: str) -> Optional[pd.DataFrame]:
     if supply == "supply2":
         return df_supply2
+    if supply == "supply3":
+        return df_supply3
     return df
 
 
