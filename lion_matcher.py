@@ -1,5 +1,7 @@
 """Utilities for matching items in an arbitrary supply file to
+
 Lion's catalog using OpenAI embeddings.
+
 
 The module exposes a single convenience function :func:`match_to_lion`
 which loads the two Excel workbooks, computes embeddings and cosine
@@ -15,7 +17,6 @@ import numpy as np
 import pandas as pd
 from openai import OpenAI
 import os
-
 __all__ = ["match_to_lion"]
 
 
@@ -71,7 +72,7 @@ def match_to_lion(
 
     supply_df = pd.read_excel(supply_file)
     lion_df = pd.read_excel(lion_catalog_file)
-
+    
     # Prepare the OpenAI client and compute Lion's embeddings once.
     client = OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
     lion_embeddings = np.array(
@@ -89,7 +90,6 @@ def match_to_lion(
         description = str(row["Description"])
         quantity = row.get("Quantity", 0)
         price = row.get("Price", 0)
-
         embed = np.array(
             client.embeddings.create(model=model_name, input=[description]).data[0].embedding
         )
