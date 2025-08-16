@@ -48,7 +48,8 @@ def match_to_lion(
     ----------
     supply_file:
         Path to the Excel workbook containing the supply list. It must
-        include ``Description``, ``Quantity`` and ``Price`` columns.
+        include ``Description`` and ``Quantity`` columns, and either
+        ``Price`` or ``Price per Unit`` for the cost information.
     lion_catalog_file:
         Path to Lion's catalog workbook. It must include ``Description``
         and ``Price`` columns.
@@ -71,6 +72,18 @@ def match_to_lion(
     output_file = Path(output_file)
 
     supply_df = pd.read_excel(supply_file)
+    price_col = None
+    if "Price" in supply_df.columns:
+        price_col = "Price"
+    elif "Price per Unit" in supply_df.columns:
+        price_col = "Price per Unit"
+    if price_col:
+        supply_df = supply_df.rename(columns={price_col: "price"})
+    else:
+        raise ValueError(
+            "supply_file must include either 'Price' or 'Price per Unit' column"
+        )
+
     lion_df = pd.read_excel(lion_catalog_file)
     
     # Prepare the OpenAI client and compute Lion's embeddings once.
@@ -94,7 +107,7 @@ def match_to_lion(
     for _, row in supply_df.iterrows():
         description = str(row["Description"])
         quantity = row.get("Quantity", 0)
-        price = row.get("Price", 0)
+        price = row.get("price", 0)
         embed = np.array(
             client.embeddings.create(model=model_name, input=[description]).data[0].embedding
         )
