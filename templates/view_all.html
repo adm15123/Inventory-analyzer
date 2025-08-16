@@ -8,6 +8,7 @@
   <select name="supply" id="supply" class="form-control" onchange="location.href=this.value">
     <option value="{{ url_for('view_all', supply='supply1') }}" {% if supply == 'supply1' %}selected{% endif %}>Supply 1</option>
     <option value="{{ url_for('view_all', supply='supply2') }}" {% if supply == 'supply2' %}selected{% endif %}>Supply 2</option>
+    <option value="{{ url_for('view_all', supply='supply3') }}" {% if supply == 'supply3' %}selected{% endif %}>Lion Plumbing Supply</option>
   </select>
 </div>
 <hr>
