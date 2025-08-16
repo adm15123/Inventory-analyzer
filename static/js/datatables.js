@@ -1,5 +1,8 @@
 function initDataTable(selector, pageLength) {
   if (window.jQuery && $.fn.DataTable) {
+    if ($.fn.DataTable.isDataTable(selector)) {
+      $(selector).DataTable().destroy();
+    }
     $(selector).DataTable({
       pageLength: pageLength,
       lengthMenu: [[pageLength, 50, 100, -1], [pageLength, 50, 100, 'All']]
