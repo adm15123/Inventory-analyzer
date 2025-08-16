@@ -64,8 +64,8 @@ def match_to_lion(
     -------
     pandas.DataFrame
         DataFrame containing the supply information alongside the best
-        matching item from Lion's catalog and the cosine similarity
-        score.
+        matching item from Lion's catalog, the price difference, and the
+        cosine similarity score.
     """
     supply_file = Path(supply_file)
     lion_catalog_file = Path(lion_catalog_file)
@@ -115,13 +115,16 @@ def match_to_lion(
         best_idx = int(np.argmax(similarities))
         best_lion = lion_df.iloc[best_idx]
 
+        lion_price = best_lion.get("Price", 0)
+
         matched_rows.append(
             {
                 "Supply Description": description,
                 "Quantity": quantity,
                 "Supply Price": price,
                 "Lion Description": best_lion.get("Description", ""),
-                "Lion Price": best_lion.get("Price", 0),
+                "Lion Price": lion_price,
+                "Price Difference": price - lion_price,
                 "Similarity": float(similarities[best_idx]),
             }
         )
