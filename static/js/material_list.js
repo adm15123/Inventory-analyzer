@@ -40,7 +40,10 @@ function attachRowEvents(row) {
         const latest = matches.reduce((a, b) => new Date(b.Date || b.date) > new Date(a.Date || a.date) ? b : a);
         row.querySelector('input.last-price').value = latest['Price per Unit'] || latest['price per unit'] || latest.Price || latest.price;
         const unitInput = row.querySelector('input.unit');
-        if (unitInput) { unitInput.value = latest.Unit || latest.unit || ''; }
+        if (unitInput) {
+          const unitVal = latest.Unit || latest.unit;
+          if (unitVal) { unitInput.value = unitVal; }
+        }
         recalcRow(row);
       }
     });
@@ -71,9 +74,15 @@ function updatePredeterminedRows() {
         const db = new Date(b.Date || b.date);
         return db > da ? b : a;
       });
-      r.querySelector('input.last-price').value = latest['Price per Unit'] || latest['price per unit'] || latest.Price || latest.price;
+      const lpInput = r.querySelector('input.last-price');
+      if (lpInput && !lpInput.value) {
+        lpInput.value = latest['Price per Unit'] || latest['price per unit'] || latest.Price || latest.price;
+      }
       const unitInput = r.querySelector('input.unit');
-      if (unitInput) { unitInput.value = latest.Unit || latest.unit || ''; }
+      if (unitInput) {
+        const unitVal = latest.Unit || latest.unit;
+        if (!unitInput.value && unitVal) { unitInput.value = unitVal; }
+      }
       recalcRow(r);
     }
   });
@@ -155,10 +164,17 @@ document.addEventListener('DOMContentLoaded', function () {
       const total = r.querySelector('.total').innerText;
       productData.push({ description: product, unit: unit, last_price: lastPrice, quantity: quantity, total: total });
     });
+    const projectInfo = {
+      contractor: document.getElementById('contractor').value,
+      address: document.getElementById('address').value,
+      date: document.getElementById('date').value
+    };
     fetch('/save_template', {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: 'template_name=' + encodeURIComponent(name) + '&product_data=' + encodeURIComponent(JSON.stringify(productData))
+      body: 'template_name=' + encodeURIComponent(name) +
+            '&product_data=' + encodeURIComponent(JSON.stringify(productData)) +
+            '&project_info=' + encodeURIComponent(JSON.stringify(projectInfo))
     }).then(() => location.reload());
   });
 });
