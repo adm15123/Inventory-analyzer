@@ -757,9 +757,25 @@ def rename_template(name):
 @app.route("/convert_to_lion", methods=["GET", "POST"])
 @login_required
 def convert_to_lion():
-    templates_dir = os.path.join(app.config["UPLOAD_FOLDER"], "templates")
-    os.makedirs(templates_dir, exist_ok=True)
-    template_names = [f for f in os.listdir(templates_dir) if f.lower().endswith(".xlsx")]
+    """Convert a supply list to Lion's catalog."""
+    # Ensure we have the latest templates from GitHub
+    load_templates_from_github()
+
+    # Local Excel templates live under uploads/templates
+    excel_templates_dir = os.path.join(app.config["UPLOAD_FOLDER"], "templates")
+    os.makedirs(excel_templates_dir, exist_ok=True)
+    excel_templates = [
+        f for f in os.listdir(excel_templates_dir) if f.lower().endswith(".xlsx")
+    ]
+
+    # JSON templates (saved to GitHub) are stored under the configured data dir
+    json_templates_dir = config.TEMPLATE_DATA_DIR
+    os.makedirs(json_templates_dir, exist_ok=True)
+    json_templates = [
+        f for f in os.listdir(json_templates_dir) if f.lower().endswith(".json")
+    ]
+
+    template_names = excel_templates + json_templates
 
     table_html = None
     download_filename: str | None = None
@@ -774,10 +790,33 @@ def convert_to_lion():
             supply_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
             uploaded_file.save(supply_path)
         elif selected_template:
-            supply_path = os.path.join(templates_dir, selected_template)
+            if selected_template.lower().endswith(".json"):
+                template_path = os.path.join(json_templates_dir, selected_template)
+                try:
+                    with open(template_path) as f:
+                        template_data = json.load(f)
+                    temp_df = pd.DataFrame(template_data)
+                    temp_df.rename(
+                        columns={
+                            "description": "Description",
+                            "quantity": "Quantity",
+                            "last_price": "Price per Unit",
+                            "price": "Price",
+                        },
+                        inplace=True,
+                    )
+                    supply_path = os.path.join(
+                        app.config["UPLOAD_FOLDER"], f"{uuid.uuid4().hex}_template.xlsx"
+                    )
+                    temp_df.to_excel(supply_path, index=False)
+                except Exception as e:
+                    flash(f"Error loading template: {e}", "danger")
+                    return redirect(url_for("convert_to_lion"))
+            else:
+                supply_path = os.path.join(excel_templates_dir, selected_template)
         else:
-            flash("Please upload a file or select a template.", "warning")
-            return redirect(url_for("convert_to_lion"))
+            # Default to Supply 1 data if nothing was provided
+            supply_path = config.DEFAULT_FILE
 
         lion_catalog = config.DEFAULT_SUPPLY3_FILE
         download_filename = f"lion_result_{uuid.uuid4().hex}.xlsx"
@@ -806,10 +845,12 @@ def convert_to_lion():
 @app.route("/download_lion/<filename>")
 @login_required
 def download_lion(filename: str):
-    return send_file(
-        os.path.join(app.config["UPLOAD_FOLDER"], filename),
-        as_attachment=True,
-    )
+    """Send a previously generated Lion conversion workbook to the client."""
+    filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+    if not os.path.exists(filepath):
+        flash("Requested file not found.", "warning")
+        return redirect(url_for("convert_to_lion"))
+    return send_file(filepath, as_attachment=True, download_name=filename)
 
 # -------------------------------
 # PDF Download Route
