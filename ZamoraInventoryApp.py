@@ -1004,13 +1004,19 @@ def download_summary():
 @app.route("/login", methods=["GET", "POST"])
 def login():
     if request.method == "POST":
-        email = request.form.get("email")
-        code = request.form.get("code")
-        if email == "zamoraplumbing01@gmail.com" and code == "7199":
-            session["email"] = email
-            session["last_activity"] = time.time()
-            flash("Login successful!", "success")
-            return redirect(url_for("index"))
+        email = request.form.get("email", "").strip()
+        code = request.form.get("code", "").strip()
+
+        # Allow direct code-based login without requiring the email field.
+        if code:
+            if code == "7199":
+                session["email"] = "zamoraplumbing01@gmail.com"
+                session["last_activity"] = time.time()
+                flash("Login successful!", "success")
+                return redirect(url_for("index"))
+            flash("Invalid code.", "danger")
+            return redirect(url_for("login"))
+
         if email in ALLOWED_EMAILS:
             token = serializer.dumps(email, salt="email-confirmation")
             login_url = url_for("verify_login", token=token, _external=True)
