@@ -783,6 +783,8 @@ def convert_to_lion():
 
     table_html = None
     download_filename: str | None = None
+    download_pdf: str | None = None
+    grand_total: float | None = None
 
     if request.method == "POST":
         uploaded_file = request.files.get("file")
@@ -850,6 +852,7 @@ def convert_to_lion():
 
         try:
             result_df = match_to_lion(supply_path, lion_catalog, output_path)
+            grand_total = float(result_df["Total"].sum())
             table_html = (
                 result_df.to_html(
                     table_id="data-table",
@@ -857,6 +860,28 @@ def convert_to_lion():
                     index=False,
                 ).replace('<table ', '<table data-page-length="20" ')
             )
+
+            # Generate PDF version of the results
+            os.environ.setdefault("XDG_RUNTIME_DIR", "/tmp")
+            css_path = os.path.join(app.root_path, "static", "css", "order_summary.css")
+            rendered_pdf = render_template(
+                "lion_summary.html",
+                rows=result_df.to_dict("records"),
+                grand_total=grand_total,
+                css_link=f"file://{css_path}",
+            )
+            import pdfkit
+            try:
+                options = {"enable-local-file-access": None}
+                pdf_bytes = pdfkit.from_string(
+                    rendered_pdf, False, options=options, css=css_path
+                )
+                download_pdf = f"lion_result_{uuid.uuid4().hex}.pdf"
+                pdf_path = os.path.join(app.config["UPLOAD_FOLDER"], download_pdf)
+                with open(pdf_path, "wb") as f:
+                    f.write(pdf_bytes)
+            except Exception as e:
+                flash(f"PDF generation failed: {e}", "danger")
         except Exception as e:
             flash(f"Error converting file: {e}", "danger")
 
@@ -865,6 +890,8 @@ def convert_to_lion():
         templates=template_names,
         table=table_html,
         download_filename=download_filename,
+        download_pdf=download_pdf,
+        grand_total=grand_total,
     )
 
 
@@ -872,6 +899,17 @@ def convert_to_lion():
 @login_required
 def download_lion(filename: str):
     """Send a previously generated Lion conversion workbook to the client."""
+    filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+    if not os.path.exists(filepath):
+        flash("Requested file not found.", "warning")
+        return redirect(url_for("convert_to_lion"))
+    return send_file(filepath, as_attachment=True, download_name=filename)
+
+
+@app.route("/download_lion_pdf/<filename>")
+@login_required
+def download_lion_pdf(filename: str):
+    """Send a previously generated Lion conversion PDF to the client."""
     filepath = os.path.join(app.config["UPLOAD_FOLDER"], filename)
     if not os.path.exists(filepath):
         flash("Requested file not found.", "warning")
