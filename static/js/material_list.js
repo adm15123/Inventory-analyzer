@@ -1,5 +1,6 @@
 function changeList(selectedList) {
   const baseUrl = typeof baseMaterialUrl !== 'undefined' ? baseMaterialUrl : '';
+  localStorage.setItem('selectedTemplate', selectedList);
   window.location.href = baseUrl + '?list=' + selectedList;
 }
 
@@ -90,9 +91,15 @@ function updatePredeterminedRows() {
 }
 
 document.addEventListener('DOMContentLoaded', function () {
+  const supplySelect = document.getElementById('lookupSupply');
+  const savedSupply = localStorage.getItem('selectedSupply');
+  if (savedSupply) {
+    supplySelect.value = savedSupply;
+  }
   updatePredeterminedRows();
   updateListAttributes();
-  document.getElementById('lookupSupply').addEventListener('change', function () {
+  supplySelect.addEventListener('change', function () {
+    localStorage.setItem('selectedSupply', this.value);
     updatePredeterminedRows();
     updateListAttributes();
   });
@@ -175,6 +182,10 @@ document.addEventListener('DOMContentLoaded', function () {
       body: 'template_name=' + encodeURIComponent(name) +
             '&product_data=' + encodeURIComponent(JSON.stringify(productData)) +
             '&project_info=' + encodeURIComponent(JSON.stringify(projectInfo))
-    }).then(() => location.reload());
+    }).then(() => {
+      localStorage.setItem('selectedSupply', supplySelect.value);
+      localStorage.setItem('selectedTemplate', name);
+      window.location.href = baseMaterialUrl + '?list=' + encodeURIComponent(name);
+    });
   });
 });
