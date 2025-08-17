@@ -22,8 +22,14 @@
 {% if table %}
   <h2>Results</h2>
   {{ table | safe }}
+  {% if grand_total is not none %}
+    <p><strong>Total:</strong> {{ "$%.2f"|format(grand_total) }}</p>
+  {% endif %}
   {% if download_filename %}
     <a href="{{ url_for('download_lion', filename=download_filename) }}" class="btn btn-success mt-3">Download Workbook</a>
+  {% endif %}
+  {% if download_pdf %}
+    <a href="{{ url_for('download_lion_pdf', filename=download_pdf) }}" class="btn btn-info mt-3">Download PDF</a>
   {% endif %}
 {% endif %}
 {% endblock %}

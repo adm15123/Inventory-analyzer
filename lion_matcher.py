@@ -41,6 +41,7 @@ def match_to_lion(
     lion_catalog_file: str | Path,
     output_file: str | Path,
     model_name: str = "text-embedding-3-small",
+    similarity_threshold: float = 0.75,
 ) -> pd.DataFrame:
     """Match a supply list to Lion's catalog.
 
@@ -52,7 +53,7 @@ def match_to_lion(
         ``Price`` or ``Price per Unit`` for the cost information.
     lion_catalog_file:
         Path to Lion's catalog workbook. It must include ``Description``
-        and ``Price`` columns.
+        and either ``Price`` or ``Price per Unit`` columns.
     output_file:
         Where to write the resulting workbook.
     model_name:
@@ -85,6 +86,17 @@ def match_to_lion(
         )
 
     lion_df = pd.read_excel(lion_catalog_file)
+    lion_price_col = None
+    if "Price" in lion_df.columns:
+        lion_price_col = "Price"
+    elif "Price per Unit" in lion_df.columns:
+        lion_price_col = "Price per Unit"
+    if lion_price_col:
+        lion_df = lion_df.rename(columns={lion_price_col: "Price"})
+    else:
+        raise ValueError(
+            "lion_catalog_file must include either 'Price' or 'Price per Unit' column"
+        )
 
     # Prepare the OpenAI client and compute Lion's embeddings once.
     api_key = os.environ.get("OPENAI_API_KEY")
@@ -129,21 +141,30 @@ def match_to_lion(
         similarities = _cosine_similarity(embed, lion_embeddings)
         best_idx = int(np.argmax(similarities))
         best_lion = lion_df.iloc[best_idx]
+        best_sim = float(similarities[best_idx])
 
-        lion_price = best_lion.get("Price", 0)
+        if best_sim >= similarity_threshold:
+            lion_desc = best_lion.get("Description", "")
+            lion_price = best_lion.get("Price", np.nan)
+            price_diff = price - lion_price
+        else:
+            lion_desc = ""
+            lion_price = np.nan
+            price_diff = np.nan
 
         matched_rows.append(
             {
                 "Supply Description": description,
                 "Quantity": quantity,
                 "Supply Price": price,
-                "Lion Description": best_lion.get("Description", ""),
+                "Lion Description": lion_desc,
                 "Lion Price": lion_price,
-                "Price Difference": price - lion_price,
-                "Similarity": float(similarities[best_idx]),
+                "Price Difference": price_diff,
+                "Similarity": best_sim,
             }
         )
 
     result_df = pd.DataFrame(matched_rows)
+    result_df["Total"] = result_df["Quantity"].fillna(0) * result_df["Lion Price"].fillna(0)
     result_df.to_excel(output_file, index=False)
     return result_df
