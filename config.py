@@ -46,7 +46,8 @@ MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "")
 MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER", MAIL_USERNAME)
 
 SESSION_PERMANENT = True
-PERMANENT_SESSION_LIFETIME = timedelta(minutes=30)
+# Extend session lifetime to ensure long-term persistence.
+PERMANENT_SESSION_LIFETIME = timedelta(days=365)
 
 ALLOWED_EXTENSIONS = {"xlsx"}
 

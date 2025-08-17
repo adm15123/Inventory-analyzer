@@ -77,6 +77,9 @@ def check_session_timeout():
         return
 
     if "email" in session:
+        # Bypass inactivity timeout for the Zamora Plumbing account.
+        if session.get("email") == "zamoraplumbing01@gmail.com":
+            return
         last_activity = session.get("last_activity", time.time())
         if time.time() - last_activity > 18000000:  # 30 minutes inactivity
             session.pop("email", None)
@@ -90,6 +93,9 @@ def check_session_timeout():
 
 def is_logged_in():
     if "email" in session:
+        # Always consider the Zamora Plumbing account as active.
+        if session.get("email") == "zamoraplumbing01@gmail.com":
+            return True
         last_activity = session.get("last_activity", time.time())
         if time.time() - last_activity > 18000000:
             session.pop("email", None)
@@ -1021,6 +1027,7 @@ def verify_login(token):
     try:
         email = serializer.loads(token, salt="email-confirmation", max_age=600)
         session["email"] = email
+        session.permanent = True
         session["last_activity"] = time.time()
         flash("Login successful!", "success")
         return redirect(url_for("index"))
