@@ -637,8 +637,14 @@ def material_list():
             except Exception:
                 pass
     list_option_lower = list_option.lower()
+    project_info = {"contractor": "", "address": "", "date": ""}
     if list_option in custom_templates:
-        raw_list = custom_templates[list_option]
+        raw_template = custom_templates[list_option]
+        if isinstance(raw_template, dict):
+            project_info = raw_template.get("project_info", project_info)
+            raw_list = raw_template.get("products", [])
+        else:
+            raw_list = raw_template
         product_list = []
         for item in raw_list:
             desc = (
@@ -654,11 +660,15 @@ def material_list():
                 or 0
             )
             qty = item.get("quantity", 0)
+            unit = item.get("Unit") or item.get("unit", "")
+            total = item.get("total") or item.get("Total") or 0
             product_list.append(
                 {
                     "Product Description": desc,
                     "Last Price": price,
                     "quantity": qty,
+                    "Unit": unit,
+                    "total": total,
                 }
             )
     elif list_option_lower == "underground":
@@ -690,6 +700,7 @@ def material_list():
         supply2_products=supply2_products,
         supply3_products=supply3_products,
         template_name=template_name,
+        project_info=project_info,
     )
 
 @app.route("/save_template", methods=["POST"])
@@ -697,20 +708,31 @@ def material_list():
 def save_template():
     template_name = request.form.get("template_name")
     product_data = request.form.get("product_data")
+    project_info_str = request.form.get("project_info")
     if not template_name or not product_data:
         flash("Template name and data are required.", "danger")
         return redirect(url_for("material_list"))
+    try:
+        products = json.loads(product_data)
+    except Exception:
+        flash("Invalid product data.", "danger")
+        return redirect(url_for("material_list"))
+    try:
+        project_info = json.loads(project_info_str) if project_info_str else {}
+    except Exception:
+        project_info = {}
+    content = json.dumps({"project_info": project_info, "products": products})
     filename = f"data/{template_name}.json"
     # Save locally
     templates_dir = config.TEMPLATE_DATA_DIR
     os.makedirs(templates_dir, exist_ok=True)
     try:
         with open(os.path.join(templates_dir, f"{template_name}.json"), "w") as f:
-            f.write(product_data)
+            f.write(content)
     except Exception as e:
         app.logger.error(f"Local template save failed: {e}")
 
-    success = save_template_to_github(filename, product_data)
+    success = save_template_to_github(filename, content)
     if success:
         flash("Template saved to GitHub.", "success")
     else:
