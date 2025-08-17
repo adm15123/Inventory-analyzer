@@ -543,6 +543,8 @@ def material_list():
         tax = subtotal * 0.07
         total_cost = subtotal + tax
 
+        os.environ.setdefault("XDG_RUNTIME_DIR", "/tmp")
+        css_path = os.path.join(app.root_path, "static", "css", "order_summary.css")
         rendered = render_template(
             "order_summary.html",
             contractor=contractor,
@@ -553,10 +555,12 @@ def material_list():
             tax=tax,
             total_cost=total_cost,
             include_price=include_price,
+            css_link=f"file://{css_path}",
         )
         import pdfkit
         try:
-            pdf = pdfkit.from_string(rendered, False)
+            options = {"enable-local-file-access": None}
+            pdf = pdfkit.from_string(rendered, False, options=options, css=css_path)
             global pdf_buffer
             pdf_buffer = io.BytesIO(pdf)
             pdf_buffer.seek(0)
