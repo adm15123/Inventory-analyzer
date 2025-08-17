@@ -55,8 +55,12 @@ app.config["MAIL_DEFAULT_SENDER"] = "aliant.delgado07@gmail.com"
 
 mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.secret_key)
-ALLOWED_EMAILS = config.ALLOWED_EMAILS
-
+ALLOWED_EMAILS = [
+    "aliant.delgado@yahoo.com",
+    "aliant.delgado17@gmail.com",
+    "zamoraplumbing01@gmail.com",
+    "aliant.delgado01@yahoo.com"
+]
 # Buffer to temporarily store generated order summary PDFs
 pdf_buffer: io.BytesIO | None = None
 # -------------------------------
