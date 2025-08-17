@@ -78,7 +78,7 @@ def check_session_timeout():
 
     if "email" in session:
         last_activity = session.get("last_activity", time.time())
-        if time.time() - last_activity > 1800:  # 30 minutes inactivity
+        if time.time() - last_activity > 18000000:  # 30 minutes inactivity
             session.pop("email", None)
             flash("Session expired due to inactivity. Please log in again.", "warning")
             return redirect(url_for("login"))
@@ -91,7 +91,7 @@ def check_session_timeout():
 def is_logged_in():
     if "email" in session:
         last_activity = session.get("last_activity", time.time())
-        if time.time() - last_activity > 1800:
+        if time.time() - last_activity > 18000000:
             session.pop("email", None)
             flash("Session expired due to inactivity. Please log in again.", "warning")
             return False
