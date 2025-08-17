@@ -20,6 +20,9 @@ import requests
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import os
 import uuid
+from werkzeug.utils import secure_filename
+
+from lion_matcher import match_to_lion
 
 # Additional imports for login functionality
 from flask_mail import Mail, Message
@@ -741,6 +744,68 @@ def rename_template(name):
         flash("Failed to update GitHub.", "danger")
     load_templates_from_github()
     return redirect(url_for("templates_list"))
+
+
+# -------------------------------
+# Convert to Lion Route
+# -------------------------------
+
+@app.route("/convert_to_lion", methods=["GET", "POST"])
+@login_required
+def convert_to_lion():
+    templates_dir = os.path.join(app.config["UPLOAD_FOLDER"], "templates")
+    os.makedirs(templates_dir, exist_ok=True)
+    template_names = [f for f in os.listdir(templates_dir) if f.lower().endswith(".xlsx")]
+
+    table_html = None
+    download_filename: str | None = None
+
+    if request.method == "POST":
+        uploaded_file = request.files.get("file")
+        selected_template = request.form.get("template")
+        supply_path = None
+
+        if uploaded_file and uploaded_file.filename:
+            filename = secure_filename(uploaded_file.filename)
+            supply_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
+            uploaded_file.save(supply_path)
+        elif selected_template:
+            supply_path = os.path.join(templates_dir, selected_template)
+        else:
+            flash("Please upload a file or select a template.", "warning")
+            return redirect(url_for("convert_to_lion"))
+
+        lion_catalog = config.DEFAULT_SUPPLY3_FILE
+        download_filename = f"lion_result_{uuid.uuid4().hex}.xlsx"
+        output_path = os.path.join(app.config["UPLOAD_FOLDER"], download_filename)
+
+        try:
+            result_df = match_to_lion(supply_path, lion_catalog, output_path)
+            table_html = (
+                result_df.to_html(
+                    table_id="data-table",
+                    classes="table table-striped",
+                    index=False,
+                ).replace('<table ', '<table data-page-length="20" ')
+            )
+        except Exception as e:
+            flash(f"Error converting file: {e}", "danger")
+
+    return render_template(
+        "convert_to_lion.html",
+        templates=template_names,
+        table=table_html,
+        download_filename=download_filename,
+    )
+
+
+@app.route("/download_lion/<filename>")
+@login_required
+def download_lion(filename: str):
+    return send_file(
+        os.path.join(app.config["UPLOAD_FOLDER"], filename),
+        as_attachment=True,
+    )
 
 # -------------------------------
 # PDF Download Route
