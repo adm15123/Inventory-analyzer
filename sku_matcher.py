@@ -17,6 +17,7 @@ import textwrap
 from typing import Dict, List
 import requests
 
+
 from openai import OpenAI
 
 # Initialize the OpenAI client using the environment variable
@@ -182,8 +183,6 @@ def web_search_snippets(query: str, k: int = 6) -> List[Dict]:
     except Exception:
         return []
     return results[:k]
-
-
 JUDGE_SYSTEM = """You are a strict plumbing SKU matching assistant.
 Compare two fittings and decide if they are the SAME product.
 Use only the evidence provided (descriptions + web snippets).
