@@ -15,6 +15,8 @@ import os
 import re
 import textwrap
 from typing import Dict, List
+import requests
+
 
 from openai import OpenAI
 
@@ -127,16 +129,60 @@ def parse_attrs(desc: str) -> Dict:
 
 
 def web_search_snippets(query: str, k: int = 6) -> List[Dict]:
-    """Return search snippets for ``query``.
+    """Return DuckDuckGo search snippets for ``query``.
 
-    This is currently a stub that returns an empty list. Replace the
-    body with a real web search implementation using Bing Web Search,
-    Google Custom Search, SerpAPI, etc. Prefer manufacturer/spec/UPC
-    domains when possible.
+    The function uses DuckDuckGo's instant answer API via ``requests`` and
+    extracts up to ``k`` result dictionaries containing ``title``, ``url``
+    and ``snippet`` keys.  Any network errors result in an empty list so
+    callers can handle missing search gracefully.
     """
-    return []
 
-
+    params = {
+        "q": query,
+        "format": "json",
+        "no_redirect": 1,
+        "no_html": 1,
+    }
+    results: List[Dict] = []
+    try:
+        resp = requests.get("https://api.duckduckgo.com/", params=params, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        for item in data.get("Results", []):
+            if len(results) >= k:
+                break
+            results.append(
+                {
+                    "title": item.get("Text", ""),
+                    "url": item.get("FirstURL", ""),
+                    "snippet": item.get("Text", ""),
+                }
+            )
+        for topic in data.get("RelatedTopics", []):
+            if len(results) >= k:
+                break
+            if "Text" in topic and "FirstURL" in topic:
+                results.append(
+                    {
+                        "title": topic.get("Text", ""),
+                        "url": topic.get("FirstURL", ""),
+                        "snippet": topic.get("Text", ""),
+                    }
+                )
+            for sub in topic.get("Topics", []):
+                if len(results) >= k:
+                    break
+                if "Text" in sub and "FirstURL" in sub:
+                    results.append(
+                        {
+                            "title": sub.get("Text", ""),
+                            "url": sub.get("FirstURL", ""),
+                            "snippet": sub.get("Text", ""),
+                        }
+                    )
+    except Exception:
+        return []
+    return results[:k]
 JUDGE_SYSTEM = """You are a strict plumbing SKU matching assistant.
 Compare two fittings and decide if they are the SAME product.
 Use only the evidence provided (descriptions + web snippets).
