@@ -122,6 +122,26 @@ document.addEventListener('DOMContentLoaded', function () {
     document.getElementById('product_data').value = JSON.stringify(productData);
     document.getElementById('material-form').submit();
   });
+  document.getElementById('convert-lion').addEventListener('click', function () {
+    const rows = document.querySelectorAll('#material-list tr');
+    const productData = [];
+    rows.forEach(function (r) {
+      const product = r.querySelector('.product').value;
+      const lastPrice = r.querySelector('input.last-price').value;
+      const quantity = r.querySelector('input.quantity').value;
+      productData.push({ description: product, last_price: lastPrice, quantity: quantity });
+    });
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = '/convert_to_lion';
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'product_data';
+    input.value = JSON.stringify(productData);
+    form.appendChild(input);
+    document.body.appendChild(form);
+    form.submit();
+  });
   document.getElementById('save-template').addEventListener('click', function () {
     const name = document.getElementById('template-name').value.trim();
     if (!name) { alert('Template name required'); return; }

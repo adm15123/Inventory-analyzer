@@ -787,9 +787,31 @@ def convert_to_lion():
     if request.method == "POST":
         uploaded_file = request.files.get("file")
         selected_template = request.form.get("template")
+        product_data_json = request.form.get("product_data")
         supply_path = None
 
-        if uploaded_file and uploaded_file.filename:
+        if product_data_json:
+            try:
+                product_data = json.loads(product_data_json)
+            except Exception as e:
+                flash(f"Invalid product data: {e}", "danger")
+                return redirect(url_for("material_list"))
+            temp_df = pd.DataFrame(product_data)
+            temp_df.rename(
+                columns={
+                    "description": "Description",
+                    "Product Description": "Description",
+                    "quantity": "Quantity",
+                    "last_price": "Price per Unit",
+                    "price": "Price",
+                },
+                inplace=True,
+            )
+            supply_path = os.path.join(
+                app.config["UPLOAD_FOLDER"], f"{uuid.uuid4().hex}_from_material.xlsx"
+            )
+            temp_df.to_excel(supply_path, index=False)
+        elif uploaded_file and uploaded_file.filename:
             filename = secure_filename(uploaded_file.filename)
             supply_path = os.path.join(app.config["UPLOAD_FOLDER"], filename)
             uploaded_file.save(supply_path)
