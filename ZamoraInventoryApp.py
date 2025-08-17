@@ -23,6 +23,7 @@ import uuid
 from werkzeug.utils import secure_filename
 
 from lion_matcher import match_to_lion
+from sku_matcher import judge_same_product
 
 # Additional imports for login functionality
 from flask_mail import Mail, Message
@@ -396,6 +397,28 @@ def api_search():
     next_page = page + 1 if per_page and len(results) > page * per_page else None
     prev_page = page - 1 if per_page and page > 1 else None
     return jsonify({"data": json_data, "next_page": next_page, "prev_page": prev_page})
+    
+@app.route("/api/sku_judge", methods=["POST"])
+@login_required
+def api_sku_judge():
+    """
+    JSON body: {"a": "<desc from supply A>", "b": "<desc from supply B>", "use_web": true}
+    Returns JSON from judge_same_product.
+    """
+    try:
+        data = request.get_json(force=True, silent=False) or {}
+        a = (data.get("a") or "").strip()
+        b = (data.get("b") or "").strip()
+        use_web = bool(data.get("use_web", True))
+        if not a or not b:
+            return jsonify({"error": "Both 'a' and 'b' descriptions are required."}), 400
+
+        app.logger.info(f"[sku_judge] Judging A='{a}' vs B='{b}', use_web={use_web}")
+        result = judge_same_product(a, b, use_web=use_web, max_snippets=8)
+        return jsonify(result), 200
+    except Exception as e:
+        app.logger.exception("SKU judge error")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/graph")
 @login_required
