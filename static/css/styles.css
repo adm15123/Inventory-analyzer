@@ -7,11 +7,6 @@ table.table td, table.table th { text-align: center; }
   white-space: nowrap;
 }
 
-#material-list td:nth-child(2) {
-  white-space: normal;
-  word-break: break-word;
-}
-
 #material-table th:first-child,
 #material-table td:first-child {
   width: 10%;
@@ -19,7 +14,7 @@ table.table td, table.table th { text-align: center; }
 
 #material-table th:nth-child(2),
 #material-table td:nth-child(2) {
-  width: 40%;
+  width: auto;
 }
 
 #material-table th:nth-child(3),
@@ -32,9 +27,7 @@ table.table td, table.table th { text-align: center; }
 }
 
 #material-list .product {
-  white-space: normal;
-  overflow-wrap: anywhere;
-  width: 100%;
+  width: auto;
 }
 
 #material-list .supply {
