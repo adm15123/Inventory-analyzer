@@ -96,13 +96,13 @@ function updatePredeterminedRows() {
         return db > da ? b : a;
       });
       const lpInput = r.querySelector('input.last-price');
-      if (lpInput && !lpInput.value) {
+      if (lpInput) {
         lpInput.value = latest['Price per Unit'] || latest['price per unit'] || latest.Price || latest.price;
       }
       const unitInput = r.querySelector('input.unit');
       if (unitInput) {
         const unitVal = latest.Unit || latest.unit;
-        if (!unitInput.value && unitVal) { unitInput.value = unitVal; }
+        if (unitVal) { unitInput.value = unitVal; }
       }
       const supplyInput = r.querySelector('input.supply');
       if (supplyInput) { supplyInput.value = currentSupplyCode(); }
