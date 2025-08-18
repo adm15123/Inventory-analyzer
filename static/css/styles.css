@@ -1,9 +1,19 @@
 body { padding-top: 4.5rem; }
-table.table td, table.table th { text-align: center; }
+table.table td, table.table th {
+  text-align: center;
+}
 .custom-toast-container { z-index: 1100; }
 .inline-input { width: auto; display: inline-block; }
 
-#material-list td {
+#material-table td,
+#material-table th {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+  white-space: nowrap;
+}
+
+#material-list td:nth-child(2),
+#material-table th:nth-child(2) {
   white-space: normal;
   word-break: break-word;
 }
