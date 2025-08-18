@@ -785,7 +785,11 @@ def templates_list():
     sort_key = request.args.get("sort", "name")
     group_by = request.args.get("group", "none")
     entries = []
-    for root, _, files in os.walk(templates_dir):
+    folder_set = set()
+    for root, dirs, files in os.walk(templates_dir):
+        for d in dirs:
+            rel_dir = os.path.relpath(os.path.join(root, d), templates_dir)
+            folder_set.add(rel_dir)
         for f in files:
             if f.endswith(".json"):
                 path = os.path.join(root, f)
@@ -799,6 +803,7 @@ def templates_list():
                     "group": group,
                     "mtime": os.path.getmtime(path),
                 })
+    folders = sorted(folder_set)
     if sort_key == "date":
         entries.sort(key=lambda x: x["mtime"])
     else:
@@ -812,12 +817,14 @@ def templates_list():
             grouped_templates=grouped,
             sort_key=sort_key,
             group_by=group_by,
+            folders=folders,
         )
     return render_template(
         "templates_list.html",
         template_entries=entries,
         sort_key=sort_key,
         group_by=group_by,
+        folders=folders,
     )
 
 
@@ -881,6 +888,39 @@ def rename_template(name):
     if success:
         delete_template_from_github(f"data/{name}.json")
         flash("Template renamed.", "success")
+    else:
+        flash("Failed to update GitHub.", "danger")
+    load_templates_from_github()
+    return redirect(url_for("templates_list"))
+
+
+@app.route("/move_template/<path:name>", methods=["POST"])
+@login_required
+def move_template(name):
+    target_folder = request.form.get("target_folder", "").strip()
+    new_folder = request.form.get("new_folder", "").strip()
+    destination = new_folder or target_folder
+    templates_dir = config.TEMPLATE_DATA_DIR
+    src_path = os.path.join(templates_dir, f"{name}.json")
+    if not os.path.exists(src_path):
+        flash("Template not found.", "danger")
+        return redirect(request.referrer or url_for("templates_list"))
+    base_name = os.path.basename(name)
+    dest_dir = os.path.join(templates_dir, destination) if destination else templates_dir
+    dest_path = os.path.join(dest_dir, f"{base_name}.json")
+    try:
+        os.makedirs(dest_dir, exist_ok=True)
+        with open(src_path) as f:
+            content = f.read()
+        os.rename(src_path, dest_path)
+    except Exception as e:
+        flash(f"Move failed: {e}", "danger")
+        return redirect(request.referrer or url_for("templates_list"))
+    new_rel_path = os.path.join(destination, base_name) if destination else base_name
+    success = save_template_to_github(f"data/{new_rel_path}.json", content)
+    if success:
+        delete_template_from_github(f"data/{name}.json")
+        flash("Template moved.", "success")
     else:
         flash("Failed to update GitHub.", "danger")
     load_templates_from_github()

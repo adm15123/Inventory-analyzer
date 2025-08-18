@@ -49,6 +49,16 @@
               <input type="text" name="new_name" placeholder="New name" class="form-control d-inline inline-input">
               <button type="submit" class="btn btn-sm btn-warning">Rename</button>
             </form>
+            <form action="{{ url_for('move_template', name=t.full_name) }}" method="post" class="d-inline">
+              <select name="target_folder" class="form-select d-inline inline-input">
+                <option value="">/</option>
+                {% for folder in folders %}
+                  <option value="{{ folder }}">{{ folder }}</option>
+                {% endfor %}
+              </select>
+              <input type="text" name="new_folder" placeholder="New folder" class="form-control d-inline inline-input">
+              <button type="submit" class="btn btn-sm btn-secondary">Move</button>
+            </form>
             <form action="{{ url_for('delete_template', name=t.full_name) }}" method="post" class="d-inline" onsubmit="return confirm('Delete template?');">
               <button type="submit" class="btn btn-sm btn-danger">Delete</button>
             </form>
@@ -73,6 +83,16 @@
           <form action="{{ url_for('rename_template', name=t.full_name) }}" method="post" class="d-inline">
             <input type="text" name="new_name" placeholder="New name" class="form-control d-inline inline-input">
             <button type="submit" class="btn btn-sm btn-warning">Rename</button>
+          </form>
+          <form action="{{ url_for('move_template', name=t.full_name) }}" method="post" class="d-inline">
+            <select name="target_folder" class="form-select d-inline inline-input">
+              <option value="">/</option>
+              {% for folder in folders %}
+                <option value="{{ folder }}">{{ folder }}</option>
+              {% endfor %}
+            </select>
+            <input type="text" name="new_folder" placeholder="New folder" class="form-control d-inline inline-input">
+            <button type="submit" class="btn btn-sm btn-secondary">Move</button>
           </form>
           <form action="{{ url_for('delete_template', name=t.full_name) }}" method="post" class="d-inline" onsubmit="return confirm('Delete template?');">
             <button type="submit" class="btn btn-sm btn-danger">Delete</button>
