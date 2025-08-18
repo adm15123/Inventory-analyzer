@@ -8,6 +8,18 @@ function recalcRow(row) {
   const lp = parseFloat(row.querySelector('input.last-price').value) || 0;
   const qty = parseFloat(row.querySelector('input.quantity').value) || 0;
   row.querySelector('.total').innerText = (lp * qty).toFixed(2);
+  updateGrandTotal();
+}
+
+function updateGrandTotal() {
+  let sum = 0;
+  document.querySelectorAll('#material-list .total').forEach(td => {
+    sum += parseFloat(td.innerText) || 0;
+  });
+  const grand = document.getElementById('grand-total');
+  if (grand) {
+    grand.innerText = sum.toFixed(2);
+  }
 }
 
 function currentListId() {
@@ -55,7 +67,7 @@ function attachRowEvents(row) {
   }
   const rm = row.querySelector('.remove-item');
   if (rm) {
-    rm.addEventListener('click', function () { row.remove(); });
+    rm.addEventListener('click', function () { row.remove(); updateGrandTotal(); });
   }
 }
 
@@ -88,6 +100,7 @@ function updatePredeterminedRows() {
     }
   });
   updateListAttributes();
+  updateGrandTotal();
 }
 
 document.addEventListener('DOMContentLoaded', function () {
@@ -98,6 +111,7 @@ document.addEventListener('DOMContentLoaded', function () {
   }
   updatePredeterminedRows();
   updateListAttributes();
+  updateGrandTotal();
   supplySelect.addEventListener('change', function () {
     localStorage.setItem('selectedSupply', this.value);
     updatePredeterminedRows();
@@ -121,6 +135,7 @@ document.addEventListener('DOMContentLoaded', function () {
       '<button type="button" class="btn btn-danger remove-item" aria-label="Remove"><i class="bi bi-trash"></i></button></td>';
     attachRowEvents(row);
     updateListAttributes();
+    updateGrandTotal();
   });
   document.getElementById('export-pdf').addEventListener('click', function () {
     const includePrice = confirm('Would you like to include the price in the PDF?');
