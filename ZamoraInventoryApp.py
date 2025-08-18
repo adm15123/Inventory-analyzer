@@ -684,6 +684,7 @@ def material_list():
             qty = item.get("quantity", 0)
             unit = item.get("Unit") or item.get("unit", "")
             total = item.get("total") or item.get("Total") or 0
+            supply = item.get("Supply") or item.get("supply", "BPS")
             product_list.append(
                 {
                     "Product Description": desc,
@@ -691,6 +692,7 @@ def material_list():
                     "quantity": qty,
                     "Unit": unit,
                     "total": total,
+                    "Supply": supply,
                 }
             )
     elif list_option_lower == "underground":
