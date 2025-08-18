@@ -4,6 +4,13 @@
 <h1 class="mt-4">Saved Templates</h1>
 <a href="{{ url_for('material_list') }}" class="btn btn-secondary mb-3">Back</a>
 
+<form action="{{ url_for('create_template_folder') }}" method="post" class="mb-3">
+  <div class="input-group">
+    <input type="text" name="folder_name" class="form-control" placeholder="New folder name">
+    <button type="submit" class="btn btn-secondary">Create Folder</button>
+  </div>
+</form>
+
 <form method="get" class="row mb-3">
   <div class="col-auto">
     <label for="sort" class="form-label">Sort by</label>
@@ -59,7 +66,7 @@
     <tbody>
     {% for t in template_entries %}
       <tr>
-        <td>{{ t.name }}</td>
+        <td>{{ t.full_name }}</td>
         <td>{{ t.mtime | datetimeformat }}</td>
         <td>
           <a href="{{ url_for('edit_template', name=t.full_name) }}" class="btn btn-sm btn-primary">Edit</a>

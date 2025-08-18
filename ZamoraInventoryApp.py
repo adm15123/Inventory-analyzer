@@ -643,13 +643,21 @@ def material_list():
     templates_dir = config.TEMPLATE_DATA_DIR
     os.makedirs(templates_dir, exist_ok=True)
     custom_templates = {}
-    for fname in os.listdir(templates_dir):
-        if fname.endswith(".json"):
-            try:
-                with open(os.path.join(templates_dir, fname)) as f:
-                    custom_templates[os.path.splitext(fname)[0]] = json.load(f)
-            except Exception:
-                pass
+    template_folders = set()
+    for root, dirs, files in os.walk(templates_dir):
+        rel_dir = os.path.relpath(root, templates_dir)
+        if rel_dir != ".":
+            template_folders.add(rel_dir)
+        for fname in files:
+            if fname.endswith(".json"):
+                try:
+                    path = os.path.join(root, fname)
+                    with open(path) as f:
+                        name = os.path.splitext(fname)[0]
+                        full_name = os.path.join(rel_dir, name) if rel_dir != "." else name
+                        custom_templates[full_name] = json.load(f)
+                except Exception:
+                    pass
     list_option_lower = list_option.lower()
     project_info = {"contractor": "", "address": "", "date": ""}
     if list_option in custom_templates:
@@ -702,18 +710,28 @@ def material_list():
     supply1_products = du.df.to_dict("records") if du.df is not None else []
     supply2_products = du.df_supply2.to_dict("records") if du.df_supply2 is not None else []
     supply3_products = du.df_supply3.to_dict("records") if du.df_supply3 is not None else []
-    template_name = request.args.get("template_name", "")
-    if not template_name and list_option_lower not in ["underground", "rough", "final", "new"]:
-        template_name = list_option
+    template_name_arg = request.args.get("template_name", "")
+    if not template_name_arg and list_option_lower not in ["underground", "rough", "final", "new"]:
+        template_name_arg = list_option
+    full_template_name = template_name_arg
+    template_folder = ""
+    template_name = template_name_arg
+    if template_name_arg:
+        template_folder, template_name = os.path.split(template_name_arg)
+        if template_folder == ".":
+            template_folder = ""
     return render_template(
         "material_list.html",
         product_list=product_list,
         list_option=list_option,
         custom_templates=list(custom_templates.keys()),
+        template_folders=sorted(template_folders),
         supply1_products=supply1_products,
         supply2_products=supply2_products,
         supply3_products=supply3_products,
         template_name=template_name,
+        template_folder=template_folder,
+        full_template_name=full_template_name,
         project_info=project_info,
     )
 
@@ -818,6 +836,23 @@ def delete_template(name):
         os.remove(filepath)
     delete_template_from_github(f"data/{name}.json")
     flash("Template deleted.", "info")
+    return redirect(request.referrer or url_for("templates_list"))
+
+
+@app.route("/create_template_folder", methods=["POST"])
+@login_required
+def create_template_folder():
+    folder_name = request.form.get("folder_name", "").strip()
+    if not folder_name:
+        flash("Folder name required.", "danger")
+        return redirect(request.referrer or url_for("templates_list"))
+    templates_dir = config.TEMPLATE_DATA_DIR
+    path = os.path.join(templates_dir, folder_name)
+    try:
+        os.makedirs(path, exist_ok=True)
+        flash("Folder created.", "success")
+    except Exception as e:
+        flash(f"Failed to create folder: {e}", "danger")
     return redirect(request.referrer or url_for("templates_list"))
 
 
