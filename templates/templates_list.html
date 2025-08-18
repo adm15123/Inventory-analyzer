@@ -3,26 +3,77 @@
 {% block content %}
 <h1 class="mt-4">Saved Templates</h1>
 <a href="{{ url_for('material_list') }}" class="btn btn-secondary mb-3">Back</a>
-<table class="table">
-  <thead>
-    <tr><th>Name</th><th>Actions</th></tr>
-  </thead>
-  <tbody>
-  {% for name in template_names %}
-    <tr>
-      <td>{{ name }}</td>
-      <td>
-        <a href="{{ url_for('edit_template', name=name) }}" class="btn btn-sm btn-primary">Edit</a>
-          <form action="{{ url_for('rename_template', name=name) }}" method="post" class="d-inline">
+
+<form method="get" class="row mb-3">
+  <div class="col-auto">
+    <label for="sort" class="form-label">Sort by</label>
+    <select name="sort" id="sort" class="form-select">
+      <option value="name" {% if sort_key=='name' %}selected{% endif %}>Name</option>
+      <option value="date" {% if sort_key=='date' %}selected{% endif %}>Date</option>
+    </select>
+  </div>
+  <div class="col-auto">
+    <label for="group" class="form-label">Group by</label>
+    <select name="group" id="group" class="form-select">
+      <option value="none" {% if group_by=='none' %}selected{% endif %}>None</option>
+      <option value="folder" {% if group_by=='folder' %}selected{% endif %}>Folder</option>
+    </select>
+  </div>
+  <div class="col-auto align-self-end">
+    <button type="submit" class="btn btn-primary">Apply</button>
+  </div>
+</form>
+
+{% if group_by == 'folder' %}
+  {% for group, templates in grouped_templates.items() %}
+    <h3>{{ group or 'Ungrouped' }}</h3>
+    <table class="table">
+      <thead>
+        <tr><th>Name</th><th>Modified</th><th>Actions</th></tr>
+      </thead>
+      <tbody>
+        {% for t in templates %}
+        <tr>
+          <td>{{ t.name }}</td>
+          <td>{{ t.mtime | datetimeformat }}</td>
+          <td>
+            <a href="{{ url_for('edit_template', name=t.full_name) }}" class="btn btn-sm btn-primary">Edit</a>
+            <form action="{{ url_for('rename_template', name=t.full_name) }}" method="post" class="d-inline">
+              <input type="text" name="new_name" placeholder="New name" class="form-control d-inline inline-input">
+              <button type="submit" class="btn btn-sm btn-warning">Rename</button>
+            </form>
+            <form action="{{ url_for('delete_template', name=t.full_name) }}" method="post" class="d-inline" onsubmit="return confirm('Delete template?');">
+              <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endfor %}
+{% else %}
+  <table class="table">
+    <thead>
+      <tr><th>Name</th><th>Modified</th><th>Actions</th></tr>
+    </thead>
+    <tbody>
+    {% for t in template_entries %}
+      <tr>
+        <td>{{ t.name }}</td>
+        <td>{{ t.mtime | datetimeformat }}</td>
+        <td>
+          <a href="{{ url_for('edit_template', name=t.full_name) }}" class="btn btn-sm btn-primary">Edit</a>
+          <form action="{{ url_for('rename_template', name=t.full_name) }}" method="post" class="d-inline">
             <input type="text" name="new_name" placeholder="New name" class="form-control d-inline inline-input">
             <button type="submit" class="btn btn-sm btn-warning">Rename</button>
           </form>
-        <form action="{{ url_for('delete_template', name=name) }}" method="post" class="d-inline" onsubmit="return confirm('Delete template?');">
-          <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-        </form>
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
+          <form action="{{ url_for('delete_template', name=t.full_name) }}" method="post" class="d-inline" onsubmit="return confirm('Delete template?');">
+            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+{% endif %}
 {% endblock %}
