@@ -1,7 +1,7 @@
 function changeList(selectedList) {
   const baseUrl = typeof baseMaterialUrl !== 'undefined' ? baseMaterialUrl : '';
   localStorage.setItem('selectedTemplate', selectedList);
-  window.location.href = baseUrl + '?list=' + selectedList;
+  window.location.href = baseUrl + '?list=' + encodeURIComponent(selectedList);
 }
 
 function recalcRow(row) {
@@ -159,8 +159,10 @@ document.addEventListener('DOMContentLoaded', function () {
     form.submit();
   });
   document.getElementById('save-template').addEventListener('click', function () {
-    const name = document.getElementById('template-name').value.trim();
+    const folder = document.getElementById('template-folder').value.trim();
+    let name = document.getElementById('template-name').value.trim();
     if (!name) { alert('Template name required'); return; }
+    if (folder) { name = folder + '/' + name; }
     const rows = document.querySelectorAll('#material-list tr');
     const productData = [];
     rows.forEach(function (r) {

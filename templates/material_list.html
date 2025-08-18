@@ -2,8 +2,8 @@
 {% block title %}Material List{% endblock %}
 {% block content %}
 <h1 class="mt-4">Material List</h1>
-{% if template_name %}
-<p class="text-info">Editing template: {{ template_name }}</p>
+{% if full_template_name %}
+<p class="text-info">Editing template: {{ full_template_name }}</p>
 {% endif %}
 <a href="{{ url_for('index') }}" class="btn btn-secondary mb-3">Back</a>
 <div class="form-group">
@@ -14,7 +14,7 @@
     <option value="final" {% if list_option == 'final' %}selected{% endif %}>Final List</option>
     <option value="new" {% if list_option == 'new' %}selected{% endif %}>New List</option>
     {% for name in custom_templates %}
-      <option value="{{ name }}" {% if list_option == name %}selected{% endif %}>{{ name|capitalize }} Template</option>
+      <option value="{{ name }}" {% if list_option == name %}selected{% endif %}>{{ name }} Template</option>
     {% endfor %}
   </select>
 </div>
@@ -93,9 +93,15 @@
   <button type="button" class="btn btn-success" id="export-pdf">Export to PDF</button>
   <a href="{{ url_for('download_summary') }}" class="btn btn-info">Download PDF</a>
   <div class="input-group mt-3 mb-3">
+    <input type="text" class="form-control" id="template-folder" list="folder-options" placeholder="Folder (optional)" value="{{ template_folder }}">
     <input type="text" class="form-control" id="template-name" placeholder="Template name" value="{{ template_name }}">
     <button type="button" class="btn btn-secondary" id="save-template">Save Template</button>
   </div>
+  <datalist id="folder-options">
+    {% for folder in template_folders %}
+      <option value="{{ folder }}">
+    {% endfor %}
+  </datalist>
   <input type="hidden" name="product_data" id="product_data">
   <input type="hidden" name="include_price" id="include_price" value="yes">
   </form>
