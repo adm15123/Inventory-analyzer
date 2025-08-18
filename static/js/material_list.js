@@ -28,6 +28,12 @@ function currentListId() {
     lookup === 'supply2' ? 'supply2List' : 'supply1List';
 }
 
+function currentSupplyCode() {
+  const lookup = document.getElementById('lookupSupply').value;
+  return lookup === 'supply3' ? 'LPS' :
+    lookup === 'supply2' ? 'S2' : 'BPS';
+}
+
 function updateListAttributes() {
   const listId = currentListId();
   document.querySelectorAll('.product').forEach(p => p.setAttribute('list', listId));
@@ -57,6 +63,8 @@ function attachRowEvents(row) {
           const unitVal = latest.Unit || latest.unit;
           if (unitVal) { unitInput.value = unitVal; }
         }
+        const supplyInput = row.querySelector('input.supply');
+        if (supplyInput) { supplyInput.value = currentSupplyCode(); }
         recalcRow(row);
       }
     });
@@ -96,6 +104,8 @@ function updatePredeterminedRows() {
         const unitVal = latest.Unit || latest.unit;
         if (!unitInput.value && unitVal) { unitInput.value = unitVal; }
       }
+      const supplyInput = r.querySelector('input.supply');
+      if (supplyInput) { supplyInput.value = currentSupplyCode(); }
       recalcRow(r);
     }
   });
@@ -128,6 +138,7 @@ document.addEventListener('DOMContentLoaded', function () {
     const row = table.insertRow();
     row.innerHTML = '<td><input type="number" class="form-control quantity" placeholder="Quantity"></td>' +
       '<td><input type="text" class="form-control product" placeholder="Enter product" list="' + currentListId() + '"></td>' +
+      '<td><input type="text" class="form-control supply" value="' + currentSupplyCode() + '" readonly></td>' +
       '<td><input type="text" class="form-control unit" placeholder="Unit"></td>' +
       '<td><input type="number" step="0.01" class="form-control last-price" placeholder="Last price"></td>' +
       '<td class="total">0.00</td>' +
@@ -148,7 +159,8 @@ document.addEventListener('DOMContentLoaded', function () {
       const lastPrice = r.querySelector('input.last-price').value;
       const quantity = r.querySelector('input.quantity').value;
       const total = r.querySelector('.total').innerText;
-      productData.push({ description: product, unit: unit, last_price: lastPrice, quantity: quantity, total: total });
+      const supply = r.querySelector('input.supply').value;
+      productData.push({ description: product, supply: supply, unit: unit, last_price: lastPrice, quantity: quantity, total: total });
     });
     document.getElementById('product_data').value = JSON.stringify(productData);
     document.getElementById('material-form').submit();
@@ -160,7 +172,8 @@ document.addEventListener('DOMContentLoaded', function () {
       const product = r.querySelector('.product').value;
       const lastPrice = r.querySelector('input.last-price').value;
       const quantity = r.querySelector('input.quantity').value;
-      productData.push({ description: product, last_price: lastPrice, quantity: quantity });
+      const supply = r.querySelector('input.supply').value;
+      productData.push({ description: product, supply: supply, last_price: lastPrice, quantity: quantity });
     });
     const form = document.createElement('form');
     form.method = 'POST';
@@ -186,7 +199,8 @@ document.addEventListener('DOMContentLoaded', function () {
       const lastPrice = r.querySelector('input.last-price').value;
       const quantity = r.querySelector('input.quantity').value;
       const total = r.querySelector('.total').innerText;
-      productData.push({ description: product, unit: unit, last_price: lastPrice, quantity: quantity, total: total });
+      const supply = r.querySelector('input.supply').value;
+      productData.push({ description: product, supply: supply, unit: unit, last_price: lastPrice, quantity: quantity, total: total });
     });
     const projectInfo = {
       contractor: document.getElementById('contractor').value,

@@ -19,7 +19,12 @@ table.table td, table.table th { text-align: center; }
 
 #material-table th:nth-child(2),
 #material-table td:nth-child(2) {
-  width: 50%;
+  width: 40%;
+}
+
+#material-table th:nth-child(3),
+#material-table td:nth-child(3) {
+  width: 10%;
 }
 
 #material-list .quantity {
@@ -30,4 +35,16 @@ table.table td, table.table th { text-align: center; }
   white-space: normal;
   overflow-wrap: anywhere;
   width: 100%;
+}
+
+#material-list .supply {
+  min-width: 80px;
+}
+
+#material-list .unit {
+  min-width: 90px;
+}
+
+#material-list .last-price {
+  min-width: 120px;
 }
