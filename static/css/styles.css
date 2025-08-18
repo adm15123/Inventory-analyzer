@@ -1,9 +1,20 @@
 body { padding-top: 4.5rem; }
-table.table td, table.table th { text-align: center; }
+table.table td, table.table th {
+  text-align: center;
+}
 .custom-toast-container { z-index: 1100; }
 .inline-input { width: auto; display: inline-block; }
 
-#material-list td {
+#material-table td,
+#material-table th {
+  padding-top: 0;
+  padding-bottom: 0;
+  white-space: nowrap;
+  line-height: 1.2;
+}
+
+#material-list td:nth-child(2),
+#material-table th:nth-child(2) {
   white-space: normal;
   word-break: break-word;
 }
@@ -48,4 +59,9 @@ table.table td, table.table th { text-align: center; }
 
 #material-list .last-price {
   min-width: 120px;
+}
+
+#material-list .form-control {
+  padding: 0.1rem 0.25rem;
+  height: 1.5rem;
 }
