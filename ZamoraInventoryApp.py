@@ -67,6 +67,14 @@ ALLOWED_EMAILS = [
 # Buffer to temporarily store generated order summary PDFs
 pdf_buffer: io.BytesIO | None = None
 # -------------------------------
+# Jinja Filters
+# -------------------------------
+
+@app.template_filter("datetimeformat")
+def datetimeformat(value, fmt: str = "%Y-%m-%d %H:%M:%S"):
+    """Format a timestamp for display in templates."""
+    return datetime.fromtimestamp(value).strftime(fmt)
+# -------------------------------
 # Global Before-Request Handler (Session Timeout)
 # -------------------------------
 
@@ -731,9 +739,10 @@ def save_template():
     filename = f"data/{template_name}.json"
     # Save locally
     templates_dir = config.TEMPLATE_DATA_DIR
-    os.makedirs(templates_dir, exist_ok=True)
+    filepath = os.path.join(templates_dir, f"{template_name}.json")
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
     try:
-        with open(os.path.join(templates_dir, f"{template_name}.json"), "w") as f:
+        with open(filepath, "w") as f:
             f.write(content)
     except Exception as e:
         app.logger.error(f"Local template save failed: {e}")
@@ -755,17 +764,52 @@ def templates_list():
     load_templates_from_github()
     templates_dir = config.TEMPLATE_DATA_DIR
     os.makedirs(templates_dir, exist_ok=True)
-    names = [os.path.splitext(f)[0] for f in os.listdir(templates_dir) if f.endswith(".json")]
-    return render_template("templates_list.html", template_names=names)
+    sort_key = request.args.get("sort", "name")
+    group_by = request.args.get("group", "none")
+    entries = []
+    for root, _, files in os.walk(templates_dir):
+        for f in files:
+            if f.endswith(".json"):
+                path = os.path.join(root, f)
+                rel_dir = os.path.relpath(root, templates_dir)
+                group = "" if rel_dir == "." else rel_dir
+                name = os.path.splitext(f)[0]
+                full_name = os.path.join(group, name) if group else name
+                entries.append({
+                    "name": name,
+                    "full_name": full_name,
+                    "group": group,
+                    "mtime": os.path.getmtime(path),
+                })
+    if sort_key == "date":
+        entries.sort(key=lambda x: x["mtime"])
+    else:
+        entries.sort(key=lambda x: x["name"].lower())
+    if group_by == "folder":
+        grouped = {}
+        for e in entries:
+            grouped.setdefault(e["group"], []).append(e)
+        return render_template(
+            "templates_list.html",
+            grouped_templates=grouped,
+            sort_key=sort_key,
+            group_by=group_by,
+        )
+    return render_template(
+        "templates_list.html",
+        template_entries=entries,
+        sort_key=sort_key,
+        group_by=group_by,
+    )
 
 
-@app.route("/edit_template/<name>")
+@app.route("/edit_template/<path:name>")
 @login_required
 def edit_template(name):
     return redirect(url_for("material_list", list=name, template_name=name))
 
 
-@app.route("/delete_template/<name>", methods=["POST"])
+@app.route("/delete_template/<path:name>", methods=["POST"])
 @login_required
 def delete_template(name):
     templates_dir = config.TEMPLATE_DATA_DIR
@@ -777,7 +821,7 @@ def delete_template(name):
     return redirect(request.referrer or url_for("templates_list"))
 
 
-@app.route("/rename_template/<name>", methods=["POST"])
+@app.route("/rename_template/<path:name>", methods=["POST"])
 @login_required
 def rename_template(name):
     new_name = request.form.get("new_name")
@@ -793,6 +837,7 @@ def rename_template(name):
     try:
         with open(old_path) as f:
             content = f.read()
+        os.makedirs(os.path.dirname(new_path), exist_ok=True)
         os.rename(old_path, new_path)
     except Exception as e:
         flash(f"Rename failed: {e}", "danger")
@@ -828,9 +873,14 @@ def convert_to_lion():
     # JSON templates (saved to GitHub) are stored under the configured data dir
     json_templates_dir = config.TEMPLATE_DATA_DIR
     os.makedirs(json_templates_dir, exist_ok=True)
-    json_templates = [
-        f for f in os.listdir(json_templates_dir) if f.lower().endswith(".json")
-    ]
+    json_templates = []
+    for root, _, files in os.walk(json_templates_dir):
+        for f in files:
+            if f.lower().endswith(".json"):
+                rel_dir = os.path.relpath(root, json_templates_dir)
+                name = os.path.splitext(f)[0]
+                full_name = os.path.join(rel_dir, name) if rel_dir != "." else name
+                json_templates.append(full_name)
 
     template_names = excel_templates + json_templates
 
