@@ -4,7 +4,8 @@ table.table td, table.table th { text-align: center; }
 .inline-input { width: auto; display: inline-block; }
 
 #material-list td {
-  white-space: nowrap;
+  white-space: normal;
+  word-break: break-word;
 }
 
 #material-table th:first-child,
@@ -14,7 +15,14 @@ table.table td, table.table th { text-align: center; }
 
 #material-table th:nth-child(2),
 #material-table td:nth-child(2) {
-  width: auto;
+  width: 40%;
+}
+
+#material-table th:nth-child(4),
+#material-table td:nth-child(4),
+#material-table th:nth-child(5),
+#material-table td:nth-child(5) {
+  width: 10%;
 }
 
 #material-table th:nth-child(3),
@@ -27,7 +35,7 @@ table.table td, table.table th { text-align: center; }
 }
 
 #material-list .product {
-  width: auto;
+  width: 100%;
 }
 
 #material-list .supply {
