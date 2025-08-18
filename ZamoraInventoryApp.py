@@ -783,7 +783,7 @@ def templates_list():
     templates_dir = config.TEMPLATE_DATA_DIR
     os.makedirs(templates_dir, exist_ok=True)
     sort_key = request.args.get("sort", "name")
-    group_by = request.args.get("group", "none")
+    group_by = request.args.get("group", "folder")
     entries = []
     folder_set = set()
     for root, dirs, files in os.walk(templates_dir):
