@@ -39,6 +39,11 @@ function updateListAttributes() {
   document.querySelectorAll('.product').forEach(p => p.setAttribute('list', listId));
 }
 
+function adjustProductWidth(input) {
+  const minChars = 20;
+  input.style.width = Math.max(input.value.length + 1, minChars) + 'ch';
+}
+
 function attachRowEvents(row) {
   const qty = row.querySelector('input.quantity');
   if (qty) {
@@ -47,6 +52,8 @@ function attachRowEvents(row) {
   const prod = row.querySelector('.product');
   if (prod) {
     prod.setAttribute('list', currentListId());
+    adjustProductWidth(prod);
+    prod.addEventListener('input', function () { adjustProductWidth(this); });
     prod.addEventListener('change', function () {
       const val = this.value.trim().toLowerCase();
       const lookup = document.getElementById('lookupSupply').value;
