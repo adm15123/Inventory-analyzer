@@ -799,11 +799,29 @@ def templates_list():
                 group = "" if rel_dir == "." else rel_dir
                 name = os.path.splitext(f)[0]
                 full_name = os.path.join(group, name) if group else name
+
+                subtotal = 0.0
+                try:
+                    with open(path, "r") as fh:
+                        content = json.load(fh)
+                    products = content.get("products", []) if isinstance(content, dict) else content
+                    for item in products:
+                        try:
+                            subtotal += float(item.get("total", 0) or float(item.get("last_price", 0)) * float(item.get("quantity", 0)))
+                        except (TypeError, ValueError):
+                            continue
+                except Exception:
+                    subtotal = 0.0
+
+                tax = subtotal * config.TAX_RATE
+                total_with_tax = subtotal + tax
+
                 entries.append({
                     "name": name,
                     "full_name": full_name,
                     "group": group,
                     "mtime": os.path.getmtime(path),
+                    "total_with_tax": total_with_tax,
                 })
     folders = sorted(folder_set)
     if sort_key == "date":
