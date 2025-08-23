@@ -5,6 +5,31 @@ table.table td, table.table th {
 .custom-toast-container { z-index: 1100; }
 .inline-input { width: auto; display: inline-block; }
 
+/* Template list table tweaks */
+.templates-table td,
+.templates-table th {
+  padding: 0.25rem 0.5rem;
+  vertical-align: middle;
+}
+
+.template-actions {
+  white-space: nowrap;
+}
+
+.template-actions .btn {
+  padding: 0.25rem;
+}
+
+.template-actions .dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.template-actions i {
+  font-size: 1rem;
+}
+
 #material-table td,
 #material-table th {
   padding-top: 0;
