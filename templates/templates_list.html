@@ -34,7 +34,7 @@
 {% if group_by == 'folder' %}
   {% for group, templates in grouped_templates.items() %}
     <h3>{{ group or 'Ungrouped' }}</h3>
-    <table class="table">
+    <table class="table templates-table">
       <thead>
         <tr><th>Name</th><th>Modified</th><th>Total w/ Tax</th><th>Actions</th></tr>
       </thead>
@@ -44,25 +44,22 @@
           <td>{{ t.name }}</td>
           <td>{{ t.mtime | datetimeformat }}</td>
           <td>{{ "$%.2f"|format(t.total_with_tax) }}</td>
-          <td>
-            <a href="{{ url_for('edit_template', name=t.full_name) }}" class="btn btn-sm btn-primary">Edit</a>
-            <form action="{{ url_for('rename_template', name=t.full_name) }}" method="post" class="d-inline">
-              <input type="text" name="new_name" placeholder="New name" class="form-control d-inline inline-input">
-              <button type="submit" class="btn btn-sm btn-warning">Rename</button>
-            </form>
-            <form action="{{ url_for('move_template', name=t.full_name) }}" method="post" class="d-inline">
-              <select name="target_folder" class="form-select d-inline inline-input">
-                <option value="">/</option>
-                {% for folder in folders %}
-                  <option value="{{ folder }}">{{ folder }}</option>
-                {% endfor %}
-              </select>
-              <input type="text" name="new_folder" placeholder="New folder" class="form-control d-inline inline-input">
-              <button type="submit" class="btn btn-sm btn-secondary">Move</button>
-            </form>
-            <form action="{{ url_for('delete_template', name=t.full_name) }}" method="post" class="d-inline" onsubmit="return confirm('Delete template?');">
-              <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-            </form>
+          <td class="template-actions">
+            <div class="dropdown">
+              <button class="btn btn-sm btn-link text-secondary" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+                <i class="bi bi-three-dots-vertical"></i>
+              </button>
+              <ul class="dropdown-menu">
+                <li><a class="dropdown-item d-flex align-items-center" href="{{ url_for('edit_template', name=t.full_name) }}"><i class="bi bi-pencil me-2" data-bs-toggle="tooltip" title="Edit"></i> Edit</a></li>
+                <li><button class="dropdown-item d-flex align-items-center rename-btn" data-url="{{ url_for('rename_template', name=t.full_name) }}"><i class="bi bi-input-cursor-text me-2" data-bs-toggle="tooltip" title="Rename"></i> Rename</button></li>
+                <li><button class="dropdown-item d-flex align-items-center move-btn" data-url="{{ url_for('move_template', name=t.full_name) }}"><i class="bi bi-folder me-2" data-bs-toggle="tooltip" title="Move"></i> Move</button></li>
+                <li>
+                  <form action="{{ url_for('delete_template', name=t.full_name) }}" method="post" onsubmit="return confirm('Delete template?');">
+                    <button type="submit" class="dropdown-item d-flex align-items-center text-danger"><i class="bi bi-trash me-2" data-bs-toggle="tooltip" title="Delete"></i> Delete</button>
+                  </form>
+                </li>
+              </ul>
+            </div>
           </td>
         </tr>
         {% endfor %}
@@ -70,7 +67,7 @@
     </table>
   {% endfor %}
 {% else %}
-  <table class="table">
+  <table class="table templates-table">
     <thead>
       <tr><th>Name</th><th>Modified</th><th>Total w/ Tax</th><th>Actions</th></tr>
     </thead>
@@ -80,29 +77,107 @@
         <td>{{ t.full_name }}</td>
         <td>{{ t.mtime | datetimeformat }}</td>
         <td>{{ "$%.2f"|format(t.total_with_tax) }}</td>
-        <td>
-          <a href="{{ url_for('edit_template', name=t.full_name) }}" class="btn btn-sm btn-primary">Edit</a>
-          <form action="{{ url_for('rename_template', name=t.full_name) }}" method="post" class="d-inline">
-            <input type="text" name="new_name" placeholder="New name" class="form-control d-inline inline-input">
-            <button type="submit" class="btn btn-sm btn-warning">Rename</button>
-          </form>
-          <form action="{{ url_for('move_template', name=t.full_name) }}" method="post" class="d-inline">
-            <select name="target_folder" class="form-select d-inline inline-input">
-              <option value="">/</option>
-              {% for folder in folders %}
-                <option value="{{ folder }}">{{ folder }}</option>
-              {% endfor %}
-            </select>
-            <input type="text" name="new_folder" placeholder="New folder" class="form-control d-inline inline-input">
-            <button type="submit" class="btn btn-sm btn-secondary">Move</button>
-          </form>
-          <form action="{{ url_for('delete_template', name=t.full_name) }}" method="post" class="d-inline" onsubmit="return confirm('Delete template?');">
-            <button type="submit" class="btn btn-sm btn-danger">Delete</button>
-          </form>
+        <td class="template-actions">
+          <div class="dropdown">
+            <button class="btn btn-sm btn-link text-secondary" type="button" data-bs-toggle="dropdown" aria-expanded="false">
+              <i class="bi bi-three-dots-vertical"></i>
+            </button>
+            <ul class="dropdown-menu">
+              <li><a class="dropdown-item d-flex align-items-center" href="{{ url_for('edit_template', name=t.full_name) }}"><i class="bi bi-pencil me-2" data-bs-toggle="tooltip" title="Edit"></i> Edit</a></li>
+              <li><button class="dropdown-item d-flex align-items-center rename-btn" data-url="{{ url_for('rename_template', name=t.full_name) }}"><i class="bi bi-input-cursor-text me-2" data-bs-toggle="tooltip" title="Rename"></i> Rename</button></li>
+              <li><button class="dropdown-item d-flex align-items-center move-btn" data-url="{{ url_for('move_template', name=t.full_name) }}"><i class="bi bi-folder me-2" data-bs-toggle="tooltip" title="Move"></i> Move</button></li>
+              <li>
+                <form action="{{ url_for('delete_template', name=t.full_name) }}" method="post" onsubmit="return confirm('Delete template?');">
+                  <button type="submit" class="dropdown-item d-flex align-items-center text-danger"><i class="bi bi-trash me-2" data-bs-toggle="tooltip" title="Delete"></i> Delete</button>
+                </form>
+              </li>
+            </ul>
+          </div>
         </td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
 {% endif %}
+
+<!-- Rename Modal -->
+<div class="modal fade" id="renameModal" tabindex="-1" aria-labelledby="renameModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="post" id="renameForm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="renameModalLabel">Rename Template</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="text" name="new_name" class="form-control" placeholder="New name" required>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Rename</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Move Modal -->
+<div class="modal fade" id="moveModal" tabindex="-1" aria-labelledby="moveModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <form method="post" id="moveForm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="moveModalLabel">Move Template</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="mb-3">
+            <label class="form-label">Existing Folders</label>
+            <select name="target_folder" class="form-select">
+              <option value="">/</option>
+              {% for folder in folders %}
+                <option value="{{ folder }}">{{ folder }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label class="form-label">New Folder</label>
+            <input type="text" name="new_folder" class="form-control" placeholder="New folder">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Move</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  const renameModal = new bootstrap.Modal(document.getElementById('renameModal'));
+  const moveModal = new bootstrap.Modal(document.getElementById('moveModal'));
+
+  document.querySelectorAll('.rename-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('renameForm').action = btn.dataset.url;
+      renameModal.show();
+    });
+  });
+
+  document.querySelectorAll('.move-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.getElementById('moveForm').action = btn.dataset.url;
+      moveModal.show();
+    });
+  });
+
+  var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
+  tooltipTriggerList.map(function (tooltipTriggerEl) {
+    return new bootstrap.Tooltip(tooltipTriggerEl);
+  });
+</script>
 {% endblock %}
