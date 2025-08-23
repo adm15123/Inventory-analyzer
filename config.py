@@ -51,6 +51,9 @@ PERMANENT_SESSION_LIFETIME = timedelta(days=365)
 
 ALLOWED_EXTENSIONS = {"xlsx"}
 
+# Sales tax rate applied to template totals
+TAX_RATE = 0.07
+
 ALLOWED_EMAILS = [
     "aliant.delgado@yahoo.com",
     "aliant.delgado17@gmail.com",
