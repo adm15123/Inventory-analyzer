@@ -36,7 +36,7 @@
     <h3>{{ group or 'Ungrouped' }}</h3>
     <table class="table templates-table">
       <thead>
-        <tr><th>Name</th><th>Modified</th><th>Total w/ Tax</th><th>Actions</th></tr>
+        <tr><th>Name</th><th>Modified</th><th>Total w/ Tax</th><th class="no-sort">Actions</th></tr>
       </thead>
       <tbody>
         {% for t in templates %}
@@ -67,9 +67,9 @@
     </table>
   {% endfor %}
 {% else %}
-  <table class="table templates-table">
+  <table id="templates-table" class="table templates-table">
     <thead>
-      <tr><th>Name</th><th>Modified</th><th>Total w/ Tax</th><th>Actions</th></tr>
+      <tr><th>Name</th><th>Modified</th><th>Total w/ Tax</th><th class="no-sort">Actions</th></tr>
     </thead>
     <tbody>
     {% for t in template_entries %}
@@ -179,5 +179,9 @@
   tooltipTriggerList.map(function (tooltipTriggerEl) {
     return new bootstrap.Tooltip(tooltipTriggerEl);
   });
+
+  if (document.getElementById('templates-table')) {
+    initDataTable('#templates-table', 20);
+  }
 </script>
 {% endblock %}
