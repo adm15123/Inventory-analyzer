@@ -3,10 +3,14 @@ function initDataTable(selector, pageLength) {
     if ($.fn.DataTable.isDataTable(selector)) {
       $(selector).DataTable().destroy();
     }
-    $(selector).DataTable({
+    const options = {
       pageLength: pageLength,
       lengthMenu: [[pageLength, 50, 100, -1], [pageLength, 50, 100, 'All']]
-    });
+    };
+    if ($(`${selector} th.no-sort`).length) {
+      options.columnDefs = [{ targets: 'no-sort', orderable: false, searchable: false }];
+    }
+    $(selector).DataTable(options);
   }
 }
 
