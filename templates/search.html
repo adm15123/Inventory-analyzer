@@ -19,6 +19,15 @@
     </div>
   <button type="submit" class="btn btn-primary">Search</button>
 </form>
+<div id="supply-filter-container" class="mb-3" style="display:none;">
+  <label for="supply-filter">Filter by Supply</label>
+  <select id="supply-filter" class="form-control">
+    <option value="">All</option>
+    <option value="Supply 1">Supply 1</option>
+    <option value="Supply 2">Supply 2</option>
+    <option value="Lion Plumbing Supply">Lion Plumbing Supply</option>
+  </select>
+</div>
 <div id="results">
 {% if table %}
   {{ table | safe }}
@@ -31,32 +40,57 @@ $(document).ready(function(){
   const input = document.getElementById('query');
   const supply = document.getElementById('supply');
   const resultsDiv = document.getElementById('results');
-  input.addEventListener('input', function() {
+  const filterContainer = document.getElementById('supply-filter-container');
+  const filterSelect = document.getElementById('supply-filter');
+
+  function buildTable(rows) {
+    const desired = ["Item Number","Description","Price per Unit","Unit","Invoice No.","Date","Supply","Graph"];
+    const cols = desired.filter(c => c in rows[0]);
+    let html = '<table id="data-table" class="table table-striped" data-page-length="20"><thead><tr>';
+    cols.forEach(c => { html += `<th>${c}</th>`; });
+    html += '</tr></thead><tbody>';
+    rows.forEach(row => {
+      html += '<tr>'; cols.forEach(c => { html += `<td>${row[c] || ''}</td>`; }); html += '</tr>';
+    });
+    html += '</tbody></table>';
+    resultsDiv.innerHTML = html;
+    initDataTable('#data-table', 20);
+    const dt = $('#data-table').DataTable();
+    const supplyIdx = cols.indexOf('Supply');
+    if (supplyIdx >= 0) {
+      filterContainer.style.display = 'block';
+      filterSelect.value = '';
+      filterSelect.onchange = function(){ dt.column(supplyIdx).search(this.value).draw(); };
+    } else {
+      filterContainer.style.display = 'none';
+    }
+  }
+
+  function fetchData(){
     const val = input.value.trim();
     const supplyVal = supply.value;
     fetch(`/api/search?supply=${encodeURIComponent(supplyVal)}&query=${encodeURIComponent(val)}`)
       .then(r => r.json())
       .then(data => {
         const rows = data.data || [];
-        if (rows.length === 0) { resultsDiv.innerHTML = ''; return; }
-        let cols;
-        if (supplyVal === 'all') {
-          cols = ['Description','Supply 1 Price','Supply 2 Price','Supply 3 Price'].filter(c => c in rows[0]);
-        } else {
-          const desired = ["Item Number","Description","Price per Unit","Unit","Invoice No.","Date","Graph"];
-          cols = desired.filter(c => c in rows[0]);
-        }
-        let html = '<table id="data-table" class="table table-striped" data-page-length="20"><thead><tr>';
-        cols.forEach(c => { html += `<th>${c}</th>`; });
-        html += '</tr></thead><tbody>';
-        rows.forEach(row => {
-          html += '<tr>'; cols.forEach(c => { html += `<td>${row[c] || ''}</td>`; }); html += '</tr>';
-        });
-        html += '</tbody></table>';
-        resultsDiv.innerHTML = html;
-        initDataTable('#data-table', 20);
+        if (rows.length === 0) { resultsDiv.innerHTML = ''; filterContainer.style.display = 'none'; return; }
+        buildTable(rows);
       });
-  });
+  }
+
+  input.addEventListener('input', fetchData);
+
+  // Initialize filter for server-rendered results, if any
+  const existingTable = document.getElementById('data-table');
+  if (existingTable) {
+    const dt = $('#data-table').DataTable();
+    const headers = $('#data-table thead th').map(function(){ return $(this).text(); }).get();
+    const supplyIdx = headers.indexOf('Supply');
+    if (supplyIdx >= 0) {
+      filterContainer.style.display = 'block';
+      filterSelect.onchange = function(){ dt.column(supplyIdx).search(this.value).draw(); };
+    }
+  }
 });
 </script>
 {% endblock %}
