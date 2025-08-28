@@ -221,14 +221,6 @@ load_rough_list()
 load_final_list()
 load_templates_from_github()
 
-# Mapping between internal supply identifiers and their display names.
-SUPPLY_LABELS = {
-    "supply1": "Supply 1",
-    "supply2": "Supply 2",
-    "supply3": "Lion Plumbing Supply",
-}
-REVERSE_SUPPLY_LABELS = {v: k for k, v in SUPPLY_LABELS.items()}
-
 
 # -------------------------------
 # Routes for Main Functionality (Protected by login_required)
@@ -290,27 +282,19 @@ def search():
     Search the selected supply’s 'Description' column for a query.
     """
     supply = request.args.get("supply", "supply1")
-    if request.method == "POST":
-        supply = request.form.get("supply", supply)
     page = request.args.get("page", 1, type=int)
     per_page = None
-
-    combined_df = du.get_combined_dataframe()
-    if combined_df is None:
-        flash("⚠ Please ensure the Excel files for the supplies are available.")
+    current_df = get_current_dataframe(supply)
+    if current_df is None:
+        flash("⚠ Please ensure the Excel file for the selected supply is available.")
         return redirect(url_for("index"))
-
-    def filter_by_supply(df: pd.DataFrame, supply_key: str) -> pd.DataFrame:
-        if supply_key == "all":
-            return df
-        label = SUPPLY_LABELS.get(supply_key, "Supply 1")
-        return df[df["Supply"] == label]
-
-    current_df = filter_by_supply(combined_df, supply)
-
+    
     results = None
     query = request.form.get("query") if request.method == "POST" else request.args.get("query", "")
     if request.method == "POST" or query:
+        if request.method == "POST":
+            supply = request.form.get("supply", "supply1")
+            current_df = get_current_dataframe(supply)
         if not query:
             flash("⚠ Please enter a search term.")
         else:
@@ -321,45 +305,48 @@ def search():
             )]
             if results.empty:
                 flash("⚠ No matching results found.")
-
+    
     if results is not None and not results.empty:
-        results = results.copy()
-        if "Date" in results.columns:
-            results["Date"] = results["Date"].dt.strftime("%Y-%m-%d")
-            date_index = list(results.columns).index("Date")
-        else:
-            date_index = 0
-        if "Description" in results.columns:
-            results.insert(
-                date_index + 1,
-                "Graph",
-                results.apply(
-                    lambda row: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=row["Description"], supply=REVERSE_SUPPLY_LABELS.get(row.get("Supply"), "supply1"), ref="search", query=query)}">Graph</a>',
-                    axis=1,
-                ),
-            )
-        desired_order = [
-            "Item Number",
-            "Description",
-            "Price per Unit",
-            "Unit",
-            "Invoice No.",
-            "Date",
-            "Supply",
-            "Graph",
-        ]
-        existing_cols = [c for c in desired_order if c in results.columns]
-        results = results[existing_cols]
-        if per_page:
-            page_df = du.paginate_dataframe(results, page, per_page)
-        else:
+        if supply == "all":
             page_df = results
-        table_html = page_df.to_html(
-            table_id="data-table", classes="table table-striped", index=False, escape=False
-        )
-        table_html = table_html.replace('<table ', '<table data-page-length="20" ')
-        next_page = page + 1 if per_page and len(results) > page * per_page else None
-        prev_page = page - 1 if per_page and page > 1 else None
+            table_html = page_df.to_html(
+                table_id="data-table", classes="table table-striped", index=False, escape=False
+            )
+            table_html = table_html.replace('<table ', '<table data-page-length="20" ')
+            next_page = prev_page = None
+        else:
+            if "Date" in results.columns:
+                results["Date"] = results["Date"].dt.strftime("%Y-%m-%d")
+            if "Date" in results.columns and "Description" in results.columns:
+                date_index = list(results.columns).index("Date")
+                results.insert(
+                    date_index + 1,
+                    "Graph",
+                    results["Description"].apply(
+                        lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
+                    ),
+                )
+                desired_order = [
+                    "Item Number",
+                    "Description",
+                    "Price per Unit",
+                    "Unit",
+                    "Invoice No.",
+                    "Date",
+                    "Graph",
+                ]
+                existing_cols = [c for c in desired_order if c in results.columns]
+                results = results[existing_cols]
+            if per_page:
+                page_df = du.paginate_dataframe(results, page, per_page)
+            else:
+                page_df = results
+            table_html = page_df.to_html(
+                table_id="data-table", classes="table table-striped", index=False, escape=False
+            )
+            table_html = table_html.replace('<table ', '<table data-page-length="20" ')
+            next_page = page + 1 if per_page and len(results) > page * per_page else None
+            prev_page = page - 1 if per_page and page > 1 else None
     else:
         table_html = None
         next_page = prev_page = None
@@ -381,52 +368,38 @@ def api_search():
     query = request.args.get("query", "")
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", type=int)
-
-    combined_df = du.get_combined_dataframe()
-    if combined_df is None or not query:
+    current_df = get_current_dataframe(supply)
+    if current_df is None or not query:
         return jsonify({"data": [], "next_page": None, "prev_page": None})
-
-    def filter_by_supply(df: pd.DataFrame, supply_key: str) -> pd.DataFrame:
-        if supply_key == "all":
-            return df
-        label = SUPPLY_LABELS.get(supply_key, "Supply 1")
-        return df[df["Supply"] == label]
-
-    current_df = filter_by_supply(combined_df, supply)
-
     preprocessed_query = preprocess_text_for_search(query)
     keywords = preprocessed_query.split()
     results = current_df[current_df["Description"].apply(
         lambda desc: all(keyword in preprocess_text_for_search(desc) for keyword in keywords)
     )]
 
-    results = results.copy()
-    if "Date" in results.columns:
-        results["Date"] = results["Date"].dt.strftime("%Y-%m-%d")
+    if supply != "all" and "Date" in results.columns and "Description" in results.columns:
         date_index = list(results.columns).index("Date")
-    else:
-        date_index = 0
-    if "Description" in results.columns:
+        results = results.copy()
         results.insert(
             date_index + 1,
             "Graph",
-            results.apply(
-                lambda row: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=row["Description"], supply=REVERSE_SUPPLY_LABELS.get(row.get("Supply"), "supply1"), ref="search", query=query)}">Graph</a>',
-                axis=1,
+            results["Description"].apply(
+                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
             ),
         )
-    desired_order = [
-        "Item Number",
-        "Description",
-        "Price per Unit",
-        "Unit",
-        "Invoice No.",
-        "Date",
-        "Supply",
-        "Graph",
-    ]
-    existing_cols = [c for c in desired_order if c in results.columns]
-    results = results[existing_cols]
+        desired_order = [
+            "Item Number",
+            "Description",
+            "Price per Unit",
+            "Unit",
+            "Invoice No.",
+            "Date",
+            "Graph",
+        ]
+        existing_cols = [c for c in desired_order if c in results.columns]
+        results = results[existing_cols]
+    if supply != "all" and "Date" in results.columns:
+        results["Date"] = results["Date"].dt.strftime("%Y-%m-%d")
 
     if per_page:
         page_df = du.paginate_dataframe(results, page, per_page)

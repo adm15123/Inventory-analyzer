@@ -103,29 +103,35 @@ def get_current_dataframe(supply: str) -> Optional[pd.DataFrame]:
 
 
 def get_combined_dataframe() -> Optional[pd.DataFrame]:
-    """Concatenate all available supplier DataFrames row-wise.
+    """Merge all supplier DataFrames on their shared ``Description`` column.
 
-    Each row in the returned DataFrame is tagged with a ``Supply`` column
-    identifying its source. ``None`` is returned if no data is available.
+    Returns a DataFrame containing the ``Description`` column and one price
+    column per supplier. Missing DataFrames are ignored. ``None`` is returned
+    if no data is available.
     """
 
     frames = []
     if df is not None:
-        temp = df.copy()
-        temp["Supply"] = "Supply 1"
-        frames.append(temp)
+        frames.append(
+            df[["Description", "Price per Unit"]]
+            .rename(columns={"Price per Unit": "Supply 1 Price"})
+        )
     if df_supply2 is not None:
-        temp = df_supply2.copy()
-        temp["Supply"] = "Supply 2"
-        frames.append(temp)
+        frames.append(
+            df_supply2[["Description", "Price per Unit"]]
+            .rename(columns={"Price per Unit": "Supply 2 Price"})
+        )
     if df_supply3 is not None:
-        temp = df_supply3.copy()
-        temp["Supply"] = "Lion Plumbing Supply"
-        frames.append(temp)
+        frames.append(
+            df_supply3[["Description", "Price per Unit"]]
+            .rename(columns={"Price per Unit": "Supply 3 Price"})
+        )
     if not frames:
         return None
 
-    combined = pd.concat(frames, ignore_index=True, sort=False)
+    combined = frames[0]
+    for frame in frames[1:]:
+        combined = pd.merge(combined, frame, on="Description", how="outer")
     return combined
 
 
