@@ -611,19 +611,23 @@ def material_list():
                     os.remove(old_path)
                 except OSError:
                     pass
-            pdf_filename = f"order_summary_{uuid.uuid4().hex}.pdf"
+            address_filename = secure_filename(address) or "order_summary"
+            pdf_filename = f"{address_filename}_{uuid.uuid4().hex}.pdf"
             pdf_path = os.path.join(app.config["UPLOAD_FOLDER"], pdf_filename)
             with open(pdf_path, "wb") as f:
                 f.write(pdf)
             session["pdf_path"] = pdf_path
+            session["last_address"] = address
+            session["last_address_filename"] = address_filename
         except Exception as e:
             flash(f"PDF generation failed: {e}", "danger")
             return redirect(url_for("material_list"))
-        
+
         recipient = session.get("email")
-        msg = Message("Your Order Summary", recipients=[recipient])
+        subject_address = address or ""
+        msg = Message(f"Material list- {subject_address}", recipients=[recipient])
         msg.body = "Please find attached your order summary PDF."
-        msg.attach("order_summary.pdf", "application/pdf", pdf)
+        msg.attach(f"{address_filename}.pdf", "application/pdf", pdf)
         try:
             mail.send(msg)
             flash("Order summary PDF sent to your email.", "success")
@@ -635,7 +639,7 @@ def material_list():
             pdf_buffer,
             mimetype="application/pdf",
             as_attachment=True,
-            download_name="order_summary.pdf",
+            download_name=f"{address_filename}.pdf",
         )
     
     # For GET: load predetermined or saved templates
@@ -959,13 +963,14 @@ def move_template(name):
 def download_summary():
     """Return the last generated order summary PDF."""
     global pdf_buffer
+    address_filename = session.get("last_address_filename", "order_summary")
     if pdf_buffer is not None:
         pdf_buffer.seek(0)
         return send_file(
             pdf_buffer,
             mimetype="application/pdf",
             as_attachment=True,
-            download_name="order_summary.pdf",
+            download_name=f"{address_filename}.pdf",
         )
     pdf_path = session.get("pdf_path")
     if pdf_path and os.path.exists(pdf_path):
@@ -973,7 +978,7 @@ def download_summary():
             pdf_path,
             mimetype="application/pdf",
             as_attachment=True,
-            download_name="order_summary.pdf",
+            download_name=f"{address_filename}.pdf",
         )
 
     flash("No PDF available for download.", "warning")
