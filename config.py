@@ -37,7 +37,7 @@ DEFAULT_SUPPLY2_FILE = os.path.join(UPLOAD_FOLDER, SUPPLY2_FILENAME)
 SUPPLY3_FILENAME = "Lion_Bid_Extract.xlsx"
 DEFAULT_SUPPLY3_FILE = os.path.join(UPLOAD_FOLDER, SUPPLY3_FILENAME)
 
-SUPPLY4_FILENAME = "Bond_Bid_Extract.xlsx"
+SUPPLY4_FILENAME = "Bond_Extracted_Data_Clean.xlsx"
 DEFAULT_SUPPLY4_FILE = os.path.join(UPLOAD_FOLDER, SUPPLY4_FILENAME)
 
 MAIL_SERVER = os.environ.get("MAIL_SERVER", "smtp.gmail.com")
