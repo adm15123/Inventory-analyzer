@@ -129,6 +129,7 @@ preprocess_text_for_search = du.preprocess_text_for_search
 load_default_file = du.load_default_file
 load_supply2_file = du.load_supply2_file
 load_supply3_file = du.load_supply3_file
+load_supply4_file = du.load_supply4_file
 load_underground_list = du.load_underground_list
 load_rough_list = du.load_rough_list
 load_final_list = du.load_final_list
@@ -216,6 +217,7 @@ def load_templates_from_github():
 load_default_file()
 load_supply2_file()
 load_supply3_file()
+load_supply4_file()
 load_underground_list()
 load_rough_list()
 load_final_list()
@@ -711,6 +713,7 @@ def material_list():
     supply1_products = du.df.to_dict("records") if du.df is not None else []
     supply2_products = du.df_supply2.to_dict("records") if du.df_supply2 is not None else []
     supply3_products = du.df_supply3.to_dict("records") if du.df_supply3 is not None else []
+    supply4_products = du.df_supply4.to_dict("records") if du.df_supply4 is not None else []
     template_name_arg = request.args.get("template_name", "")
     if not template_name_arg and list_option_lower not in ["underground", "rough", "final", "new"]:
         template_name_arg = list_option
@@ -730,6 +733,7 @@ def material_list():
         supply1_products=supply1_products,
         supply2_products=supply2_products,
         supply3_products=supply3_products,
+        supply4_products=supply4_products,
         template_name=template_name,
         template_folder=template_folder,
         full_template_name=full_template_name,

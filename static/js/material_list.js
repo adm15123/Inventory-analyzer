@@ -24,13 +24,15 @@ function updateGrandTotal() {
 
 function currentListId() {
   const lookup = document.getElementById('lookupSupply').value;
-  return lookup === 'supply3' ? 'supply3List' :
+  return lookup === 'supply4' ? 'supply4List' :
+    lookup === 'supply3' ? 'supply3List' :
     lookup === 'supply2' ? 'supply2List' : 'supply1List';
 }
 
 function currentSupplyCode() {
   const lookup = document.getElementById('lookupSupply').value;
-  return lookup === 'supply3' ? 'LPS' :
+  return lookup === 'supply4' ? 'BOND' :
+    lookup === 'supply3' ? 'LPS' :
     lookup === 'supply2' ? 'S2' : 'BPS';
 }
 
@@ -51,6 +53,7 @@ function attachRowEvents(row) {
       const val = this.value.trim().toLowerCase();
       const lookup = document.getElementById('lookupSupply').value;
       const prodArray =
+        lookup === 'supply4' ? supply4Products :
         lookup === 'supply3' ? supply3Products :
         lookup === 'supply2' ? supply2Products :
         supply1Products;
@@ -82,6 +85,7 @@ function attachRowEvents(row) {
 function updatePredeterminedRows() {
   const lookup = document.getElementById('lookupSupply').value;
   const prodArray =
+    lookup === 'supply4' ? supply4Products :
     lookup === 'supply3' ? supply3Products :
     lookup === 'supply2' ? supply2Products :
     supply1Products;

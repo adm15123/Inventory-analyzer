@@ -5,12 +5,14 @@ from config import (
     DEFAULT_FILE,
     DEFAULT_SUPPLY2_FILE,
     DEFAULT_SUPPLY3_FILE,
+    DEFAULT_SUPPLY4_FILE,
     UPLOAD_FOLDER,
 )
 # Global DataFrames
 df: Optional[pd.DataFrame] = None
 df_supply2: Optional[pd.DataFrame] = None
 df_supply3: Optional[pd.DataFrame] = None
+df_supply4: Optional[pd.DataFrame] = None
 df_underground: Optional[pd.DataFrame] = None
 df_rough: Optional[pd.DataFrame] = None
 df_final: Optional[pd.DataFrame] = None
@@ -67,6 +69,21 @@ def load_supply3_file():
             )
 
 
+def load_supply4_file():
+    global df_supply4
+    if os.path.exists(DEFAULT_SUPPLY4_FILE):
+        df_supply4 = pd.read_excel(DEFAULT_SUPPLY4_FILE, engine="openpyxl")
+        if "Date" in df_supply4.columns:
+            df_supply4["Date"] = pd.to_datetime(df_supply4["Date"], errors="coerce")
+        if "Description" in df_supply4.columns:
+            df_supply4["Description"] = df_supply4["Description"].astype(str).str.strip()
+        if "Price per Unit" in df_supply4.columns:
+            df_supply4["Price per Unit"] = pd.to_numeric(
+                df_supply4["Price per Unit"].astype(str).str.replace(',', '', regex=False),
+                errors="coerce",
+            )
+
+
 def load_predetermined_list(filename: str) -> Optional[pd.DataFrame]:
     file_path = os.path.join(UPLOAD_FOLDER, filename)
     if os.path.exists(file_path):
@@ -97,6 +114,8 @@ def get_current_dataframe(supply: str) -> Optional[pd.DataFrame]:
         return df_supply2
     if supply == "supply3":
         return df_supply3
+    if supply == "supply4":
+        return df_supply4
     if supply == "all":
         return get_combined_dataframe()
     return df
@@ -125,6 +144,11 @@ def get_combined_dataframe() -> Optional[pd.DataFrame]:
         frames.append(
             df_supply3[["Description", "Price per Unit"]]
             .rename(columns={"Price per Unit": "Supply 3 Price"})
+        )
+    if df_supply4 is not None:
+        frames.append(
+            df_supply4[["Description", "Price per Unit"]]
+            .rename(columns={"Price per Unit": "Supply 4 Price"})
         )
     if not frames:
         return None

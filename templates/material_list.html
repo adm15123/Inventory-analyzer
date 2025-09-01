@@ -24,6 +24,7 @@
     <option value="supply1" selected>Supply 1</option>
     <option value="supply2">Supply 2</option>
     <option value="supply3">Lion Plumbing Supply</option>
+    <option value="supply4">Bond Plumbing Supply</option>
   </select>
 </div>
 <datalist id="supply1List">
@@ -38,6 +39,11 @@
 </datalist>
 <datalist id="supply3List">
   {% for prod in supply3_products %}
+    <option value="{{ prod['Description'] }}">
+  {% endfor %}
+</datalist>
+<datalist id="supply4List">
+  {% for prod in supply4_products %}
     <option value="{{ prod['Description'] }}">
   {% endfor %}
 </datalist>
@@ -119,6 +125,7 @@
       const supply1Products = {{ supply1_products|tojson }};
       const supply2Products = {{ supply2_products|tojson }};
       const supply3Products = {{ supply3_products|tojson }};
+      const supply4Products = {{ supply4_products|tojson }};
       const baseMaterialUrl = "{{ url_for('material_list') }}";
     </script>
   <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
