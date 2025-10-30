@@ -962,7 +962,7 @@ function MaterialListPage({ data }) {
                 ].map((header) => (
                   <th
                     key={header}
-                    className="whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
                   >
                     {header}
                   </th>
@@ -983,55 +983,55 @@ function MaterialListPage({ data }) {
                     draggingIndex === index ? "bg-sky-50" : ""
                   )}
                 >
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-3 py-2 text-sm">
                     <input
                       type="number"
                       min="0"
                       value={item.quantity}
                       onChange={(event) => updateItem(index, { quantity: Number(event.target.value) })}
-                      className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                      className="w-24 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
                     />
                   </td>
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-3 py-2 text-sm">
                     <input
                       type="text"
                       value={item.description}
                       onChange={(event) => handleDescriptionChange(index, event.target.value)}
                       list={supplyListIds[lookupSupply]}
                       placeholder="Enter product"
-                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                      className="w-full rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
                     />
                   </td>
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-3 py-2 text-sm">
                     <input
                       type="text"
                       value={item.supply}
                       onChange={(event) => updateItem(index, { supply: event.target.value })}
-                      className="w-20 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                      className="w-20 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
                     />
                   </td>
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-3 py-2 text-sm">
                     <input
                       type="text"
                       value={item.unit}
                       onChange={(event) => updateItem(index, { unit: event.target.value })}
-                      className="w-24 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                      className="w-24 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
                     />
                   </td>
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-3 py-2 text-sm">
                     <input
                       type="number"
                       value={item.lastPrice}
                       step="0.01"
                       min="0"
                       onChange={(event) => updateItem(index, { lastPrice: Number(event.target.value) })}
-                      className="w-28 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                      className="w-28 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
                     />
                   </td>
-                  <td className="px-4 py-3 text-sm text-slate-700">
+                  <td className="px-3 py-2 text-sm text-slate-700">
                     ${((Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)).toFixed(2)}
                   </td>
-                  <td className="px-4 py-3 text-sm">
+                  <td className="px-3 py-2 text-sm">
                     <div className="flex items-center gap-2">
                       <button
                         type="button"
@@ -1064,10 +1064,10 @@ function MaterialListPage({ data }) {
             </tbody>
             <tfoot className="bg-slate-50">
               <tr>
-                <td colSpan={5} className="px-4 py-3 text-right text-sm font-semibold text-slate-700">
+                <td colSpan={5} className="px-3 py-2 text-right text-sm font-semibold text-slate-700">
                   Grand total
                 </td>
-                <td className="px-4 py-3 text-sm font-semibold text-slate-900">${grandTotal.toFixed(2)}</td>
+                <td className="px-3 py-2 text-sm font-semibold text-slate-900">${grandTotal.toFixed(2)}</td>
                 <td></td>
               </tr>
             </tfoot>
