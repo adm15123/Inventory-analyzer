@@ -18,8 +18,13 @@
   <div id="root"></div>
   <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
-  <script type="text/babel" src="{{ url_for('static', filename='js/reactApp.jsx') }}"></script>
+  <script
+    type="text/babel"
+    data-presets="env,react"
+    data-plugins="proposal-class-properties,proposal-object-rest-spread,proposal-nullish-coalescing-operator,proposal-optional-chaining"
+    src="{{ url_for('static', filename='js/reactApp.jsx') }}"
+  ></script>
 </body>
 </html>
