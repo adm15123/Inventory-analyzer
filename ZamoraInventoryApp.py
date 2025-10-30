@@ -8,10 +8,12 @@ from flask import (
     send_file,
     session,
     jsonify,
+    make_response,
+    get_flashed_messages,
 )
 import io
 import matplotlib.pyplot as plt
-from datetime import datetime
+from datetime import datetime, timedelta
 import pandas as pd
 import time
 import json
@@ -138,6 +140,184 @@ update_underground_prices = du.update_underground_prices
 update_rough_prices = du.update_rough_prices
 update_final_prices = du.update_final_prices
 
+
+def default_nav_links() -> list[dict[str, str]]:
+    """Return the default navigation links for the React shell."""
+    return [
+        {"label": "Home", "href": url_for("index"), "page": "home"},
+        {"label": "View All", "href": url_for("view_all"), "page": "view_all"},
+        {"label": "Search", "href": url_for("search"), "page": "search"},
+        {"label": "Analyze", "href": url_for("analyze"), "page": "analyze"},
+        {"label": "Material List", "href": url_for("material_list"), "page": "material_list"},
+        {"label": "Templates", "href": url_for("templates_list"), "page": "templates"},
+    ]
+
+
+def render_app(
+    page: str,
+    initial_data: dict | None = None,
+    nav_links: list[dict[str, str]] | None = None,
+    status_code: int = 200,
+):
+    """Render the universal React shell template with serialized state."""
+
+    context = {
+        "page": page,
+        "initial_data": initial_data or {},
+        "nav_links": nav_links or default_nav_links(),
+        "flashes": get_flashed_messages(with_categories=True),
+        "user_email": session.get("email"),
+        "logout_url": url_for("logout") if session.get("email") else url_for("login"),
+    }
+    response = make_response(render_template("app.html", **context))
+    response.status_code = status_code
+    return response
+
+
+def _search_supply_data(
+    supply: str,
+    query: str,
+    page: int | None = None,
+    per_page: int | None = None,
+):
+    """Search a supply dataframe and shape the result for JSON/React."""
+
+    current_df = get_current_dataframe(supply)
+    if current_df is None or not query:
+        return {
+            "rows": [],
+            "columns": [],
+            "next_page": None,
+            "prev_page": None,
+        }
+
+    preprocessed_query = preprocess_text_for_search(query)
+    keywords = preprocessed_query.split()
+    filtered = current_df[current_df["Description"].apply(
+        lambda desc: all(keyword in preprocess_text_for_search(desc) for keyword in keywords)
+    )]
+
+    if filtered.empty:
+        return {
+            "rows": [],
+            "columns": [],
+            "next_page": None,
+            "prev_page": None,
+        }
+
+    filtered = filtered.copy()
+    if supply != "all" and "Date" in filtered.columns:
+        filtered["Date"] = filtered["Date"].dt.strftime("%Y-%m-%d")
+
+    if supply == "all":
+        desired = [
+            "Description",
+            "Supply 1 Price",
+            "Supply 2 Price",
+            "Supply 3 Price",
+            "Supply 4 Price",
+        ]
+        columns = [c for c in desired if c in filtered.columns]
+        shaped = filtered[columns]
+    else:
+        desired = [
+            "Item Number",
+            "Description",
+            "Price per Unit",
+            "Unit",
+            "Invoice No.",
+            "Date",
+        ]
+        columns = [c for c in desired if c in filtered.columns]
+        shaped = filtered[columns]
+
+    total_rows = len(shaped)
+    if per_page and per_page > 0:
+        shaped = du.paginate_dataframe(shaped, page or 1, per_page)
+
+    rows = shaped.to_dict(orient="records")
+    if supply != "all":
+        for row in rows:
+            description = row.get("Description")
+            if description:
+                row["graphUrl"] = url_for(
+                    "product_detail",
+                    description=description,
+                    supply=supply,
+                    ref="search",
+                    query=query,
+                )
+
+    next_page = None
+    prev_page = None
+    if per_page and per_page > 0:
+        current_page = page or 1
+        if total_rows > current_page * per_page:
+            next_page = current_page + 1
+        if current_page > 1:
+            prev_page = current_page - 1
+
+    return {
+        "rows": rows,
+        "columns": columns,
+        "next_page": next_page,
+        "prev_page": prev_page,
+    }
+
+
+def _analyze_price_changes(supply: str, start_date: str, end_date: str) -> dict:
+    """Run the price change analysis and return JSON-serializable results."""
+
+    current_df = get_current_dataframe(supply)
+    if current_df is None:
+        return {"rows": [], "columns": []}
+
+    try:
+        start = pd.to_datetime(start_date)
+        end = pd.to_datetime(end_date)
+    except Exception:
+        return {"rows": [], "columns": []}
+
+    filtered = current_df[(current_df["Date"] >= start) & (current_df["Date"] <= end)]
+    if filtered.empty:
+        return {"rows": [], "columns": []}
+
+    grouped = filtered.groupby(["Description", filtered["Date"].dt.to_period("M")])
+    result_records: list[dict] = []
+    for (desc, month), group in grouped:
+        avg_price = group["Price per Unit"].mean()
+        next_month = month + 1
+        if (desc, next_month) not in grouped.groups:
+            continue
+        next_group = grouped.get_group((desc, next_month))
+        next_avg_price = next_group["Price per Unit"].mean()
+        if avg_price != next_avg_price:
+            result_records.extend(group.to_dict("records"))
+            result_records.extend(next_group.to_dict("records"))
+
+    if not result_records:
+        return {"rows": [], "columns": []}
+
+    results_df = pd.DataFrame(result_records)
+    if "Date" in results_df.columns:
+        results_df["Date"] = pd.to_datetime(results_df["Date"]).dt.strftime("%Y-%m-%d")
+
+    columns = [
+        col
+        for col in [
+            "Description",
+            "Item Number",
+            "Price per Unit",
+            "Unit",
+            "Invoice No.",
+            "Date",
+        ]
+        if col in results_df.columns
+    ]
+    shaped = results_df[columns] if columns else results_df
+    return {"rows": shaped.to_dict(orient="records"), "columns": columns or list(results_df.columns)}
+
+
 # GitHub template saving helper
 def save_template_to_github(filename: str, content: str) -> bool:
     """Save the given content to a GitHub repository as filename."""
@@ -232,7 +412,17 @@ load_templates_from_github()
 @app.route("/")
 @login_required
 def index():
-    return render_template("index.html")  # A simple main menu template
+    initial = {
+        "pageTitle": "Zamora Plumbing Corp Material Analyzer",
+        "actions": [
+            {"label": "View All Content", "href": url_for("view_all"), "variant": "secondary"},
+            {"label": "Search Description", "href": url_for("search"), "variant": "secondary"},
+            {"label": "Analyze Price Changes", "href": url_for("analyze"), "variant": "secondary"},
+            {"label": "Templates", "href": url_for("templates_list"), "variant": "secondary"},
+            {"label": "Material List", "href": url_for("material_list"), "variant": "primary"},
+        ],
+    }
+    return render_app("home", initial)
 
 @app.route("/view_all", methods=["GET"])
 @login_required
@@ -248,119 +438,97 @@ def view_all():
     df_temp = current_df.copy()
     if "Date" in df_temp.columns:
         df_temp["Date"] = df_temp["Date"].dt.strftime("%Y-%m-%d")
-    if "Date" in df_temp.columns and "Description" in df_temp.columns:
-        date_index = list(df_temp.columns).index("Date")
-        df_temp.insert(
-            date_index + 1,
-            "Graph",
-            df_temp["Description"].apply(
-                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="view_all")}">Graph</a>'
+
+    desired_order = [
+        "Item Number",
+        "Description",
+        "Price per Unit",
+        "Unit",
+        "Invoice No.",
+        "Date",
+    ]
+    existing_columns = [c for c in desired_order if c in df_temp.columns]
+    df_temp = df_temp[existing_columns]
+
+    rows = []
+    for record in df_temp.to_dict(orient="records"):
+        payload = {col: record.get(col, "") for col in existing_columns}
+        description = record.get("Description")
+        if description:
+            payload["graphUrl"] = url_for(
+                "product_detail",
+                description=description,
+                supply=supply,
+                ref="view_all",
             )
-        )
-        # Ensure column order is consistent
-        desired_order = [
-            "Item Number",
-            "Description",
-            "Price per Unit",
-            "Unit",
-            "Invoice No.",
-            "Date",
-            "Graph",
-        ]
-        existing_columns = [c for c in desired_order if c in df_temp.columns]
-        df_temp = df_temp[existing_columns]
-    table_html = df_temp.to_html(table_id="data-table", classes="table table-striped", index=False, escape=False)
-    table_html = table_html.replace('<table ', '<table data-page-length="50" ')
-    return render_template(
-        "view_all.html",
-        table=table_html,
-        supply=supply,
-    )
+        rows.append(payload)
+
+    supply_options = [
+        {"value": "supply1", "label": "Supply 1"},
+        {"value": "supply2", "label": "Supply 2"},
+        {"value": "supply3", "label": "Lion Plumbing Supply"},
+        {"value": "supply4", "label": "Bond Plumbing Supply"},
+    ]
+
+    payload = {
+        "supply": supply,
+        "columns": existing_columns,
+        "rows": rows,
+        "supplyOptions": supply_options,
+        "productDetailBase": url_for("product_detail"),
+        "viewAllUrl": url_for("view_all"),
+    }
+
+    if request.args.get("format") == "json":
+        return jsonify(payload)
+
+    return render_app("view_all", payload)
 
 @app.route("/search", methods=["GET", "POST"])
 @login_required
 def search():
-    """
-    Search the selected supply’s 'Description' column for a query.
-    """
+    """Render the React search page or redirect legacy POST submissions."""
+
+    if request.method == "POST" and not request.is_json:
+        supply_value = request.form.get("supply", "supply1")
+        query_value = request.form.get("query", "").strip()
+        if not query_value:
+            flash("⚠ Please enter a search term.")
+            return redirect(url_for("search", supply=supply_value))
+        return redirect(url_for("search", supply=supply_value, query=query_value))
+
     supply = request.args.get("supply", "supply1")
+    query = request.args.get("query", "")
     page = request.args.get("page", 1, type=int)
-    per_page = None
+    per_page = request.args.get("per_page", type=int)
+
     current_df = get_current_dataframe(supply)
-    if current_df is None:
+    if current_df is None and supply != "all":
         flash("⚠ Please ensure the Excel file for the selected supply is available.")
         return redirect(url_for("index"))
-    
-    results = None
-    query = request.form.get("query") if request.method == "POST" else request.args.get("query", "")
-    if request.method == "POST" or query:
-        if request.method == "POST":
-            supply = request.form.get("supply", "supply1")
-            current_df = get_current_dataframe(supply)
-        if not query:
-            flash("⚠ Please enter a search term.")
-        else:
-            preprocessed_query = preprocess_text_for_search(query)
-            keywords = preprocessed_query.split()
-            results = current_df[current_df["Description"].apply(
-                lambda desc: all(keyword in preprocess_text_for_search(desc) for keyword in keywords)
-            )]
-            if results.empty:
-                flash("⚠ No matching results found.")
-    
-    if results is not None and not results.empty:
-        if supply == "all":
-            page_df = results
-            table_html = page_df.to_html(
-                table_id="data-table", classes="table table-striped", index=False, escape=False
-            )
-            table_html = table_html.replace('<table ', '<table data-page-length="20" ')
-            next_page = prev_page = None
-        else:
-            if "Date" in results.columns:
-                results["Date"] = results["Date"].dt.strftime("%Y-%m-%d")
-            if "Date" in results.columns and "Description" in results.columns:
-                date_index = list(results.columns).index("Date")
-                results.insert(
-                    date_index + 1,
-                    "Graph",
-                    results["Description"].apply(
-                        lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
-                    ),
-                )
-                desired_order = [
-                    "Item Number",
-                    "Description",
-                    "Price per Unit",
-                    "Unit",
-                    "Invoice No.",
-                    "Date",
-                    "Graph",
-                ]
-                existing_cols = [c for c in desired_order if c in results.columns]
-                results = results[existing_cols]
-            if per_page:
-                page_df = du.paginate_dataframe(results, page, per_page)
-            else:
-                page_df = results
-            table_html = page_df.to_html(
-                table_id="data-table", classes="table table-striped", index=False, escape=False
-            )
-            table_html = table_html.replace('<table ', '<table data-page-length="20" ')
-            next_page = page + 1 if per_page and len(results) > page * per_page else None
-            prev_page = page - 1 if per_page and page > 1 else None
-    else:
-        table_html = None
-        next_page = prev_page = None
-    return render_template(
-        "search.html",
-        table=table_html,
-        query=query,
-        supply=supply,
-        next_page=next_page,
-        prev_page=prev_page,
-        page=page,
-    )
+
+    results_payload = _search_supply_data(supply, query, page, per_page)
+
+    supply_options = [
+        {"value": "supply1", "label": "Supply 1"},
+        {"value": "supply2", "label": "Supply 2"},
+        {"value": "supply3", "label": "Lion Plumbing Supply"},
+        {"value": "supply4", "label": "Bond Plumbing Supply"},
+        {"value": "all", "label": "All Supplies"},
+    ]
+
+    initial = {
+        "supply": supply,
+        "query": query,
+        "columns": results_payload.get("columns", []),
+        "rows": results_payload.get("rows", []),
+        "nextPage": results_payload.get("next_page"),
+        "prevPage": results_payload.get("prev_page"),
+        "supplyOptions": supply_options,
+        "searchApi": url_for("api_search"),
+    }
+
+    return render_app("search", initial)
 
 
 @app.route("/api/search", methods=["GET"])
@@ -370,48 +538,15 @@ def api_search():
     query = request.args.get("query", "")
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", type=int)
-    current_df = get_current_dataframe(supply)
-    if current_df is None or not query:
-        return jsonify({"data": [], "next_page": None, "prev_page": None})
-    preprocessed_query = preprocess_text_for_search(query)
-    keywords = preprocessed_query.split()
-    results = current_df[current_df["Description"].apply(
-        lambda desc: all(keyword in preprocess_text_for_search(desc) for keyword in keywords)
-    )]
-
-    if supply != "all" and "Date" in results.columns and "Description" in results.columns:
-        date_index = list(results.columns).index("Date")
-        results = results.copy()
-        results.insert(
-            date_index + 1,
-            "Graph",
-            results["Description"].apply(
-                lambda desc: f'<a class="btn btn-secondary" href="{url_for("product_detail", description=desc, supply=supply, ref="search", query=query)}">Graph</a>'
-            ),
-        )
-        desired_order = [
-            "Item Number",
-            "Description",
-            "Price per Unit",
-            "Unit",
-            "Invoice No.",
-            "Date",
-            "Graph",
-        ]
-        existing_cols = [c for c in desired_order if c in results.columns]
-        results = results[existing_cols]
-    if supply != "all" and "Date" in results.columns:
-        results["Date"] = results["Date"].dt.strftime("%Y-%m-%d")
-
-    if per_page:
-        page_df = du.paginate_dataframe(results, page, per_page)
-    else:
-        page_df = results
-
-    json_data = json.loads(page_df.to_json(orient="records"))
-    next_page = page + 1 if per_page and len(results) > page * per_page else None
-    prev_page = page - 1 if per_page and page > 1 else None
-    return jsonify({"data": json_data, "next_page": next_page, "prev_page": prev_page})
+    payload = _search_supply_data(supply, query, page, per_page)
+    return jsonify(
+        {
+            "columns": payload.get("columns", []),
+            "rows": payload.get("rows", []),
+            "next_page": payload.get("next_page"),
+            "prev_page": payload.get("prev_page"),
+        }
+    )
     
 @app.route("/api/sku_judge", methods=["POST"])
 @login_required
@@ -492,45 +627,53 @@ def analyze():
     if current_df is None:
         flash("⚠ Please ensure the Excel file for the selected supply is available.")
         return redirect(url_for("index"))
-    
-    results = None
+
+    if request.method == "POST" and request.is_json:
+        data = request.get_json(force=True) or {}
+        supply_value = data.get("supply", supply)
+        start_date = data.get("start_date")
+        end_date = data.get("end_date")
+        result_payload = _analyze_price_changes(supply_value, start_date, end_date)
+        return jsonify(result_payload)
+
+    default_end = datetime.today().date()
+    default_start = default_end - timedelta(days=30)
+
     if request.method == "POST":
-        try:
-            start_date = pd.to_datetime(request.form.get("start_date"))
-            end_date = pd.to_datetime(request.form.get("end_date"))
-            supply = request.form.get("supply", "supply1")
-            current_df = get_current_dataframe(supply)
-            filtered_data = current_df[(current_df["Date"] >= start_date) & (current_df["Date"] <= end_date)]
-            
-            if filtered_data.empty:
-                flash("⚠ No items found within the selected date range.")
-            else:
-                grouped = filtered_data.groupby(["Description", filtered_data["Date"].dt.to_period("M")])
-                result_records = []
-                groups_keys = list(grouped.groups.keys())
-                
-                for (desc, month) in groups_keys:
-                    group = grouped.get_group((desc, month))
-                    avg_price = group["Price per Unit"].mean()
-                    next_month = month + 1
-                    if (desc, next_month) in grouped.groups:
-                        next_group = grouped.get_group((desc, next_month))
-                        next_avg_price = next_group["Price per Unit"].mean()
-                        if avg_price != next_avg_price:
-                            result_records.extend(group.to_dict("records"))
-                            result_records.extend(next_group.to_dict("records"))
-                
-                if not result_records:
-                    flash("⚠ No price changes found in the selected range.")
-                else:
-                    results = pd.DataFrame(result_records)
-        except Exception as e:
-            flash(f"❌ Error analyzing price changes: {e}")
-    
-    table_html = results.to_html(table_id="data-table", classes="table table-striped", index=False) if results is not None else None
-    if table_html:
-        table_html = table_html.replace('<table ', '<table data-page-length="20" ')
-    return render_template("analyze.html", table=table_html, supply=supply)
+        supply = request.form.get("supply", supply)
+        start_date = request.form.get("start_date") or default_start.isoformat()
+        end_date = request.form.get("end_date") or default_end.isoformat()
+        result_payload = _analyze_price_changes(supply, start_date, end_date)
+        if not result_payload.get("rows"):
+            flash("⚠ No price changes found in the selected range.")
+    else:
+        start_date = request.args.get("start_date")
+        end_date = request.args.get("end_date")
+        if start_date and end_date:
+            result_payload = _analyze_price_changes(supply, start_date, end_date)
+        else:
+            start_date = default_start.isoformat()
+            end_date = default_end.isoformat()
+            result_payload = {"rows": [], "columns": []}
+
+    supply_options = [
+        {"value": "supply1", "label": "Supply 1"},
+        {"value": "supply2", "label": "Supply 2"},
+        {"value": "supply3", "label": "Lion Plumbing Supply"},
+        {"value": "supply4", "label": "Bond Plumbing Supply"},
+    ]
+
+    initial = {
+        "supply": supply,
+        "startDate": start_date,
+        "endDate": end_date,
+        "columns": result_payload.get("columns", []),
+        "rows": result_payload.get("rows", []),
+        "supplyOptions": supply_options,
+        "analyzeApi": url_for("analyze"),
+    }
+
+    return render_app("analyze", initial)
 
 @app.route("/product_detail", methods=["GET"])
 @login_required
@@ -546,21 +689,35 @@ def product_detail():
     if current_df is None or not description:
         flash("⚠ Please provide a product description.")
         return redirect(url_for("index"))
-    
+
     # Use case-insensitive, trimmed comparison for matching.
     filtered_data = current_df[current_df["Description"].str.lower().str.strip() == description.lower().strip()]
     if filtered_data.empty:
         flash("⚠ No data available for the selected product.")
         return redirect(url_for("view_all", supply=supply))
-    
+
     filtered_data = filtered_data.dropna(subset=["Date"]).sort_values(by="Date")
-    if "Date" in filtered_data.columns:
-        filtered_data["Date"] = filtered_data["Date"].dt.strftime("%Y-%m-%d")
-    table_html = filtered_data[['Date', 'Price per Unit']].to_html(table_id="data-table", classes="table table-striped", index=False)
-    table_html = table_html.replace('<table ', '<table data-page-length="20" ')
-    ref = request.args.get("ref", "view_all")  # defaults to view_all if not provided
-    query = request.args.get("query", "")       # Get the search query if available
-    return render_template("product_detail.html", description=description, table=table_html, supply=supply, ref=ref, query=query)
+    dates = filtered_data["Date"].dt.strftime("%Y-%m-%d").tolist()
+    prices = filtered_data["Price per Unit"].tolist()
+    table_rows = filtered_data[["Date", "Price per Unit"]].copy()
+    table_rows["Date"] = dates
+
+    ref = request.args.get("ref", "view_all")
+    query = request.args.get("query", "")
+    if ref == "search":
+        back_url = url_for("search", supply=supply, query=query)
+    else:
+        back_url = url_for("view_all", supply=supply)
+
+    initial = {
+        "description": description,
+        "supply": supply,
+        "rows": table_rows.to_dict(orient="records"),
+        "chart": {"dates": dates, "prices": prices},
+        "backUrl": back_url,
+    }
+
+    return render_app("product_detail", initial)
 
 @app.route("/material_list", methods=["GET", "POST"])
 @login_required
@@ -728,21 +885,27 @@ def material_list():
         template_folder, template_name = os.path.split(template_name_arg)
         if template_folder == ".":
             template_folder = ""
-    return render_template(
-        "material_list.html",
-        product_list=product_list,
-        list_option=list_option,
-        custom_templates=list(custom_templates.keys()),
-        template_folders=sorted(template_folders),
-        supply1_products=supply1_products,
-        supply2_products=supply2_products,
-        supply3_products=supply3_products,
-        supply4_products=supply4_products,
-        template_name=template_name,
-        template_folder=template_folder,
-        full_template_name=full_template_name,
-        project_info=project_info,
-    )
+    initial = {
+        "listOption": list_option,
+        "products": product_list,
+        "projectInfo": project_info,
+        "customTemplates": sorted(custom_templates.keys()),
+        "templateFolders": sorted(template_folders),
+        "templateName": template_name,
+        "templateFolder": template_folder,
+        "fullTemplateName": full_template_name,
+        "catalog": {
+            "supply1": supply1_products,
+            "supply2": supply2_products,
+            "supply3": supply3_products,
+            "supply4": supply4_products,
+        },
+        "listUrl": url_for("material_list"),
+        "downloadUrl": url_for("download_summary"),
+        "saveTemplateUrl": url_for("save_template"),
+    }
+
+    return render_app("material_list", initial)
 
 @app.route("/save_template", methods=["POST"])
 @login_required
@@ -829,30 +992,31 @@ def templates_list():
                     "group": group,
                     "mtime": os.path.getmtime(path),
                     "total_with_tax": total_with_tax,
+                    "edit_url": url_for("edit_template", name=full_name),
+                    "delete_url": url_for("delete_template", name=full_name),
+                    "rename_url": url_for("rename_template", name=full_name),
+                    "move_url": url_for("move_template", name=full_name),
                 })
     folders = sorted(folder_set)
     if sort_key == "date":
         entries.sort(key=lambda x: x["mtime"])
     else:
         entries.sort(key=lambda x: x["name"].lower())
+    grouped = {}
     if group_by == "folder":
-        grouped = {}
         for e in entries:
             grouped.setdefault(e["group"], []).append(e)
-        return render_template(
-            "templates_list.html",
-            grouped_templates=grouped,
-            sort_key=sort_key,
-            group_by=group_by,
-            folders=folders,
-        )
-    return render_template(
-        "templates_list.html",
-        template_entries=entries,
-        sort_key=sort_key,
-        group_by=group_by,
-        folders=folders,
-    )
+
+    initial = {
+        "entries": entries,
+        "grouped": grouped if group_by == "folder" else None,
+        "sortKey": sort_key,
+        "groupBy": group_by,
+        "folders": folders,
+        "createFolderUrl": url_for("create_template_folder"),
+    }
+
+    return render_app("templates", initial)
 
 
 @app.route("/edit_template/<path:name>")
@@ -1018,7 +1182,8 @@ def login():
             return redirect(url_for("index"))
         else:
             flash("Unauthorized email.", "danger")
-    return render_template("login.html")
+    initial = {"loginUrl": url_for("login")}
+    return render_app("login", initial, nav_links=[])
 
 @app.route("/verify_login/<token>")
 def verify_login(token):
