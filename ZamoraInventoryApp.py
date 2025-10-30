@@ -164,7 +164,7 @@ def render_app(
     context = {
         "page": page,
         "initial_data": initial_data or {},
-        "nav_links": nav_links or default_nav_links(),
+        "nav_links": default_nav_links() if nav_links is None else nav_links,
         "flashes": get_flashed_messages(with_categories=True),
         "user_email": session.get("email"),
         "logout_url": url_for("logout") if session.get("email") else url_for("login"),
