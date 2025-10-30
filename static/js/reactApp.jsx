@@ -661,6 +661,7 @@ function MaterialListPage({ data }) {
       predetermined: true,
     }));
   });
+  const [draggingIndex, setDraggingIndex] = useState(null);
   const [projectInfo, setProjectInfo] = useState({
     contractor: data.projectInfo?.contractor || "",
     address: data.projectInfo?.address || "",
@@ -767,6 +768,35 @@ function MaterialListPage({ data }) {
       next.splice(target, 0, item);
       return next;
     });
+  };
+
+  const handleDragStart = (event, index) => {
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("text/plain", String(index));
+    setDraggingIndex(index);
+  };
+
+  const handleDragOver = (event, index) => {
+    event.preventDefault();
+    if (draggingIndex === null || draggingIndex === index) {
+      return;
+    }
+    setItems((current) => {
+      const next = [...current];
+      const [moved] = next.splice(draggingIndex, 1);
+      next.splice(index, 0, moved);
+      return next;
+    });
+    setDraggingIndex(index);
+  };
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    setDraggingIndex(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggingIndex(null);
   };
 
   const grandTotal = useMemo(() => {
@@ -941,7 +971,18 @@ function MaterialListPage({ data }) {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {items.map((item, index) => (
-                <tr key={index} className="hover:bg-slate-50">
+                <tr
+                  key={index}
+                  draggable
+                  onDragStart={(event) => handleDragStart(event, index)}
+                  onDragOver={(event) => handleDragOver(event, index)}
+                  onDrop={handleDrop}
+                  onDragEnd={handleDragEnd}
+                  className={classNames(
+                    "hover:bg-slate-50",
+                    draggingIndex === index ? "bg-sky-50" : ""
+                  )}
+                >
                   <td className="px-4 py-3 text-sm">
                     <input
                       type="number"
@@ -1083,6 +1124,33 @@ function MaterialListPage({ data }) {
 function TemplatesPage({ data }) {
   const entries = data.entries || [];
   const grouped = data.grouped || {};
+  const [expandedFolders, setExpandedFolders] = useState(() => {
+    const initial = {};
+    Object.keys(grouped).forEach((folder) => {
+      const key = folder || "__root__";
+      initial[key] = true;
+    });
+    return initial;
+  });
+
+  useEffect(() => {
+    setExpandedFolders((previous) => {
+      const next = {};
+      Object.keys(grouped).forEach((folder) => {
+        const key = folder || "__root__";
+        next[key] = previous[key] ?? true;
+      });
+      return next;
+    });
+  }, [grouped]);
+
+  const toggleFolder = (folder) => {
+    const key = folder || "__root__";
+    setExpandedFolders((previous) => ({
+      ...previous,
+      [key]: !previous[key],
+    }));
+  };
 
   const applyQuery = (params) => {
     const url = new URL(window.location.href);
@@ -1225,12 +1293,35 @@ function TemplatesPage({ data }) {
       {data.groupBy === "folder" ? (
         Object.keys(grouped).length ? (
           <div className="space-y-8">
-            {Object.entries(grouped).map(([folder, folderEntries]) => (
-              <div key={folder || "root"} className="space-y-3">
-                <h2 className="text-lg font-semibold text-slate-800">{folder || "Ungrouped"}</h2>
-                {renderTableRows(folderEntries)}
-              </div>
-            ))}
+            {Object.entries(grouped).map(([folder, folderEntries]) => {
+              const key = folder || "__root__";
+              const isExpanded = expandedFolders[key] ?? true;
+              return (
+                <div key={key} className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={() => toggleFolder(folder)}
+                    className="flex w-full items-center justify-between rounded-lg bg-slate-100 px-4 py-2 text-left text-sm font-semibold text-slate-700 transition hover:bg-slate-200"
+                    aria-expanded={isExpanded}
+                  >
+                    <span className="flex items-center gap-2">
+                      <span>{folder || "Ungrouped"}</span>
+                      <span className="text-xs font-medium text-slate-500">({folderEntries.length})</span>
+                    </span>
+                    <span
+                      className={classNames(
+                        "text-slate-500 transition-transform",
+                        isExpanded ? "rotate-180" : "rotate-0"
+                      )}
+                      aria-hidden
+                    >
+                      ⌃
+                    </span>
+                  </button>
+                  {isExpanded && renderTableRows(folderEntries)}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <EmptyState
