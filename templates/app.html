@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Inventory Analyzer</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    window.__INITIAL_PAGE__ = {{ page|tojson }};
+    window.__INITIAL_DATA__ = {{ initial_data|tojson }};
+    window.__FLASH_MESSAGES__ = {{ flashes|tojson }};
+    window.__USER_EMAIL__ = {{ user_email|tojson }};
+    window.__NAV_LINKS__ = {{ nav_links|tojson }};
+    window.__LOGOUT_URL__ = {{ logout_url|tojson }};
+  </script>
+</head>
+<body class="bg-slate-100 min-h-screen">
+  <div id="root"></div>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
+  <script type="text/babel" src="{{ url_for('static', filename='js/reactApp.jsx') }}"></script>
+</body>
+</html>
