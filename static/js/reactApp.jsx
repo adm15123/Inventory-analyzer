@@ -188,8 +188,7 @@ function HomePage({ data }) {
       <div>
         <h1 className="text-3xl font-semibold text-slate-900">{data.pageTitle || "Welcome"}</h1>
         <p className="mt-2 max-w-3xl text-sm text-slate-500">
-          Navigate through the Zamora Plumbing Corp inventory toolkit. Each section has been redesigned with a responsive React +
-          Tailwind interface for faster exploration and analysis.
+          Navigate through the Zamora Plumbing Corp inventory toolkit.
         </p>
       </div>
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -1342,7 +1341,7 @@ function LoginPage({ data }) {
       <div className="space-y-2 text-center">
         <h1 className="text-2xl font-semibold text-slate-900">Login</h1>
         <p className="text-sm text-slate-500">
-          Enter your code or email to receive a sign-in link. The refreshed interface keeps all authentication flows unchanged.
+          Enter your code or email to receive a sign-in link.
         </p>
       </div>
       <form method="POST" action={data.loginUrl} className="space-y-4">
