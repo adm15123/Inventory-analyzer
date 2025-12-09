@@ -14,6 +14,10 @@ const supplyCodes = {
   supply4: "BOND",
 };
 
+function getSupplyKeyFromCode(code) {
+  return Object.entries(supplyCodes).find(([, value]) => value === code)?.[0];
+}
+
 function classNames(...classes) {
   return classes.filter(Boolean).join(" ");
 }
@@ -655,6 +659,7 @@ function MaterialListPage({ data }) {
       quantity: Number(product.quantity ?? product.Quantity ?? 0) || 0,
       description: product["Product Description"] || product.description || "",
       supply: product.Supply || product.supply || supplyCodes[lookupSupply],
+      lookupSupply: getSupplyKeyFromCode(product.Supply || product.supply) || lookupSupply,
       unit: product.Unit || product.unit || "",
       lastPrice: Number(product["Last Price"] ?? product.last_price ?? product["Price per Unit"] ?? 0) || 0,
       predetermined: true,
@@ -708,11 +713,12 @@ function MaterialListPage({ data }) {
       updateItem(index, {
         description: value,
         supply: supplyCodes[lookupSupply],
+        lookupSupply,
         unit: entry.unit || "",
         lastPrice: Number(entry.price.toFixed(2)),
       });
     } else {
-      updateItem(index, { description: value });
+      updateItem(index, { description: value, lookupSupply });
     }
   };
 
@@ -723,20 +729,39 @@ function MaterialListPage({ data }) {
           return item;
         }
         const normalized = item.description.toLowerCase().trim();
-        const entry = catalogLookups[lookupSupply]?.[normalized];
+        const itemLookupSupply = item.lookupSupply || getSupplyKeyFromCode(item.supply) || lookupSupply;
+        const entry = catalogLookups[itemLookupSupply]?.[normalized];
         if (!entry) {
-          return { ...item, supply: supplyCodes[lookupSupply] };
+          return { ...item, lookupSupply: itemLookupSupply, supply: supplyCodes[itemLookupSupply] };
         }
         return {
           ...item,
-          supply: supplyCodes[lookupSupply],
+          lookupSupply: itemLookupSupply,
+          supply: supplyCodes[itemLookupSupply],
           unit: entry.unit || item.unit,
           lastPrice: Number(entry.price.toFixed(2)),
           total: Number(((Number(item.quantity) || 0) * entry.price).toFixed(2)),
         };
       })
     );
-  }, [lookupSupply, catalogLookups]);
+  }, [catalogLookups, lookupSupply]);
+
+  const handleSupplyChange = (index, value) => {
+    const supplyKey = getSupplyKeyFromCode(value) || lookupSupply;
+    updateItem(index, {
+      supply: value,
+      lookupSupply: supplyKey,
+    });
+  };
+
+  const handleQuantityChange = (index, rawValue) => {
+    if (rawValue === "") {
+      updateItem(index, { quantity: "" });
+      return;
+    }
+    const normalized = Number(rawValue);
+    updateItem(index, { quantity: Number.isFinite(normalized) ? normalized : 0 });
+  };
 
   const addManualItem = () => {
     setItems((current) => [
@@ -745,6 +770,7 @@ function MaterialListPage({ data }) {
         quantity: 0,
         description: "",
         supply: supplyCodes[lookupSupply],
+        lookupSupply,
         unit: "",
         lastPrice: 0,
         predetermined: false,
@@ -986,8 +1012,18 @@ function MaterialListPage({ data }) {
                     <input
                       type="number"
                       min="0"
-                      value={item.quantity}
-                      onChange={(event) => updateItem(index, { quantity: Number(event.target.value) })}
+                      value={item.quantity === "" ? "" : item.quantity}
+                      onChange={(event) => handleQuantityChange(index, event.target.value)}
+                      onFocus={(event) => {
+                        if (event.target.value === "0") {
+                          handleQuantityChange(index, "");
+                        }
+                      }}
+                      onBlur={(event) => {
+                        if (event.target.value === "") {
+                          handleQuantityChange(index, "0");
+                        }
+                      }}
                       className="w-24 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-200"
                     />
                   </td>
@@ -1005,7 +1041,7 @@ function MaterialListPage({ data }) {
                     <input
                       type="text"
                       value={item.supply}
-                      onChange={(event) => updateItem(index, { supply: event.target.value })}
+                      onChange={(event) => handleSupplyChange(index, event.target.value)}
                       className="w-20 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700 focus:border-sky-500 focus:outline-none focus:ring-1 focus:ring-sky-200"
                     />
                   </td>
