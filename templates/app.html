@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Inventory Analyzer</title>
+  <link rel="manifest" href="/static/manifest.json" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     window.__INITIAL_PAGE__ = {{ page|tojson }};
@@ -16,15 +17,17 @@
 </head>
 <body class="bg-slate-100 min-h-screen">
   <div id="root"></div>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- PERF FIX #1: Production minified builds (NOT .development.js) -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+  <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
-  <script
-    type="text/babel"
-    data-presets="env,react"
-    data-plugins="proposal-class-properties,proposal-object-rest-spread,proposal-nullish-coalescing-operator,proposal-optional-chaining"
-    src="{{ url_for('static', filename='js/reactApp.jsx') }}"
-  ></script>
+
+  <!-- PERF FIX #2: Pre-compiled JS — Babel no longer transpiles in browser at runtime.
+       Run: npx babel static/js/reactApp.jsx -o static/js/reactApp.js
+       (one-time or in CI) to generate this file. -->
+  <script src="{{ url_for('static', filename='js/reactApp.js') }}"></script>
 </body>
 </html>
