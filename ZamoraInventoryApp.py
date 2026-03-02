@@ -1001,35 +1001,36 @@ def templates_list():
                 full_name = os.path.join(group, name) if group else name
 
                 subtotal = 0.0
-item_count = 0          # ADD THIS
-try:
-    with open(path, "r") as fh:
-        content = json.load(fh)
-    products = content.get("products", []) if isinstance(content, dict) else content
-    item_count = len(products)   # ADD THIS
-    for item in products:
-        try:
-            subtotal += float(item.get("total", 0) or float(item.get("last_price", 0)) * float(item.get("quantity", 0)))
-        except (TypeError, ValueError):
-            continue
-except Exception:
-    subtotal = 0.0
+                item_count = 0
+                try:
+                    with open(path, "r") as fh:
+                        content = json.load(fh)
+                    products = content.get("products", []) if isinstance(content, dict) else content
+                    item_count = len(products)
+                    for item in products:
+                        try:
+                            total = item.get("total")
+                            subtotal += float(total) if total is not None else float(item.get("last_price", 0)) * float(item.get("quantity", 0))
+                        except (TypeError, ValueError):
+                            continue
+                except Exception:
+                    subtotal = 0.0
 
                 tax = subtotal * config.TAX_RATE
                 total_with_tax = subtotal + tax
 
                 entries.append({
-    "name": name,
-    "full_name": full_name,
-    "group": group,
-    "mtime": os.path.getmtime(path),
-    "item_count": item_count,        # ADD THIS LINE
-    "total_with_tax": total_with_tax,
-    "edit_url": url_for("edit_template", name=full_name),
-    "delete_url": url_for("delete_template", name=full_name),
-    "rename_url": url_for("rename_template", name=full_name),
-    "move_url": url_for("move_template", name=full_name),
-})
+                    "name": name,
+                    "full_name": full_name,
+                    "group": group,
+                    "mtime": os.path.getmtime(path),
+                    "item_count": item_count,
+                    "total_with_tax": total_with_tax,
+                    "edit_url": url_for("edit_template", name=full_name),
+                    "delete_url": url_for("delete_template", name=full_name),
+                    "rename_url": url_for("rename_template", name=full_name),
+                    "move_url": url_for("move_template", name=full_name),
+                })
     folders = sorted(folder_set)
     if sort_key == "date":
         entries.sort(key=lambda x: x["mtime"])
