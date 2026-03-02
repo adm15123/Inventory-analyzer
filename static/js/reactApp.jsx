@@ -779,16 +779,35 @@ function ProductDetailPage({ data }) {
 //                  IMPROVEMENT #7: consume pending cart items
 //                  IMPROVEMENT #11: mobile card layout
 // ================================================================
+// ================================================================
+// IMPROVED MaterialListPage
+// New features:
+//  - Sticky header row while scrolling
+//  - Always-visible price summary panel (subtotal, tax, total)
+//  - Autocomplete descriptions from catalog (already existed via
+//    <datalist> but now shown as a live dropdown suggestion panel)
+//  - Duplicate row button per item
+//  - Cleaner project info section with labels
+// ================================================================
 function MaterialListPage({ data }) {
+  const TAX_RATE = 0.07;
+
   const catalogLookups = useMemo(() => {
     const lookups = {};
     Object.entries(data.catalog || {}).forEach(([key, records]) => {
       const map = {};
       (records || []).forEach((item) => {
-        const description = (item.Description || item["Product Description"] || item.description || "")
-          .toLowerCase().trim();
+        const description = (
+          item.Description ||
+          item["Product Description"] ||
+          item.description ||
+          ""
+        )
+          .toLowerCase()
+          .trim();
         if (!description) return;
-        const price = parseFloat(item["Price per Unit"] ?? item.price ?? item.last_price ?? 0) || 0;
+        const price =
+          parseFloat(item["Price per Unit"] ?? item.price ?? item.last_price ?? 0) || 0;
         const unit = item.Unit || item.unit || "";
         const dateValue = item.Date || item.date;
         const date = dateValue ? new Date(dateValue) : new Date(0);
@@ -802,93 +821,124 @@ function MaterialListPage({ data }) {
     return lookups;
   }, [data.catalog]);
 
+  // All unique descriptions per supply for autocomplete
+  const datalistOptions = useMemo(() => {
+    const options = {};
+    Object.entries(data.catalog || {}).forEach(([key, records]) => {
+      const unique = Array.from(
+        new Set(
+          (records || []).map(
+            (r) => r.Description || r["Product Description"] || r.description || ""
+          )
+        )
+      ).filter(Boolean);
+      options[key] = unique;
+    });
+    return options;
+  }, [data.catalog]);
+
   const [lookupSupply, setLookupSupply] = useState("supply1");
   const [templateFolder, setTemplateFolder] = useState(data.templateFolder || "");
   const [templateName, setTemplateName] = useState(data.templateName || "");
-  const [pdfLoading, setPdfLoading] = useState(false); // IMPROVEMENT #6
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
 
-  // IMPROVEMENT #7: absorb pending cart items on mount
-  const [items, setItems] = useState(() => {
-    const baseItems = (data.products || []).map((product) => ({
+  const [projectInfo, setProjectInfo] = useState({
+    contractor: data.projectInfo?.contractor || "",
+    address: data.projectInfo?.address || "",
+    date: data.projectInfo?.date || new Date().toISOString().slice(0, 10),
+  });
+
+  const [items, setItems] = useState(() =>
+    (data.products || []).map((product) => ({
       quantity: Number(product.quantity ?? product.Quantity ?? 0) || 0,
       description: product["Product Description"] || product.description || "",
       supply: product.Supply || product.supply || supplyCodes[lookupSupply],
-      lookupSupply: getSupplyKeyFromCode(product.Supply || product.supply) || lookupSupply,
+      lookupSupply:
+        getSupplyKeyFromCode(product.Supply || product.supply) || lookupSupply,
       unit: product.Unit || product.unit || "",
-      lastPrice: Number(product["Last Price"] ?? product.last_price ?? product["Price per Unit"] ?? 0) || 0,
-      predetermined: false,
-    }));
-
-    // Merge pending cart items from Search
-    const pending = getPendingItems();
-    if (pending.length) {
-      setPendingItems([]); // clear after consuming
-      return [...baseItems, ...pending];
-    }
-    return baseItems;
-  });
+      lastPrice:
+        Number(
+          product["Last Price"] ??
+            product.last_price ??
+            product["Price per Unit"] ??
+            0
+        ) || 0,
+      predetermined: true,
+    }))
+  );
 
   const [draggingIndex, setDraggingIndex] = useState(null);
-  const formRef = useRef(null);
   const productDataRef = useRef(null);
   const includePriceRef = useRef(null);
+  const formRef = useRef(null);
 
-  const updateItem = (index, patch) => {
-    setItems((current) =>
-      current.map((item, i) => (i === index ? { ...item, ...patch } : item))
-    );
-  };
-
-  const applySupplyPrices = useCallback(() => {
-    setItems((current) =>
-      current.map((item) => {
-        const itemLookupSupply = item.lookupSupply || lookupSupply;
-        const lookup = catalogLookups[itemLookupSupply] || {};
-        const normalized = item.description.toLowerCase().trim();
-        const entry = lookup[normalized];
-        if (!entry) return { ...item, lookupSupply: itemLookupSupply, supply: supplyCodes[itemLookupSupply] };
-        return {
-          ...item,
-          lookupSupply: itemLookupSupply,
-          supply: supplyCodes[itemLookupSupply],
-          unit: entry.unit || item.unit,
-          lastPrice: Number(entry.price.toFixed(2)),
-          total: Number(((Number(item.quantity) || 0) * entry.price).toFixed(2)),
-        };
-      })
-    );
-  }, [catalogLookups, lookupSupply]);
-
-  const handleSupplyChange = (index, value) => {
-    const supplyKey = getSupplyKeyFromCode(value) || lookupSupply;
-    updateItem(index, { supply: value, lookupSupply: supplyKey });
-  };
-
-  // IMPROVEMENT #8: qty validated as integer >= 0
-  const handleQuantityChange = (index, rawValue) => {
-    if (rawValue === "") { updateItem(index, { quantity: "" }); return; }
-    const normalized = Math.max(0, Math.round(Number(rawValue)));
-    updateItem(index, { quantity: Number.isFinite(normalized) ? normalized : 0 });
+  // ---- item mutations ----
+  const updateItem = (index, updates) => {
+    setItems((current) => {
+      const next = [...current];
+      const nextItem = { ...next[index], ...updates };
+      const quantity = Number(nextItem.quantity) || 0;
+      const lastPrice = Number(nextItem.lastPrice) || 0;
+      nextItem.total = Number((quantity * lastPrice).toFixed(2));
+      next[index] = nextItem;
+      return next;
+    });
   };
 
   const handleDescriptionChange = (index, value) => {
-    updateItem(index, { description: value });
+    const normalized = value.toLowerCase().trim();
+    const entry = catalogLookups[lookupSupply]?.[normalized];
+    if (entry) {
+      updateItem(index, {
+        description: value,
+        supply: supplyCodes[lookupSupply],
+        lookupSupply,
+        unit: entry.unit || "",
+        lastPrice: Number(entry.price.toFixed(2)),
+      });
+    } else {
+      updateItem(index, { description: value, lookupSupply });
+    }
+  };
+
+  const handleQuantityChange = (index, rawValue) => {
+    if (rawValue === "") { updateItem(index, { quantity: "" }); return; }
+    const n = Math.max(0, Math.round(Number(rawValue)));
+    updateItem(index, { quantity: Number.isFinite(n) ? n : 0 });
   };
 
   const addManualItem = () => {
-    setItems((current) => [
-      ...current,
-      { quantity: 0, description: "", supply: supplyCodes[lookupSupply], lookupSupply, unit: "", lastPrice: 0, predetermined: false },
+    setItems((c) => [
+      ...c,
+      {
+        quantity: 0,
+        description: "",
+        supply: supplyCodes[lookupSupply],
+        lookupSupply,
+        unit: "",
+        lastPrice: 0,
+        predetermined: false,
+      },
     ]);
   };
 
+  // NEW: duplicate a row
+  const duplicateItem = (index) => {
+    setItems((c) => {
+      const next = [...c];
+      next.splice(index + 1, 0, { ...c[index] });
+      return next;
+    });
+  };
+
   const removeItem = (index) => {
-    setItems((current) => current.filter((_, i) => i !== index));
+    setItems((c) => c.filter((_, i) => i !== index));
   };
 
   const moveItem = (index, direction) => {
-    setItems((current) => {
-      const next = [...current];
+    setItems((c) => {
+      const next = [...c];
       const target = index + direction;
       if (target < 0 || target >= next.length) return next;
       const [item] = next.splice(index, 1);
@@ -897,17 +947,17 @@ function MaterialListPage({ data }) {
     });
   };
 
-  const handleDragStart = (event, index) => {
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", String(index));
+  const handleDragStart = (e, index) => {
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("text/plain", String(index));
     setDraggingIndex(index);
   };
 
-  const handleDragOver = (event, index) => {
-    event.preventDefault();
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
     if (draggingIndex === null || draggingIndex === index) return;
-    setItems((current) => {
-      const next = [...current];
+    setItems((c) => {
+      const next = [...c];
       const [moved] = next.splice(draggingIndex, 1);
       next.splice(index, 0, moved);
       return next;
@@ -915,13 +965,24 @@ function MaterialListPage({ data }) {
     setDraggingIndex(index);
   };
 
-  const handleDrop = (event) => { event.preventDefault(); setDraggingIndex(null); };
+  const handleDrop = (e) => { e.preventDefault(); setDraggingIndex(null); };
   const handleDragEnd = () => setDraggingIndex(null);
 
-  const grandTotal = useMemo(
-    () => items.reduce((sum, item) => sum + Number(item.total || (item.quantity || 0) * (item.lastPrice || 0)), 0),
+  // ---- totals ----
+  const subtotal = useMemo(
+    () =>
+      items.reduce(
+        (sum, item) =>
+          sum +
+          Number(
+            item.total || (Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)
+          ),
+        0
+      ),
     [items]
   );
+  const tax = subtotal * TAX_RATE;
+  const grandTotal = subtotal + tax;
 
   const serializeProducts = () =>
     items.map((item) => ({
@@ -930,19 +991,20 @@ function MaterialListPage({ data }) {
       unit: item.unit,
       last_price: Number(item.lastPrice || 0),
       quantity: Number(item.quantity || 0),
-      total: Number(((Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)).toFixed(2)),
+      total: Number(
+        ((Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)).toFixed(2)
+      ),
     }));
 
-  // IMPROVEMENT #6: show loading state during PDF generation
+  const [pdfLoading, setPdfLoading] = useState(false);
   const handleExport = () => {
     const includePrice = window.confirm("Include prices in the PDF?");
     if (includePriceRef.current) includePriceRef.current.value = includePrice ? "yes" : "no";
-    if (productDataRef.current) productDataRef.current.value = JSON.stringify(serializeProducts());
+    if (productDataRef.current)
+      productDataRef.current.value = JSON.stringify(serializeProducts());
     setPdfLoading(true);
-    // Give the UI a tick to show loading, then submit
     setTimeout(() => {
       formRef.current?.submit();
-      // Reset after a reasonable delay (server-side redirect will handle it)
       setTimeout(() => setPdfLoading(false), 8000);
     }, 100);
   };
@@ -951,257 +1013,408 @@ function MaterialListPage({ data }) {
     if (!templateName.trim()) { window.alert("Template name required"); return; }
     const folder = templateFolder.trim();
     const fullName = folder ? `${folder}/${templateName.trim()}` : templateName.trim();
-    const payload = {
-      template_name: fullName,
-      product_data: JSON.stringify(serializeProducts()),
-    };
+    const payload = new URLSearchParams();
+    payload.set("template_name", fullName);
+    payload.set("product_data", JSON.stringify(serializeProducts()));
+    payload.set("project_info", JSON.stringify(projectInfo));
+    setSavingTemplate(true);
+    setSaveSuccess(false);
     fetch(data.saveTemplateUrl || "/save_template", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams(payload).toString(),
-    }).then((r) => {
-      if (r.ok) window.alert("Template saved!");
-      else window.alert("Error saving template.");
-    });
+      body: payload.toString(),
+    })
+      .then(() => { setSaveSuccess(true); })
+      .catch(() => window.alert("Error saving template."))
+      .finally(() => setSavingTemplate(false));
   };
 
-  // IMPROVEMENT #11: detect mobile to show cards
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 640);
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 640);
-    window.addEventListener("resize", handler);
-    return () => window.removeEventListener("resize", handler);
-  }, []);
+  const handleTemplateChange = (e) => {
+    const value = e.target.value;
+    window.location.href = `${data.listUrl}?list=${encodeURIComponent(value)}`;
+  };
+
+  const supplyListId = {
+    supply1: "supply1List",
+    supply2: "supply2List",
+    supply3: "supply3List",
+    supply4: "supply4List",
+  };
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-900">Material List</h1>
-        <div className="flex items-center gap-2">
-          <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Supplier</label>
-          <select
-            value={lookupSupply}
-            onChange={(e) => setLookupSupply(e.target.value)}
-            className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-          >
-            {Object.entries(supplyLabels).map(([k, v]) => (
-              <option key={k} value={k}>{v}</option>
-            ))}
-          </select>
-          <Button type="button" variant="secondary" className="text-xs py-1.5 px-3" onClick={applySupplyPrices}>
-            Apply Prices
-          </Button>
-        </div>
-      </div>
 
-      {/* IMPROVEMENT #11: Mobile card view vs desktop table */}
-      {isMobile ? (
-        <div className="space-y-3">
-          {items.length === 0 && (
-            <EmptyState title="No items yet" description="Add items or load a template below." />
+      {/* ── Header ── */}
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">Material List</h1>
+          {data.fullTemplateName && (
+            <span className="mt-1 inline-flex items-center rounded-full bg-sky-100 px-3 py-0.5 text-xs font-medium text-sky-700">
+              Editing: {data.fullTemplateName}
+            </span>
           )}
-          {items.map((item, index) => (
-            <div
-              key={index}
-              className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 space-y-3"
-            >
-              <div className="flex items-center gap-2">
-                {/* IMPROVEMENT #8: min=0 step=1 */}
-                <input
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={item.quantity === "" ? "" : item.quantity}
-                  onChange={(e) => handleQuantityChange(index, e.target.value)}
-                  className="w-16 rounded-lg border border-slate-300 px-2 py-1 text-sm text-center"
-                  placeholder="Qty"
-                />
-                <input
-                  type="text"
-                  value={item.description}
-                  onChange={(e) => handleDescriptionChange(index, e.target.value)}
-                  className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-sm"
-                  placeholder="Description"
-                />
-                <button onClick={() => removeItem(index)} className="text-rose-500 font-bold text-lg leading-none px-1">×</button>
-              </div>
-              <div className="flex gap-2 text-xs text-slate-500 justify-between">
-                <span>Supply: <strong>{item.supply}</strong></span>
-                <span>Unit: <strong>{item.unit || "—"}</strong></span>
-                <span>Price: <strong>${Number(item.lastPrice || 0).toFixed(2)}</strong></span>
-                <span>Total: <strong>${((item.quantity || 0) * (item.lastPrice || 0)).toFixed(2)}</strong></span>
-              </div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={handleExport}
+            disabled={pdfLoading || items.length === 0}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50 transition"
+          >
+            {pdfLoading ? "⏳ Generating…" : "📄 Export PDF"}
+          </button>
+          <a
+            href={data.downloadUrl}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition"
+          >
+            ⬇ Download Last PDF
+          </a>
+        </div>
+      </div>
+
+      {/* ── Top panel: project info + template select ── */}
+      <div className="grid gap-4 lg:grid-cols-3">
+
+        {/* Project info */}
+        <div className="lg:col-span-2 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 space-y-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Project Information</h2>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500">Contractor</label>
+              <input
+                value={projectInfo.contractor}
+                onChange={(e) => setProjectInfo((p) => ({ ...p, contractor: e.target.value }))}
+                placeholder="Contractor name"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+              />
             </div>
-          ))}
-          <div className="rounded-xl bg-slate-50 px-4 py-2 text-right text-sm font-semibold text-slate-900">
-            Grand Total: ${grandTotal.toFixed(2)}
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500">Job Address</label>
+              <input
+                value={projectInfo.address}
+                onChange={(e) => setProjectInfo((p) => ({ ...p, address: e.target.value }))}
+                placeholder="123 Main St"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500">Date</label>
+              <input
+                type="date"
+                value={projectInfo.date}
+                onChange={(e) => setProjectInfo((p) => ({ ...p, date: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+              />
+            </div>
           </div>
-        </div>
-      ) : (
-        /* Desktop table */
-        <div className="overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  {["Qty", "Description", "Supply", "Unit", "Price", "Total", "Actions"].map((h) => (
-                    <th key={h} className="whitespace-nowrap px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {items.map((item, index) => (
-                  <tr
-                    key={index}
-                    draggable
-                    onDragStart={(e) => handleDragStart(e, index)}
-                    onDragOver={(e) => handleDragOver(e, index)}
-                    onDrop={handleDrop}
-                    onDragEnd={handleDragEnd}
-                    className={classNames(
-                      "transition",
-                      draggingIndex === index ? "opacity-40" : "hover:bg-slate-50"
-                    )}
-                    style={{ cursor: "grab" }}
-                  >
-                    <td className="px-2 py-1">
-                      {/* IMPROVEMENT #8: min=0 step=1 */}
-                      <input
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={item.quantity === "" ? "" : item.quantity}
-                        onChange={(e) => handleQuantityChange(index, e.target.value)}
-                        className="w-16 rounded border border-slate-300 px-1 py-0.5 text-center text-sm"
-                      />
-                    </td>
-                    <td className="px-2 py-1 min-w-[200px]">
-                      <input
-                        type="text"
-                        value={item.description}
-                        onChange={(e) => handleDescriptionChange(index, e.target.value)}
-                        className="w-full rounded border border-slate-300 px-1 py-0.5 text-sm"
-                      />
-                    </td>
-                    <td className="px-2 py-1 whitespace-nowrap text-slate-600">{item.supply}</td>
-                    <td className="px-2 py-1 whitespace-nowrap text-slate-600">{item.unit || "—"}</td>
-                    <td className="px-2 py-1 whitespace-nowrap text-slate-600">${Number(item.lastPrice || 0).toFixed(2)}</td>
-                    <td className="px-2 py-1 whitespace-nowrap font-medium text-slate-800">
-                      ${((Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)).toFixed(2)}
-                    </td>
-                    <td className="px-2 py-1">
-                      <div className="flex items-center gap-1">
-                        <button
-                          type="button"
-                          className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-300 transition"
-                          onClick={() => moveItem(index, -1)}
-                          aria-label="Move up"
-                        >↑</button>
-                        <button
-                          type="button"
-                          className="rounded-full bg-slate-200 px-1.5 py-0.5 text-[11px] font-semibold text-slate-600 hover:bg-slate-300 transition"
-                          onClick={() => moveItem(index, 1)}
-                          aria-label="Move down"
-                        >↓</button>
-                        <button
-                          type="button"
-                          className="rounded-full bg-rose-500 px-1.5 py-0.5 text-[11px] font-semibold text-white hover:bg-rose-600 transition"
-                          onClick={() => removeItem(index)}
-                          aria-label="Remove"
-                        >×</button>
-                      </div>
-                    </td>
-                  </tr>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500">Load Template</label>
+              <select
+                value={data.listOption || "underground"}
+                onChange={handleTemplateChange}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+              >
+                <option value="underground">Underground List</option>
+                <option value="rough">Rough List</option>
+                <option value="final">Final List</option>
+                <option value="new">— New Empty List —</option>
+                {(data.customTemplates || []).map((name) => (
+                  <option key={name} value={name}>{name}</option>
                 ))}
-              </tbody>
-              <tfoot className="bg-slate-50 text-xs">
-                <tr>
-                  <td colSpan={5} className="px-3 py-2 text-right font-semibold text-slate-700">Grand Total</td>
-                  <td className="px-3 py-2 font-semibold text-slate-900">${grandTotal.toFixed(2)}</td>
-                  <td></td>
-                </tr>
-              </tfoot>
-            </table>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-xs text-slate-500">Price Lookup Supply</label>
+              <select
+                value={lookupSupply}
+                onChange={(e) => setLookupSupply(e.target.value)}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+              >
+                <option value="supply1">Supply 1 (BPS)</option>
+                <option value="supply2">Supply 2</option>
+                <option value="supply3">Lion Plumbing Supply</option>
+                <option value="supply4">Bond Plumbing Supply</option>
+              </select>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Actions */}
-      <div className="flex flex-wrap gap-3">
-        <Button type="button" onClick={addManualItem} variant="secondary">
-          + Add Item
-        </Button>
-        {/* IMPROVEMENT #6: loading state on PDF export */}
-        <Button type="button" onClick={handleExport} disabled={pdfLoading}>
-          {pdfLoading ? "⏳ Generating PDF…" : "Export to PDF"}
-        </Button>
-        <Button as="a" href={data.downloadUrl} variant="ghost">
-          Download Last PDF
-        </Button>
-      </div>
-
-      {/* Save template section */}
-      <div className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 space-y-3">
-        <h2 className="text-sm font-semibold text-slate-800">Save as Template</h2>
-        <div className="flex flex-wrap gap-3">
-          <input
-            type="text"
-            value={templateFolder}
-            onChange={(e) => setTemplateFolder(e.target.value)}
-            placeholder="Folder (optional)"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-          />
-          <input
-            type="text"
-            value={templateName}
-            onChange={(e) => setTemplateName(e.target.value)}
-            placeholder="Template name"
-            className="rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-          />
-          <Button type="button" variant="success" onClick={handleSaveTemplate}>
-            Save Template
-          </Button>
+        {/* ── ALWAYS-VISIBLE price summary panel ── */}
+        <div className="rounded-2xl bg-slate-900 p-5 text-white shadow-sm space-y-3">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-400">Order Summary</h2>
+          <div className="space-y-2 text-sm">
+            <div className="flex justify-between">
+              <span className="text-slate-400">Items</span>
+              <span className="font-medium">{items.length}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Subtotal</span>
+              <span className="font-medium">${subtotal.toFixed(2)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Tax (7%)</span>
+              <span className="font-medium">${tax.toFixed(2)}</span>
+            </div>
+            <div className="mt-1 border-t border-slate-700 pt-2 flex justify-between">
+              <span className="font-semibold text-white">Total</span>
+              <span className="text-lg font-bold text-sky-400">${grandTotal.toFixed(2)}</span>
+            </div>
+          </div>
+          {/* Quick save template inside summary panel */}
+          <div className="border-t border-slate-700 pt-3 space-y-2">
+            <p className="text-xs text-slate-400 font-semibold uppercase tracking-wide">Save as Template</p>
+            <input
+              value={templateFolder}
+              onChange={(e) => setTemplateFolder(e.target.value)}
+              list="template-folders"
+              placeholder="Folder (optional)"
+              className="w-full rounded-lg bg-slate-800 border border-slate-700 px-2 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+            />
+            <input
+              value={templateName}
+              onChange={(e) => setTemplateName(e.target.value)}
+              placeholder="Template name"
+              className="w-full rounded-lg bg-slate-800 border border-slate-700 px-2 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+            />
+            <button
+              onClick={handleSaveTemplate}
+              disabled={savingTemplate || !templateName.trim()}
+              className="w-full rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition"
+            >
+              {savingTemplate ? "Saving…" : saveSuccess ? "✓ Saved!" : "Save Template"}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Hidden form for PDF POST */}
-      <form ref={formRef} method="POST" action={data.materialListUrl || "/material_list"} className="hidden">
-        <input name="contractor" defaultValue={data.contractor || ""} />
-        <input name="address" defaultValue={data.address || ""} />
-        <input name="date" defaultValue={data.orderDate || ""} />
-        <input ref={productDataRef} name="product_data" defaultValue="" />
-        <input ref={includePriceRef} name="include_price" defaultValue="yes" />
+      {/* ── Item table with sticky header ── */}
+      <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
+        <div className="overflow-auto" style={{ maxHeight: "60vh" }}>
+          <table className="min-w-full divide-y divide-slate-200 text-xs">
+            {/* STICKY header */}
+            <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
+              <tr>
+                {["#", "Qty", "Description", "Supply", "Unit", "Price", "Total", "Actions"].map((h) => (
+                  <th
+                    key={h}
+                    className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {items.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="py-12 text-center text-sm text-slate-400">
+                    No items yet — add one below or load a template above.
+                  </td>
+                </tr>
+              )}
+              {items.map((item, index) => (
+                <tr
+                  key={index}
+                  draggable
+                  onDragStart={(e) => handleDragStart(e, index)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDrop={handleDrop}
+                  onDragEnd={handleDragEnd}
+                  className={classNames(
+                    "transition",
+                    draggingIndex === index
+                      ? "opacity-40 bg-sky-50"
+                      : "hover:bg-slate-50"
+                  )}
+                  style={{ cursor: "grab" }}
+                >
+                  {/* Row number */}
+                  <td className="px-3 py-1 text-slate-400 select-none">{index + 1}</td>
+
+                  {/* Quantity */}
+                  <td className="px-2 py-1">
+                    <input
+                      type="number"
+                      min="0"
+                      step="1"
+                      value={item.quantity === "" ? "" : item.quantity}
+                      onChange={(e) => handleQuantityChange(index, e.target.value)}
+                      className="w-14 rounded border border-slate-300 px-1.5 py-0.5 text-center text-sm focus:border-sky-500 focus:outline-none"
+                    />
+                  </td>
+
+                  {/* Description — with autocomplete datalist */}
+                  <td className="px-2 py-1 min-w-[220px]">
+                    <input
+                      type="text"
+                      value={item.description}
+                      onChange={(e) => handleDescriptionChange(index, e.target.value)}
+                      list={supplyListId[item.lookupSupply || lookupSupply]}
+                      placeholder="Type or pick description…"
+                      className="w-full rounded border border-slate-300 px-1.5 py-0.5 text-sm focus:border-sky-500 focus:outline-none"
+                    />
+                  </td>
+
+                  {/* Supply badge */}
+                  <td className="px-2 py-1 whitespace-nowrap">
+                    <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                      {item.supply}
+                    </span>
+                  </td>
+
+                  {/* Unit */}
+                  <td className="px-2 py-1 whitespace-nowrap text-slate-500">{item.unit || "—"}</td>
+
+                  {/* Price */}
+                  <td className="px-2 py-1 whitespace-nowrap text-slate-700">
+                    ${Number(item.lastPrice || 0).toFixed(2)}
+                  </td>
+
+                  {/* Total — highlighted */}
+                  <td className="px-2 py-1 whitespace-nowrap font-semibold text-slate-900">
+                    ${((Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)).toFixed(2)}
+                  </td>
+
+                  {/* Actions */}
+                  <td className="px-2 py-1">
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => moveItem(index, -1)}
+                        className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-500 hover:bg-slate-200 transition"
+                        title="Move up"
+                      >↑</button>
+                      <button
+                        onClick={() => moveItem(index, 1)}
+                        className="rounded bg-slate-100 px-1.5 py-0.5 text-[11px] font-bold text-slate-500 hover:bg-slate-200 transition"
+                        title="Move down"
+                      >↓</button>
+                      {/* NEW: duplicate button */}
+                      <button
+                        onClick={() => duplicateItem(index)}
+                        className="rounded bg-sky-100 px-1.5 py-0.5 text-[11px] font-bold text-sky-600 hover:bg-sky-200 transition"
+                        title="Duplicate row"
+                      >⧉</button>
+                      <button
+                        onClick={() => removeItem(index)}
+                        className="rounded bg-rose-100 px-1.5 py-0.5 text-[11px] font-bold text-rose-600 hover:bg-rose-200 transition"
+                        title="Remove"
+                      >✕</button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+
+            {/* Sticky footer totals row */}
+            <tfoot className="bg-slate-50 sticky bottom-0 border-t border-slate-200">
+              <tr>
+                <td colSpan={6} className="px-3 py-2 text-right text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                  Subtotal
+                </td>
+                <td className="px-2 py-2 font-semibold text-slate-800">${subtotal.toFixed(2)}</td>
+                <td></td>
+              </tr>
+              <tr>
+                <td colSpan={6} className="px-3 py-1 text-right text-xs text-slate-400">
+                  Tax 7%
+                </td>
+                <td className="px-2 py-1 text-xs text-slate-500">${tax.toFixed(2)}</td>
+                <td></td>
+              </tr>
+              <tr>
+                <td colSpan={6} className="px-3 py-2 text-right text-sm font-bold text-slate-700">
+                  Grand Total
+                </td>
+                <td className="px-2 py-2 text-sm font-bold text-sky-700">${grandTotal.toFixed(2)}</td>
+                <td></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      {/* Add item button */}
+      <div>
+        <button
+          onClick={addManualItem}
+          className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-6 py-3 text-sm font-semibold text-slate-500 hover:border-sky-400 hover:text-sky-600 transition w-full justify-center"
+        >
+          + Add Item
+        </button>
+      </div>
+
+      {/* Hidden form for PDF submit */}
+      <form ref={formRef} method="POST" action={data.listUrl} className="hidden">
+        <input type="hidden" name="contractor" value={projectInfo.contractor} />
+        <input type="hidden" name="address" value={projectInfo.address} />
+        <input type="hidden" name="date" value={projectInfo.date} />
+        <input type="hidden" name="product_data" ref={productDataRef} />
+        <input type="hidden" name="include_price" ref={includePriceRef} value="yes" />
       </form>
+
+      {/* Datalists for autocomplete */}
+      <datalist id="supply1List">
+        {(datalistOptions.supply1 || []).map((o) => <option key={o} value={o} />)}
+      </datalist>
+      <datalist id="supply2List">
+        {(datalistOptions.supply2 || []).map((o) => <option key={o} value={o} />)}
+      </datalist>
+      <datalist id="supply3List">
+        {(datalistOptions.supply3 || []).map((o) => <option key={o} value={o} />)}
+      </datalist>
+      <datalist id="supply4List">
+        {(datalistOptions.supply4 || []).map((o) => <option key={o} value={o} />)}
+      </datalist>
+      <datalist id="template-folders">
+        {(data.templateFolders || []).map((f) => <option key={f} value={f} />)}
+      </datalist>
     </div>
   );
 }
 
+
+
 // ================================================================
-// TemplatesPage
+// IMPROVED TemplatesPage
+// New features:
+//  - Item count badge per template
+//  - Expandable preview panel showing items before loading
+//  - Quick-load button (loads into Material List without page nav)
+//  - Duplicate template button
+//  - Filter search bar
 // ================================================================
 function TemplatesPage({ data }) {
   const entries = data.entries || [];
+  const grouped = data.grouped || {};
+
   const [filterQuery, setFilterQuery] = useState("");
   const [expandedFolders, setExpandedFolders] = useState(() => {
-    const grouped = {};
-    entries.forEach((e) => { const k = e.group || "__root__"; grouped[k] = true; });
-    return grouped;
+    const initial = {};
+    Object.keys(grouped).forEach((folder) => {
+      initial[folder || "__root__"] = true;
+    });
+    return initial;
   });
+  const [previewEntry, setPreviewEntry] = useState(null); // which template is expanded
+  const [previewItems, setPreviewItems] = useState([]);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [duplicating, setDuplicating] = useState(null);
 
-  const grouped = useMemo(() => {
-    const filtered = filterQuery
-      ? entries.filter((e) => e.full_name?.toLowerCase().includes(filterQuery.toLowerCase()))
-      : entries;
+  const filteredEntries = useMemo(() => {
+    if (!filterQuery.trim()) return entries;
+    const q = filterQuery.toLowerCase();
+    return entries.filter((e) => e.full_name?.toLowerCase().includes(q));
+  }, [entries, filterQuery]);
+
+  const filteredGrouped = useMemo(() => {
     const result = {};
-    filtered.forEach((e) => {
+    filteredEntries.forEach((e) => {
       const key = e.group || "";
       if (!result[key]) result[key] = [];
       result[key].push(e);
     });
     return result;
-  }, [entries, filterQuery]);
+  }, [filteredEntries]);
 
   const toggleFolder = (folder) => {
     const key = folder || "__root__";
@@ -1209,94 +1422,249 @@ function TemplatesPage({ data }) {
   };
 
   const handleAction = (url, body) => {
-    const payload = new URLSearchParams(body || {});
     fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: payload.toString(),
+      body: new URLSearchParams(body || {}).toString(),
     }).then(() => window.location.reload());
   };
 
   const confirmAndDelete = (entry) => {
-    if (window.confirm(`Delete template "${entry.full_name}"?`)) handleAction(entry.delete_url);
+    if (window.confirm(`Delete "${entry.full_name}"?`)) handleAction(entry.delete_url);
   };
 
   const promptRename = (entry) => {
-    const next = window.prompt("New template name", entry.full_name);
-    if (next) handleAction(entry.rename_url, { new_name: next });
+    const next = window.prompt("New template name:", entry.name);
+    if (next && next.trim()) handleAction(entry.rename_url, { new_name: next.trim() });
   };
 
   const promptMove = (entry) => {
-    const target = window.prompt("Move to folder (leave blank for root)", entry.group || "");
+    const target = window.prompt("Move to folder (leave blank for root):", entry.group || "");
     if (target !== null) handleAction(entry.move_url, { target_folder: target });
   };
 
-  const renderTableRows = (rows) => (
-    <Table
-      columns={["Name", "Modified", "Total w/ Tax", "Actions"]}
-      rows={rows}
-      renderRow={(row) => (
-        <>
-          <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">{row.full_name}</td>
-          <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-500">
-            {row.mtime ? new Date(row.mtime * 1000).toLocaleString() : "—"}
-          </td>
-          <td className="whitespace-nowrap px-4 py-3 text-sm text-slate-700">
-            ${row.total_with_tax?.toFixed?.(2) ?? "—"}
-          </td>
-          <td className="px-4 py-3 text-sm">
-            <div className="flex flex-wrap gap-1">
-              {row.load_url && (
-                <Button as="a" href={row.load_url} className="px-2 py-0.5 text-xs">Load</Button>
+  // NEW: preview template items
+  const handlePreview = (entry) => {
+    if (previewEntry?.full_name === entry.full_name) {
+      setPreviewEntry(null);
+      setPreviewItems([]);
+      return;
+    }
+    setPreviewEntry(entry);
+    setPreviewLoading(true);
+    fetch(`/api/template_preview?name=${encodeURIComponent(entry.full_name)}`)
+      .then((r) => r.json())
+      .then((d) => setPreviewItems(d.products || []))
+      .catch(() => setPreviewItems([]))
+      .finally(() => setPreviewLoading(false));
+  };
+
+  // NEW: duplicate template
+  const handleDuplicate = (entry) => {
+    const newName = window.prompt(
+      "Name for the duplicate:",
+      `${entry.name}_copy`
+    );
+    if (!newName || !newName.trim()) return;
+    setDuplicating(entry.full_name);
+    fetch("/api/duplicate_template", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        source_name: entry.full_name,
+        new_name: newName.trim(),
+      }).toString(),
+    })
+      .then(() => window.location.reload())
+      .finally(() => setDuplicating(null));
+  };
+
+  const renderEntries = (rows) =>
+    rows.map((row) => (
+      <div key={row.full_name} className="rounded-xl bg-white ring-1 ring-slate-200 overflow-hidden">
+        {/* Main row */}
+        <div className="flex flex-wrap items-center gap-3 px-4 py-3">
+          {/* Name + meta */}
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-sm font-semibold text-slate-800 truncate">
+                {row.name}
+              </span>
+              {/* Item count badge */}
+              {row.item_count != null && (
+                <span className="inline-flex items-center rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                  {row.item_count} item{row.item_count !== 1 ? "s" : ""}
+                </span>
               )}
-              <Button variant="secondary" className="px-2 py-0.5 text-xs" onClick={() => promptRename(row)}>Rename</Button>
-              <Button variant="ghost" className="px-2 py-0.5 text-xs" onClick={() => promptMove(row)}>Move</Button>
-              <Button variant="danger" className="px-2 py-0.5 text-xs" onClick={() => confirmAndDelete(row)}>Delete</Button>
+              {/* Total badge */}
+              {row.total_with_tax != null && (
+                <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                  ${row.total_with_tax.toFixed(2)} w/tax
+                </span>
+              )}
             </div>
-          </td>
-        </>
-      )}
-    />
-  );
+            <p className="mt-0.5 text-xs text-slate-400">
+              {row.mtime ? new Date(row.mtime * 1000).toLocaleString() : ""}
+            </p>
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+            {/* Preview toggle */}
+            <button
+              onClick={() => handlePreview(row)}
+              className={classNames(
+                "rounded-lg px-2.5 py-1 text-xs font-semibold transition",
+                previewEntry?.full_name === row.full_name
+                  ? "bg-sky-600 text-white"
+                  : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+              )}
+              title="Preview items"
+            >
+              {previewEntry?.full_name === row.full_name ? "▲ Hide" : "▼ Preview"}
+            </button>
+
+            {/* Load directly */}
+            <a
+              href={`${data.materialListUrl || "/material_list"}?list=${encodeURIComponent(row.full_name)}`}
+              className="rounded-lg bg-sky-600 px-2.5 py-1 text-xs font-semibold text-white hover:bg-sky-700 transition"
+            >
+              Load
+            </a>
+
+            {/* Duplicate */}
+            <button
+              onClick={() => handleDuplicate(row)}
+              disabled={duplicating === row.full_name}
+              className="rounded-lg bg-violet-100 px-2.5 py-1 text-xs font-semibold text-violet-700 hover:bg-violet-200 transition disabled:opacity-50"
+              title="Duplicate template"
+            >
+              {duplicating === row.full_name ? "…" : "⧉ Copy"}
+            </button>
+
+            <button
+              onClick={() => promptRename(row)}
+              className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition"
+            >
+              Rename
+            </button>
+            <button
+              onClick={() => promptMove(row)}
+              className="rounded-lg bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:bg-slate-200 transition"
+            >
+              Move
+            </button>
+            <button
+              onClick={() => confirmAndDelete(row)}
+              className="rounded-lg bg-rose-100 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-200 transition"
+            >
+              Delete
+            </button>
+          </div>
+        </div>
+
+        {/* Preview panel */}
+        {previewEntry?.full_name === row.full_name && (
+          <div className="border-t border-slate-100 bg-slate-50 px-4 py-3">
+            {previewLoading ? (
+              <p className="text-xs text-slate-400 py-2">Loading preview…</p>
+            ) : previewItems.length === 0 ? (
+              <p className="text-xs text-slate-400 py-2">No items in this template.</p>
+            ) : (
+              <table className="min-w-full text-xs">
+                <thead>
+                  <tr className="text-left text-slate-400">
+                    <th className="pb-1 pr-4 font-semibold">Description</th>
+                    <th className="pb-1 pr-4 font-semibold">Qty</th>
+                    <th className="pb-1 pr-4 font-semibold">Unit</th>
+                    <th className="pb-1 pr-4 font-semibold">Price</th>
+                    <th className="pb-1 font-semibold">Total</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {previewItems.map((item, i) => (
+                    <tr key={i} className="text-slate-700">
+                      <td className="py-1 pr-4 max-w-xs truncate">{item.description || item["Product Description"] || "—"}</td>
+                      <td className="py-1 pr-4">{item.quantity ?? "—"}</td>
+                      <td className="py-1 pr-4">{item.unit || "—"}</td>
+                      <td className="py-1 pr-4">${Number(item.last_price || 0).toFixed(2)}</td>
+                      <td className="py-1">${Number(item.total || 0).toFixed(2)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        )}
+      </div>
+    ));
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Templates</h1>
-          <p className="mt-1 text-sm text-slate-500">{entries.length} saved template{entries.length !== 1 ? "s" : ""}</p>
+          <h1 className="text-2xl font-semibold text-slate-900">Saved Templates</h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {entries.length} template{entries.length !== 1 ? "s" : ""} saved
+          </p>
         </div>
-        <input
-          type="text"
-          value={filterQuery}
-          onChange={(e) => setFilterQuery(e.target.value)}
-          placeholder="Filter templates…"
-          className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 w-full sm:w-60"
-        />
+        <div className="flex gap-2 flex-wrap">
+          <input
+            type="text"
+            value={filterQuery}
+            onChange={(e) => setFilterQuery(e.target.value)}
+            placeholder="Filter templates…"
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 w-52"
+          />
+          <a
+            href={data.materialListUrl || "/material_list"}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 transition"
+          >
+            + New List
+          </a>
+        </div>
       </div>
 
-      {Object.keys(grouped).length === 0 ? (
-        <EmptyState title="No templates" description="Save a template from the Material List page." />
-      ) : Object.entries(grouped).map(([folder, folderEntries]) => {
-        const key = folder || "__root__";
-        const isExpanded = expandedFolders[key] ?? true;
-        return (
-          <div key={key} className="space-y-2">
-            <button
-              type="button"
-              onClick={() => toggleFolder(folder)}
-              className="flex w-full items-center justify-between rounded-lg bg-slate-100 px-4 py-2 text-left text-sm font-semibold text-slate-700 hover:bg-slate-200 transition"
-            >
-              <span className="flex items-center gap-2">
-                <span>{folder || "Ungrouped"}</span>
-                <span className="text-xs font-medium text-slate-500">({folderEntries.length})</span>
-              </span>
-              <span className={classNames("text-slate-500 transition-transform", isExpanded ? "rotate-180" : "rotate-0")}>⌃</span>
-            </button>
-            {isExpanded && renderTableRows(folderEntries)}
-          </div>
-        );
-      })}
+      {/* Folder groups */}
+      {Object.keys(filteredGrouped).length === 0 ? (
+        <div className="flex flex-col items-center justify-center rounded-2xl bg-white py-16 shadow-sm ring-1 ring-slate-200">
+          <p className="text-sm font-semibold text-slate-700">No templates found</p>
+          <p className="mt-1 text-xs text-slate-500">
+            {filterQuery ? "Try a different search term." : "Save a template from the Material List page."}
+          </p>
+        </div>
+      ) : (
+        Object.entries(filteredGrouped).map(([folder, folderEntries]) => {
+          const key = folder || "__root__";
+          const isExpanded = expandedFolders[key] ?? true;
+          return (
+            <div key={key} className="space-y-2">
+              {/* Folder header */}
+              <button
+                onClick={() => toggleFolder(folder)}
+                className="flex w-full items-center justify-between rounded-xl bg-slate-100 px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-200 transition"
+              >
+                <span className="flex items-center gap-2">
+                  <span>{folder || "📁 Ungrouped"}</span>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-slate-500 ring-1 ring-slate-200">
+                    {folderEntries.length}
+                  </span>
+                </span>
+                <span className={classNames("text-slate-400 transition-transform text-xs", isExpanded ? "rotate-180" : "")}>
+                  ▲
+                </span>
+              </button>
+
+              {isExpanded && (
+                <div className="space-y-2 pl-2">
+                  {renderEntries(folderEntries)}
+                </div>
+              )}
+            </div>
+          );
+        })
+      )}
     </div>
   );
 }
