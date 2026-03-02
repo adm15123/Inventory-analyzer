@@ -1057,8 +1057,7 @@ def templates_list():
 @login_required
 def edit_template(name):
     return redirect(url_for("material_list", list=name, template_name=name))
-
- ================================================================
+    
 # Add these two routes to ZamoraInventoryApp.py
 # Place them alongside the other template management routes
 # (near delete_template, rename_template, etc.)
