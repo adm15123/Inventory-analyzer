@@ -1001,32 +1001,35 @@ def templates_list():
                 full_name = os.path.join(group, name) if group else name
 
                 subtotal = 0.0
-                try:
-                    with open(path, "r") as fh:
-                        content = json.load(fh)
-                    products = content.get("products", []) if isinstance(content, dict) else content
-                    for item in products:
-                        try:
-                            subtotal += float(item.get("total", 0) or float(item.get("last_price", 0)) * float(item.get("quantity", 0)))
-                        except (TypeError, ValueError):
-                            continue
-                except Exception:
-                    subtotal = 0.0
+item_count = 0          # ADD THIS
+try:
+    with open(path, "r") as fh:
+        content = json.load(fh)
+    products = content.get("products", []) if isinstance(content, dict) else content
+    item_count = len(products)   # ADD THIS
+    for item in products:
+        try:
+            subtotal += float(item.get("total", 0) or float(item.get("last_price", 0)) * float(item.get("quantity", 0)))
+        except (TypeError, ValueError):
+            continue
+except Exception:
+    subtotal = 0.0
 
                 tax = subtotal * config.TAX_RATE
                 total_with_tax = subtotal + tax
 
                 entries.append({
-                    "name": name,
-                    "full_name": full_name,
-                    "group": group,
-                    "mtime": os.path.getmtime(path),
-                    "total_with_tax": total_with_tax,
-                    "edit_url": url_for("edit_template", name=full_name),
-                    "delete_url": url_for("delete_template", name=full_name),
-                    "rename_url": url_for("rename_template", name=full_name),
-                    "move_url": url_for("move_template", name=full_name),
-                })
+    "name": name,
+    "full_name": full_name,
+    "group": group,
+    "mtime": os.path.getmtime(path),
+    "item_count": item_count,        # ADD THIS LINE
+    "total_with_tax": total_with_tax,
+    "edit_url": url_for("edit_template", name=full_name),
+    "delete_url": url_for("delete_template", name=full_name),
+    "rename_url": url_for("rename_template", name=full_name),
+    "move_url": url_for("move_template", name=full_name),
+})
     folders = sorted(folder_set)
     if sort_key == "date":
         entries.sort(key=lambda x: x["mtime"])
@@ -1054,6 +1057,105 @@ def templates_list():
 def edit_template(name):
     return redirect(url_for("material_list", list=name, template_name=name))
 
+ ================================================================
+# Add these two routes to ZamoraInventoryApp.py
+# Place them alongside the other template management routes
+# (near delete_template, rename_template, etc.)
+# ================================================================
+
+# Also add "item_count" to the entries list in templates_list():
+# In the loop that builds `entries`, after calculating total_with_tax, add:
+#
+#   item_count = len(products) if isinstance(products, list) else 0
+#
+# Then in the entries.append({...}) call, add:
+#   "item_count": item_count,
+#
+# Full diff for that section:
+#
+#   subtotal = 0.0
+#   item_count = 0          # <-- ADD THIS LINE
+#   try:
+#       with open(path, "r") as fh:
+#           content = json.load(fh)
+#       products = content.get("products", []) if isinstance(content, dict) else content
+#       item_count = len(products)   # <-- ADD THIS LINE
+#       for item in products:
+#           ...
+#   ...
+#   entries.append({
+#       ...existing fields...,
+#       "item_count": item_count,   # <-- ADD THIS LINE
+#   })
+# ================================================================
+
+
+@app.route("/api/template_preview")
+@login_required
+def api_template_preview():
+    """Return the products inside a saved template for the preview panel."""
+    name = request.args.get("name", "").strip()
+    if not name:
+        return jsonify({"products": []}), 400
+
+    templates_dir = config.TEMPLATE_DATA_DIR
+    filepath = os.path.join(templates_dir, f"{name}.json")
+
+    if not os.path.exists(filepath):
+        return jsonify({"products": []}), 404
+
+    try:
+        with open(filepath) as f:
+            content = json.load(f)
+        products = (
+            content.get("products", [])
+            if isinstance(content, dict)
+            else content
+        )
+        return jsonify({"products": products})
+    except Exception as e:
+        app.logger.error(f"Template preview error: {e}")
+        return jsonify({"products": [], "error": str(e)}), 500
+
+
+@app.route("/api/duplicate_template", methods=["POST"])
+@login_required
+def api_duplicate_template():
+    """Duplicate a saved template under a new name."""
+    source_name = request.form.get("source_name", "").strip()
+    new_name = request.form.get("new_name", "").strip()
+
+    if not source_name or not new_name:
+        return jsonify({"error": "source_name and new_name are required"}), 400
+
+    templates_dir = config.TEMPLATE_DATA_DIR
+    src_path = os.path.join(templates_dir, f"{source_name}.json")
+    dst_path = os.path.join(templates_dir, f"{new_name}.json")
+
+    if not os.path.exists(src_path):
+        return jsonify({"error": "Source template not found"}), 404
+
+    if os.path.exists(dst_path):
+        return jsonify({"error": "A template with that name already exists"}), 409
+
+    try:
+        with open(src_path) as f:
+            content = f.read()
+
+        os.makedirs(os.path.dirname(dst_path), exist_ok=True)
+
+        with open(dst_path, "w") as f:
+            f.write(content)
+
+        # Also save to GitHub
+        success = save_template_to_github(f"data/{new_name}.json", content)
+        if not success:
+            app.logger.warning("Duplicate saved locally but GitHub sync failed.")
+
+        return jsonify({"success": True, "new_name": new_name})
+    except Exception as e:
+        app.logger.error(f"Duplicate template error: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.route("/delete_template/<path:name>", methods=["POST"])
 @login_required
