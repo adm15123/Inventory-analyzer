@@ -38,6 +38,14 @@ from functools import wraps
 import config
 import data_utils as du
 
+_template_cache_time = 0.0
+_TEMPLATE_CACHE_TTL = 60  # seconds
+
+def load_templates_if_stale():
+    global _template_cache_time
+    if time.time() - _template_cache_time > _TEMPLATE_CACHE_TTL:
+        load_templates_from_github()
+        _template_cache_time = time.time()
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
 
@@ -411,9 +419,31 @@ load_templates_from_github()
 # Main Menu – note: the file upload functionality has been removed.
 @app.route("/")
 @login_required
+@app.route("/")
+@login_required
 def index():
+    def unique_items(df):
+        if df is None:
+            return 0
+        return int(df["Description"].nunique()) if "Description" in df.columns else len(df)
+
+    template_count = 0
+    templates_dir = config.TEMPLATE_DATA_DIR
+    if os.path.exists(templates_dir):
+        for _root, _dirs, files in os.walk(templates_dir):
+            template_count += sum(1 for f in files if f.endswith(".json"))
+
+    stats = {
+        "supply1Count": unique_items(get_current_dataframe("supply1")),
+        "supply2Count": unique_items(get_current_dataframe("supply2")),
+        "supply3Count": unique_items(get_current_dataframe("supply3")),
+        "supply4Count": unique_items(get_current_dataframe("supply4")),
+        "templateCount": template_count,
+    }
+
     initial = {
         "pageTitle": "Zamora Plumbing Corp Material Analyzer",
+        "stats": stats,
         "actions": [
             {"label": "View All Content", "href": url_for("view_all"), "variant": "secondary"},
             {"label": "Search Description", "href": url_for("search"), "variant": "secondary"},
@@ -427,41 +457,36 @@ def index():
 @app.route("/view_all", methods=["GET"])
 @login_required
 def view_all():
-    """View all content from the selected supply's Excel file."""
     supply = request.args.get("supply", "supply1")
+    page = request.args.get("page", 1, type=int)
+    per_page = request.args.get("per_page", 200, type=int)
 
     current_df = get_current_dataframe(supply)
     if current_df is None:
-        flash("⚠ Please ensure the Excel file for the selected supply is available.")
+        flash("Please ensure the Excel file for the selected supply is available.")
         return redirect(url_for("index"))
 
     df_temp = current_df.copy()
     if "Date" in df_temp.columns:
         df_temp["Date"] = df_temp["Date"].dt.strftime("%Y-%m-%d")
 
-    desired_order = [
-        "Item Number",
-        "Description",
-        "Price per Unit",
-        "Unit",
-        "Invoice No.",
-        "Date",
-    ]
+    desired_order = ["Item Number", "Description", "Price per Unit", "Unit", "Invoice No.", "Date"]
     existing_columns = [c for c in desired_order if c in df_temp.columns]
     df_temp = df_temp[existing_columns]
 
+    total_rows = len(df_temp)
+    start = (page - 1) * per_page
+    df_page = df_temp.iloc[start : start + per_page]
+
     rows = []
-    for record in df_temp.to_dict(orient="records"):
-        payload = {col: record.get(col, "") for col in existing_columns}
+    for record in df_page.to_dict(orient="records"):
+        payload_row = {col: record.get(col, "") for col in existing_columns}
         description = record.get("Description")
         if description:
-            payload["graphUrl"] = url_for(
-                "product_detail",
-                description=description,
-                supply=supply,
-                ref="view_all",
+            payload_row["graphUrl"] = url_for(
+                "product_detail", description=description, supply=supply, ref="view_all"
             )
-        rows.append(payload)
+        rows.append(payload_row)
 
     supply_options = [
         {"value": "supply1", "label": "Supply 1"},
@@ -477,6 +502,11 @@ def view_all():
         "supplyOptions": supply_options,
         "productDetailBase": url_for("product_detail"),
         "viewAllUrl": url_for("view_all"),
+        "page": page,
+        "perPage": per_page,
+        "totalRows": total_rows,
+        "nextPage": page + 1 if (start + per_page) < total_rows else None,
+        "prevPage": page - 1 if page > 1 else None,
     }
 
     if request.args.get("format") == "json":
