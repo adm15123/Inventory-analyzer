@@ -44,7 +44,7 @@ _TEMPLATE_CACHE_TTL = 60  # seconds
 def load_templates_if_stale():
     global _template_cache_time
     if time.time() - _template_cache_time > _TEMPLATE_CACHE_TTL:
-        load_templates_from_github()
+        load_templates_if_stale()
         _template_cache_time = time.time()
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
@@ -371,7 +371,7 @@ def delete_template_from_github(filename: str) -> bool:
     resp = requests.delete(api_url, headers=headers, json=data)
     return resp.status_code == 200
 # Helper to pull templates from GitHub when not present locally
-def load_templates_from_github():
+def load_templates_if_stale():
     """Fetch template JSON files from GitHub and cache them locally."""
     token = config.GITHUB_TOKEN
     repo = config.GITHUB_REPO
@@ -409,7 +409,7 @@ load_supply4_file()
 load_underground_list()
 load_rough_list()
 load_final_list()
-load_templates_from_github()
+load_templates_if_stale()
 
 
 # -------------------------------
@@ -831,7 +831,7 @@ def material_list():
     
     # For GET: load predetermined or saved templates
     list_option = request.args.get("list", "underground")
-    load_templates_from_github()
+    load_templates_if_stale()
     templates_dir = config.TEMPLATE_DATA_DIR
     os.makedirs(templates_dir, exist_ok=True)
     custom_templates = {}
@@ -981,7 +981,7 @@ def save_template():
 @app.route("/templates")
 @login_required
 def templates_list():
-    load_templates_from_github()
+    load_templates_if_stale()
     templates_dir = config.TEMPLATE_DATA_DIR
     os.makedirs(templates_dir, exist_ok=True)
     sort_key = request.args.get("sort", "name")
@@ -1111,7 +1111,7 @@ def rename_template(name):
         flash("Template renamed.", "success")
     else:
         flash("Failed to update GitHub.", "danger")
-    load_templates_from_github()
+    load_templates_if_stale()
     return redirect(url_for("templates_list"))
 
 
@@ -1144,7 +1144,7 @@ def move_template(name):
         flash("Template moved.", "success")
     else:
         flash("Failed to update GitHub.", "danger")
-    load_templates_from_github()
+    load_templates_if_stale()
     return redirect(url_for("templates_list"))
 
 
