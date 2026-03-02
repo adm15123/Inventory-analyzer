@@ -25,9 +25,15 @@
   <!-- Chart.js -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.3.0/dist/chart.umd.min.js"></script>
 
-  <!-- PERF FIX #2: Pre-compiled JS — Babel no longer transpiles in browser at runtime.
-       Run: npx babel static/js/reactApp.jsx -o static/js/reactApp.js
-       (one-time or in CI) to generate this file. -->
-  <script src="{{ url_for('static', filename='js/reactApp.js') }}"></script>
+  <!-- Babel (compiles JSX in browser — remove once reactApp.js is built via GitHub Actions) -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <!-- JSX source -->
+  <script
+    type="text/babel"
+    data-presets="env,react"
+    data-plugins="proposal-class-properties,proposal-object-rest-spread,proposal-nullish-coalescing-operator,proposal-optional-chaining"
+    src="{{ url_for('static', filename='js/reactApp.jsx') }}"
+  ></script>
 </body>
 </html>
