@@ -2,47 +2,146 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Order Summary</title>
+  <title>Order Summary — Zamora Plumbing Corp</title>
   <link rel="stylesheet" href="{{ css_link }}">
 </head>
 <body>
-  <h1>Zamora Plumbing Corp</h1>
-  <p><strong>Contractor:</strong> {{ contractor }}</p>
-  <p><strong>Address:</strong> {{ address }}</p>
-  <p><strong>Date of Order:</strong> {{ order_date }}</p>
-  <h2>Order Summary</h2>
-  <table>
+
+  <!-- ============================================================
+       EVERY PAGE: running header via CSS @page / fixed positioning
+       ============================================================ -->
+  <div class="page-header">
+    <div class="page-header-left">
+      <span class="company-name-small">Zamora Plumbing Corp</span>
+      <span class="header-address">{{ address }}</span>
+    </div>
+    <div class="page-header-right">
+      <span class="header-label">Order Summary</span>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>Zamora Plumbing Corp &mdash; Confidential</span>
+    <span class="page-num">Page <span class="page"></span> of <span class="topage"></span></span>
+  </div>
+
+  <!-- ============================================================
+       FIRST PAGE CONTENT
+       ============================================================ -->
+  <div class="first-page-header">
+
+    <!-- Company branding block -->
+    <div class="brand-block">
+      <div class="brand-logo-area">
+        <div class="brand-logo-circle">ZP</div>
+      </div>
+      <div class="brand-info">
+        <h1 class="company-name">Zamora Plumbing Corp</h1>
+        <p class="company-tagline">Licensed Plumbing Contractor &mdash; South Florida</p>
+      </div>
+    </div>
+
+    <!-- Divider -->
+    <div class="header-divider"></div>
+
+    <!-- Project info grid -->
+    <div class="project-info-grid">
+      <div class="project-info-block">
+        <p class="info-label">CONTRACTOR</p>
+        <p class="info-value">{{ contractor or "—" }}</p>
+      </div>
+      <div class="project-info-block">
+        <p class="info-label">JOB ADDRESS</p>
+        <p class="info-value">{{ address or "—" }}</p>
+      </div>
+      <div class="project-info-block">
+        <p class="info-label">DATE OF ORDER</p>
+        <p class="info-value">{{ order_date or "—" }}</p>
+      </div>
+      <div class="project-info-block">
+        <p class="info-label">DOCUMENT</p>
+        <p class="info-value">Material Order Summary</p>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- ============================================================
+       ITEMS TABLE
+       ============================================================ -->
+  <table class="items-table">
     <thead>
       <tr>
-        <th>Quantity</th>
-        <th>Product Description</th>
-        <th>Unit</th>
+        <th class="col-qty">QTY</th>
+        <th class="col-desc">PRODUCT DESCRIPTION</th>
+        <th class="col-unit">UNIT</th>
         {% if include_price == "yes" %}
-          <th>Last Price</th>
-          <th>Total</th>
+          <th class="col-price">UNIT PRICE</th>
+          <th class="col-total">TOTAL</th>
         {% endif %}
       </tr>
     </thead>
     <tbody>
+      {% set ns = namespace(row_num=0) %}
       {% for product in products %}
         {% if product.quantity|float > 0 %}
-        <tr>
-          <td>{{ product.quantity }}</td>
-          <td>{{ product.description }}</td>
-          <td>{{ product.get('unit') or product.get('Unit', '') }}</td>
-          {% if include_price == "yes" %}
-            <td>{{ "$%.2f"|format(product.last_price|float) }}</td>
-            <td>{{ "$%.2f"|format(product.total|float) }}</td>
-          {% endif %}
-        </tr>
+          {% set ns.row_num = ns.row_num + 1 %}
+          <tr class="{{ 'row-even' if ns.row_num % 2 == 0 else 'row-odd' }}">
+            <td class="col-qty cell-center">{{ product.quantity }}</td>
+            <td class="col-desc">{{ product.description }}</td>
+            <td class="col-unit cell-center">{{ product.get('unit') or product.get('Unit', '') }}</td>
+            {% if include_price == "yes" %}
+              <td class="col-price cell-right">
+                {% if product.last_price|float > 0 %}
+                  ${{ "%.2f"|format(product.last_price|float) }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+              <td class="col-total cell-right">
+                {% if product.total|float > 0 %}
+                  ${{ "%.2f"|format(product.total|float) }}
+                {% else %}
+                  —
+                {% endif %}
+              </td>
+            {% endif %}
+          </tr>
         {% endif %}
       {% endfor %}
     </tbody>
   </table>
+
+  <!-- ============================================================
+       TOTALS BLOCK (only when prices included)
+       ============================================================ -->
   {% if include_price == "yes" %}
-  <h3>Subtotal: {{ "$%.2f"|format(subtotal) }}</h3>
-  <h3>Tax (7%): {{ "$%.2f"|format(tax) }}</h3>
-  <h3>Total: {{ "$%.2f"|format(total_cost) }}</h3>
+  <div class="totals-section">
+    <div class="totals-spacer"></div>
+    <div class="totals-box">
+      <div class="totals-row">
+        <span class="totals-label">Subtotal</span>
+        <span class="totals-value">${{ "%.2f"|format(subtotal) }}</span>
+      </div>
+      <div class="totals-row">
+        <span class="totals-label">Tax (7%)</span>
+        <span class="totals-value">${{ "%.2f"|format(tax) }}</span>
+      </div>
+      <div class="totals-row totals-grand">
+        <span class="totals-label">TOTAL DUE</span>
+        <span class="totals-value grand-value">${{ "%.2f"|format(total_cost) }}</span>
+      </div>
+    </div>
+  </div>
   {% endif %}
+
+  <!-- ============================================================
+       FOOTER NOTE
+       ============================================================ -->
+  <div class="doc-footer-note">
+    <p>Thank you for your business. This document was generated by Zamora Plumbing Corp's inventory system.</p>
+    <p>Prices reflect last recorded invoice values and are subject to change.</p>
+  </div>
+
 </body>
 </html>
