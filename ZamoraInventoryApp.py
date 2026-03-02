@@ -419,8 +419,6 @@ load_templates_if_stale()
 # Main Menu – note: the file upload functionality has been removed.
 @app.route("/")
 @login_required
-@app.route("/")
-@login_required
 def index():
     def unique_items(df):
         if df is None:
