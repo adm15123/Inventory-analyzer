@@ -1189,7 +1189,7 @@ function MaterialListPage({ data }) {
 
       {/* ── Item table with sticky header ── */}
       <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
-        <div className="overflow-auto" style={{ maxHeight: "60vh" }}>
+        <div className="overflow-auto">
           <table className="min-w-full divide-y divide-slate-200 text-xs">
             {/* STICKY header */}
             <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
