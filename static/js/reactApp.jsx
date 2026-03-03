@@ -502,7 +502,7 @@ function SearchPage({ data }) {
   };
 
   const handleGoToList = () => {
-    window.location.href = "/material_list";
+    window.location.href = "/material_list?list=new";
   };
 
   const pendingCount = getPendingItems().length;
