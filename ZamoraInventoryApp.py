@@ -762,7 +762,7 @@ def material_list():
             return redirect(url_for("material_list"))
         
         # Retrieve include_price choice from the form:
-        include_price = "no"
+        include_price = request.form.get("include_price", "yes")
         
         subtotal = sum(float(item.get("total", 0)) for item in product_data)
         tax = subtotal * 0.07
