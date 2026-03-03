@@ -482,9 +482,12 @@ function SearchPage({ data }) {
 
   // IMPROVEMENT #7: add item to pending cart then redirect
   const handleAddToList = (row, index) => {
-    const listName = window.prompt("Enter a name for the new list:");
-    if (!listName || !listName.trim()) return;
-    sessionStorage.setItem("zpl_new_list_name", listName.trim());
+    let listName = sessionStorage.getItem("zpl_new_list_name");
+    if (!listName) {
+      listName = window.prompt("Enter a name for this list:");
+      if (!listName || !listName.trim()) return;
+      sessionStorage.setItem("zpl_new_list_name", listName.trim());
+    }
     const pending = getPendingItems();
     pending.push({
       description: row.Description || row.description || "",
@@ -514,14 +517,26 @@ function SearchPage({ data }) {
           </div>
           {/* IMPROVEMENT #7: cart indicator */}
           {pendingCount > 0 && (
-            <button
-              onClick={handleGoToList}
-              className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition"
-            >
-              <span>🛒</span>
-              <span>{pendingCount} item{pendingCount !== 1 ? "s" : ""} — Go to Material List</span>
-            </button>
-          )}
+  <div className="flex items-center gap-2">
+    <button
+      onClick={handleGoToList}
+      className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition"
+    >
+      <span>🛒</span>
+      <span>{pendingCount} item{pendingCount !== 1 ? "s" : ""} — Go to Material List</span>
+    </button>
+    <button
+      onClick={() => {
+        setPendingItems([]);
+        sessionStorage.removeItem("zpl_new_list_name");
+        setAddedIndices({});
+      }}
+      className="rounded-xl bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600 transition"
+    >
+      ✕ Clear List
+    </button>
+  </div>
+)}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
