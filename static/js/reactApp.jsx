@@ -482,6 +482,9 @@ function SearchPage({ data }) {
 
   // IMPROVEMENT #7: add item to pending cart then redirect
   const handleAddToList = (row, index) => {
+    const listName = window.prompt("Enter a name for the new list:");
+    if (!listName || !listName.trim()) return;
+    sessionStorage.setItem("zpl_new_list_name", listName.trim());
     const pending = getPendingItems();
     pending.push({
       description: row.Description || row.description || "",
