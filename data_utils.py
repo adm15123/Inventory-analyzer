@@ -168,6 +168,15 @@ def update_list_prices(df_list: Optional[pd.DataFrame]):
         df_list["Last Price"] = (
             df_list["Product Description"].str.lower().str.strip().map(last_prices).fillna(0)
         )
+        if "Unit" in df.columns:
+            last_units = (
+                df.dropna(subset=["Unit"])
+                .groupby(df["Description"].str.lower().str.strip())["Unit"]
+                .first()
+            )
+            df_list["Unit"] = (
+                df_list["Product Description"].str.lower().str.strip().map(last_units).fillna("")
+            )
 
 
 def update_underground_prices():
