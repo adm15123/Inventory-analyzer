@@ -857,7 +857,13 @@ function MaterialListPage({ data }) {
 
   const [lookupSupply, setLookupSupply] = useState("supply1");
   const [templateFolder, setTemplateFolder] = useState(data.templateFolder || "");
-  const [templateName, setTemplateName] = useState(data.templateName || "");
+  const [templateName, setTemplateName] = useState(   data.templateName || sessionStorage.getItem("zpl_new_list_name") || "" );
+  // Clear the stored list name after consuming it
+useEffect(() => {
+  if (sessionStorage.getItem("zpl_new_list_name")) {
+    sessionStorage.removeItem("zpl_new_list_name");
+  }
+}, []);
   const [savingTemplate, setSavingTemplate] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
 
@@ -867,24 +873,42 @@ function MaterialListPage({ data }) {
     date: data.projectInfo?.date || new Date().toISOString().slice(0, 10),
   });
 
-  const [items, setItems] = useState(() =>
-    (data.products || []).map((product) => ({
-      quantity: Number(product.quantity ?? product.Quantity ?? 0) || 0,
-      description: product["Product Description"] || product.description || "",
-      supply: product.Supply || product.supply || supplyCodes[lookupSupply],
-      lookupSupply:
-        getSupplyKeyFromCode(product.Supply || product.supply) || lookupSupply,
-      unit: product.Unit || product.unit || "",
-      lastPrice:
-        Number(
-          product["Last Price"] ??
-            product.last_price ??
-            product["Price per Unit"] ??
-            0
-        ) || 0,
-      predetermined: true,
-    }))
-  );
+  const [items, setItems] = useState(() => {
+  const fromServer = (data.products || []).map((product) => ({
+    quantity: Number(product.quantity ?? product.Quantity ?? 0) || 0,
+    description: product["Product Description"] || product.description || "",
+    supply: product.Supply || product.supply || supplyCodes[lookupSupply],
+    lookupSupply:
+      getSupplyKeyFromCode(product.Supply || product.supply) || lookupSupply,
+    unit: product.Unit || product.unit || "",
+    lastPrice:
+      Number(
+        product["Last Price"] ??
+          product.last_price ??
+          product["Price per Unit"] ??
+          0
+      ) || 0,
+    predetermined: true,
+  }));
+
+  // Consume pending cart items added from Search Description
+  const pending = getPendingItems();
+  if (pending.length > 0) {
+    setPendingItems([]); // clear the cart now that we've consumed it
+    const fromCart = pending.map((item) => ({
+      quantity: item.quantity ?? 1,
+      description: item.description || "",
+      supply: item.supply || supplyCodes[lookupSupply],
+      lookupSupply: item.lookupSupply || lookupSupply,
+      unit: item.unit || "",
+      lastPrice: item.lastPrice || 0,
+      predetermined: false,
+    }));
+    return [...fromServer, ...fromCart];
+  }
+
+  return fromServer;
+});
 
   const [draggingIndex, setDraggingIndex] = useState(null);
   const productDataRef = useRef(null);
