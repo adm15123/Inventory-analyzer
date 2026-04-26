@@ -82,7 +82,6 @@ def _pipeline(requests: list[dict]) -> list[dict]:
     Automatically appends the required {"type": "close"} sentinel.
     """
     payload = {"requests": requests + [{"type": "close"}]}
-    print("_pipeline payload (first 2 stmts):", json.dumps({"requests": payload["requests"][:2]}, indent=2))
     client = _get_http_client()
     resp = client.post(
         f"{TURSO_URL}/v2/pipeline",
@@ -275,8 +274,6 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
     order_number = parsed["order_number"]
     doc_type     = parsed["doc_type"]
 
-    print(f"save_parsed_document: {len(parsed.get('items', []))} items for {order_number} ({doc_type})")
-
     if USE_TURSO:
         existing = _turso_execute(
             "SELECT id FROM invoices WHERE order_number = ? AND doc_type = ?",
@@ -323,7 +320,6 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
         ]
         if item_statements:
             _turso_batch(item_statements)
-            print(f"save_parsed_document: inserted {len(item_statements)} items for invoice_id={invoice_id}")
 
     else:
         with _local_conn() as conn:
