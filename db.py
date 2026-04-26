@@ -39,6 +39,8 @@ def _local_conn() -> sqlite3.Connection:
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
+get_conn = _local_conn  # alias for migration scripts
+
 
 def _turso_execute(sql: str, params: list = None) -> list[dict]:
     """

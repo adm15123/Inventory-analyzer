@@ -26,7 +26,7 @@ from werkzeug.utils import secure_filename
 
 from sku_matcher import judge_same_product
 from pdf_parser import parse_pdf
-from db import init_db, save_parsed_document, list_invoices, delete_invoice
+from db import init_db, save_parsed_document, list_invoices, delete_invoice, search_items, get_latest_prices
 import tempfile
 
 # Additional imports for login functionality
@@ -41,14 +41,6 @@ from functools import wraps
 import config
 import data_utils as du
 
-_template_cache_time = 0.0
-_TEMPLATE_CACHE_TTL = 60  # seconds
-
-def load_templates_if_stale():
-    global _template_cache_time
-    if time.time() - _template_cache_time > _TEMPLATE_CACHE_TTL:
-        load_templates_if_stale()
-        _template_cache_time = time.time()
 app = Flask(__name__)
 init_db()
 app.secret_key = config.SECRET_KEY
@@ -135,22 +127,24 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
-# -------------------------------
-# Utility Functions (delegated to data_utils)
-# -------------------------------
+SUPPLY_CODES = {
+    "supply1": "BPS",
+    "supply2": "S2",
+    "supply3": "LPS",
+    "supply4": "BOND",
+}
 
-preprocess_text_for_search = du.preprocess_text_for_search
-load_default_file = du.load_default_file
-load_supply2_file = du.load_supply2_file
-load_supply3_file = du.load_supply3_file
-load_supply4_file = du.load_supply4_file
-load_underground_list = du.load_underground_list
-load_rough_list = du.load_rough_list
-load_final_list = du.load_final_list
-get_current_dataframe = du.get_current_dataframe
-update_underground_prices = du.update_underground_prices
-update_rough_prices = du.update_rough_prices
-update_final_prices = du.update_final_prices
+
+def _ensure_supply_loaded(supply: str):
+    loaders = {
+        "supply1": du.load_default_file,
+        "supply2": du.load_supply2_file,
+        "supply3": du.load_supply3_file,
+        "supply4": du.load_supply4_file,
+    }
+    loader = loaders.get(supply)
+    if loader:
+        loader()
 
 
 def default_nav_links() -> list[dict[str, str]]:
@@ -193,95 +187,44 @@ def _search_supply_data(
     page: int | None = None,
     per_page: int | None = None,
 ):
-    """Search a supply dataframe and shape the result for JSON/React."""
+    """Search the DB and shape the result for JSON/React."""
+    if not query:
+        return {"rows": [], "columns": [], "next_page": None, "prev_page": None}
 
-    current_df = get_current_dataframe(supply)
-    if current_df is None or not query:
-        return {
-            "rows": [],
-            "columns": [],
-            "next_page": None,
-            "prev_page": None,
-        }
-
-    preprocessed_query = preprocess_text_for_search(query)
-    keywords = preprocessed_query.split()
-    filtered = current_df[current_df["Description"].apply(
-        lambda desc: all(keyword in preprocess_text_for_search(desc) for keyword in keywords)
-    )]
-
-    if filtered.empty:
-        return {
-            "rows": [],
-            "columns": [],
-            "next_page": None,
-            "prev_page": None,
-        }
-
-    filtered = filtered.copy()
-    if supply != "all" and "Date" in filtered.columns:
-        filtered["Date"] = filtered["Date"].dt.strftime("%Y-%m-%d")
-
+    code = SUPPLY_CODES.get(supply)  # None → search all suppliers
+    rows = search_items(query, supplier=code)
+    columns = ["Item Number", "Description", "Price per Unit", "Unit", "Invoice No.", "Date"]
     if supply == "all":
-        desired = [
-            "Description",
-            "Supply 1 Price",
-            "Supply 2 Price",
-            "Supply 3 Price",
-            "Supply 4 Price",
-        ]
-        columns = [c for c in desired if c in filtered.columns]
-        shaped = filtered[columns]
+        columns.append("Supply")
     else:
-        desired = [
-            "Item Number",
-            "Description",
-            "Price per Unit",
-            "Unit",
-            "Invoice No.",
-            "Date",
-        ]
-        columns = [c for c in desired if c in filtered.columns]
-        shaped = filtered[columns]
-
-    total_rows = len(shaped)
-    if per_page and per_page > 0:
-        shaped = du.paginate_dataframe(shaped, page or 1, per_page)
-
-    rows = shaped.to_dict(orient="records")
-    if supply != "all":
         for row in rows:
-            description = row.get("Description")
-            if description:
+            desc = row.get("Description")
+            if desc:
                 row["graphUrl"] = url_for(
-                    "product_detail",
-                    description=description,
-                    supply=supply,
-                    ref="search",
-                    query=query,
+                    "product_detail", description=desc, supply=supply, ref="search", query=query
                 )
+
+    total = len(rows)
+    if per_page and per_page > 0:
+        start = ((page or 1) - 1) * per_page
+        rows = rows[start : start + per_page]
 
     next_page = None
     prev_page = None
     if per_page and per_page > 0:
         current_page = page or 1
-        if total_rows > current_page * per_page:
+        if total > current_page * per_page:
             next_page = current_page + 1
         if current_page > 1:
             prev_page = current_page - 1
 
-    return {
-        "rows": rows,
-        "columns": columns,
-        "next_page": next_page,
-        "prev_page": prev_page,
-    }
+    return {"rows": rows, "columns": columns, "next_page": next_page, "prev_page": prev_page}
 
 
 def _analyze_price_changes(supply: str, start_date: str, end_date: str) -> dict:
     """Run the price change analysis and return JSON-serializable results."""
-
-    current_df = get_current_dataframe(supply)
+    _ensure_supply_loaded(supply)
+    current_df = du.get_current_dataframe(supply)
     if current_df is None:
         return {"rows": [], "columns": []}
 
@@ -406,14 +349,10 @@ def load_templates_if_stale():
                     f.write(content)
     except Exception as e:
         app.logger.error(f"Error fetching templates from GitHub: {e}")
-# Load data on startup
-load_default_file()
-load_supply2_file()
-load_supply3_file()
-load_supply4_file()
-load_underground_list()
-load_rough_list()
-load_final_list()
+# Load template/list data on startup
+du.load_underground_list()
+du.load_rough_list()
+du.load_final_list()
 load_templates_if_stale()
 
 
@@ -425,11 +364,6 @@ load_templates_if_stale()
 @app.route("/")
 @login_required
 def index():
-    def unique_items(df):
-        if df is None:
-            return 0
-        return int(df["Description"].nunique()) if "Description" in df.columns else len(df)
-
     template_count = 0
     templates_dir = config.TEMPLATE_DATA_DIR
     if os.path.exists(templates_dir):
@@ -437,10 +371,10 @@ def index():
             template_count += sum(1 for f in files if f.endswith(".json"))
 
     stats = {
-        "supply1Count": unique_items(get_current_dataframe("supply1")),
-        "supply2Count": unique_items(get_current_dataframe("supply2")),
-        "supply3Count": unique_items(get_current_dataframe("supply3")),
-        "supply4Count": unique_items(get_current_dataframe("supply4")),
+        "supply1Count": len(get_latest_prices(supplier="BPS")),
+        "supply2Count": len(get_latest_prices(supplier="S2")),
+        "supply3Count": len(get_latest_prices(supplier="LPS")),
+        "supply4Count": len(get_latest_prices(supplier="BOND")),
         "templateCount": template_count,
     }
 
@@ -465,30 +399,20 @@ def view_all():
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", 200, type=int)
 
-    current_df = get_current_dataframe(supply)
-    if current_df is None:
-        flash("Please ensure the Excel file for the selected supply is available.")
-        return redirect(url_for("index"))
-
-    df_temp = current_df.copy()
-    if "Date" in df_temp.columns:
-        df_temp["Date"] = df_temp["Date"].dt.strftime("%Y-%m-%d")
-
-    desired_order = ["Item Number", "Description", "Price per Unit", "Unit", "Invoice No.", "Date"]
-    existing_columns = [c for c in desired_order if c in df_temp.columns]
-    df_temp = df_temp[existing_columns]
-
-    total_rows = len(df_temp)
+    code = SUPPLY_CODES.get(supply)
+    all_rows = get_latest_prices(supplier=code)
+    columns = ["Item Number", "Description", "Price per Unit", "Unit", "Date"]
+    total_rows = len(all_rows)
     start = (page - 1) * per_page
-    df_page = df_temp.iloc[start : start + per_page]
+    page_rows = all_rows[start : start + per_page]
 
     rows = []
-    for record in df_page.to_dict(orient="records"):
-        payload_row = {col: record.get(col, "") for col in existing_columns}
-        description = record.get("Description")
-        if description:
+    for row in page_rows:
+        payload_row = {col: row.get(col, "") for col in columns}
+        desc = row.get("Description")
+        if desc:
             payload_row["graphUrl"] = url_for(
-                "product_detail", description=description, supply=supply, ref="view_all"
+                "product_detail", description=desc, supply=supply, ref="view_all"
             )
         rows.append(payload_row)
 
@@ -501,7 +425,7 @@ def view_all():
 
     payload = {
         "supply": supply,
-        "columns": existing_columns,
+        "columns": columns,
         "rows": rows,
         "supplyOptions": supply_options,
         "productDetailBase": url_for("product_detail"),
@@ -535,11 +459,6 @@ def search():
     query = request.args.get("query", "")
     page = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", type=int)
-
-    current_df = get_current_dataframe(supply)
-    if current_df is None and supply != "all":
-        flash("⚠ Please ensure the Excel file for the selected supply is available.")
-        return redirect(url_for("index"))
 
     results_payload = _search_supply_data(supply, query, page, per_page)
 
@@ -609,9 +528,10 @@ def api_sku_judge():
 def graph():
     """Generate a graph of Price per Unit over time for a given description from the selected supply."""
     supply = request.args.get("supply", "supply1")
-    current_df = get_current_dataframe(supply)
+    _ensure_supply_loaded(supply)
+    current_df = du.get_current_dataframe(supply)
     description = request.args.get("description")
-    
+
     if current_df is None or not description:
         flash("⚠ Data or description not provided.")
         return redirect(url_for("index"))
@@ -640,7 +560,8 @@ def graph():
 @login_required
 def graph_data():
     supply = request.args.get("supply", "supply1")
-    current_df = get_current_dataframe(supply)
+    _ensure_supply_loaded(supply)
+    current_df = du.get_current_dataframe(supply)
     description = request.args.get("description")
     if current_df is None or not description:
         return jsonify({"dates": [], "prices": []})
@@ -657,7 +578,8 @@ def analyze():
     Analyze price changes for items across a custom date range from the selected supply.
     """
     supply = request.args.get("supply", "supply1")
-    current_df = get_current_dataframe(supply)
+    _ensure_supply_loaded(supply)
+    current_df = du.get_current_dataframe(supply)
     if current_df is None:
         flash("⚠ Please ensure the Excel file for the selected supply is available.")
         return redirect(url_for("index"))
@@ -718,7 +640,8 @@ def product_detail():
       - A table with Date and Price per Unit for that product (sorted by Date).
     """
     supply = request.args.get("supply", "supply1")
-    current_df = get_current_dataframe(supply)
+    _ensure_supply_loaded(supply)
+    current_df = du.get_current_dataframe(supply)
     description = request.args.get("description")
     if current_df is None or not description:
         flash("⚠ Please provide a product description.")
@@ -892,23 +815,23 @@ def material_list():
                 }
             )
     elif list_option_lower == "underground":
-        update_underground_prices()
+        du.update_underground_prices()
         product_list = du.df_underground.to_dict("records") if du.df_underground is not None else []
     elif list_option_lower == "rough":
-        update_rough_prices()
+        du.update_rough_prices()
         product_list = du.df_rough.to_dict("records") if du.df_rough is not None else []
     elif list_option_lower == "final":
-        update_final_prices()
+        du.update_final_prices()
         product_list = du.df_final.to_dict("records") if du.df_final is not None else []
     elif list_option_lower == "new":
         product_list = []
     else:
         product_list = []
 
-    supply1_products = du.df.to_dict("records") if du.df is not None else []
-    supply2_products = du.df_supply2.to_dict("records") if du.df_supply2 is not None else []
-    supply3_products = du.df_supply3.to_dict("records") if du.df_supply3 is not None else []
-    supply4_products = du.df_supply4.to_dict("records") if du.df_supply4 is not None else []
+    supply1_products = get_latest_prices(supplier="BPS")
+    supply2_products = get_latest_prices(supplier="S2")
+    supply3_products = get_latest_prices(supplier="LPS")
+    supply4_products = get_latest_prices(supplier="BOND")
     template_name_arg = request.args.get("template_name", "")
     if not template_name_arg and list_option_lower not in ["underground", "rough", "final", "new"]:
         template_name_arg = list_option
@@ -1061,37 +984,6 @@ def templates_list():
 @login_required
 def edit_template(name):
     return redirect(url_for("material_list", list=name, template_name=name))
-    
-# Add these two routes to ZamoraInventoryApp.py
-# Place them alongside the other template management routes
-# (near delete_template, rename_template, etc.)
-# ================================================================
-
-# Also add "item_count" to the entries list in templates_list():
-# In the loop that builds `entries`, after calculating total_with_tax, add:
-#
-#   item_count = len(products) if isinstance(products, list) else 0
-#
-# Then in the entries.append({...}) call, add:
-#   "item_count": item_count,
-#
-# Full diff for that section:
-#
-#   subtotal = 0.0
-#   item_count = 0          # <-- ADD THIS LINE
-#   try:
-#       with open(path, "r") as fh:
-#           content = json.load(fh)
-#       products = content.get("products", []) if isinstance(content, dict) else content
-#       item_count = len(products)   # <-- ADD THIS LINE
-#       for item in products:
-#           ...
-#   ...
-#   entries.append({
-#       ...existing fields...,
-#       "item_count": item_count,   # <-- ADD THIS LINE
-#   })
-# ================================================================
 
 
 @app.route("/api/template_preview")
