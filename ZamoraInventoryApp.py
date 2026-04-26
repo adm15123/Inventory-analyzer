@@ -1299,16 +1299,25 @@ def upload_pdf():
     GET  — show the upload page (history of imported docs + upload form)
     POST — accept a PDF, parse it, save to DB, return result
     """
+    _SUPPLIERS = [
+        {"code": "LPS",  "label": "Lion Plumbing Supply"},
+        {"code": "BPS",  "label": "Berger Plumbing Supply"},
+        {"code": "S2",   "label": "Supply 2"},
+        {"code": "BOND", "label": "Bond Plumbing Supply"},
+    ]
+
     if request.method == "GET":
         invoices = list_invoices()
         initial = {
             "invoices": invoices,
             "uploadUrl": url_for("upload_pdf"),
             "deleteUrl": url_for("delete_invoice_route"),
+            "confirmUrl": url_for("confirm_upload"),
+            "suppliers": _SUPPLIERS,
         }
         return render_app("upload_pdf", initial)
 
-    # ── POST ──────────────────────────────────────────────────────────────
+    # ── POST: parse only — does NOT save to DB ────────────────────────────
     if "pdf_file" not in request.files:
         return jsonify({"success": False, "error": "No file uploaded"}), 400
 
@@ -1316,17 +1325,17 @@ def upload_pdf():
     if not pdf_file.filename or not pdf_file.filename.lower().endswith(".pdf"):
         return jsonify({"success": False, "error": "Please upload a PDF file"}), 400
 
+    supplier = request.form.get("supplier", "LPS")
+
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp:
         pdf_file.save(tmp.name)
         tmp_path = tmp.name
 
     try:
-        parsed = parse_pdf(tmp_path)
+        parsed = parse_pdf(tmp_path, supplier=supplier)
     except ValueError as e:
-        os.unlink(tmp_path)
         return jsonify({"success": False, "error": str(e)}), 400
     except Exception as e:
-        os.unlink(tmp_path)
         app.logger.error(f"PDF parse error: {e}")
         return jsonify({"success": False, "error": "Failed to parse PDF. Check server logs."}), 500
     finally:
@@ -1335,7 +1344,50 @@ def upload_pdf():
         except Exception:
             pass
 
-    invoice_id = save_parsed_document(parsed, filename=pdf_file.filename)
+    return jsonify({
+        "success": True,
+        "doc_type": parsed["doc_type"],
+        "order_number": parsed["order_number"],
+        "date": parsed["date"],
+        "job_name": parsed["job_name"],
+        "supplier": parsed["supplier"],
+        "item_count": len(parsed["items"]),
+        "items": parsed["items"],
+    })
+
+
+@app.route("/delete_invoice", methods=["POST"])
+@login_required
+def delete_invoice_route():
+    invoice_id = request.form.get("invoice_id", type=int)
+    if not invoice_id:
+        flash("Invalid invoice ID.", "danger")
+        return redirect(url_for("upload_pdf"))
+    delete_invoice(invoice_id)
+    flash("Document deleted.", "success")
+    return redirect(url_for("upload_pdf"))
+
+
+@app.route("/confirm_upload", methods=["POST"])
+@login_required
+def confirm_upload():
+    """
+    Accepts the user-reviewed parsed data as JSON and saves it to the DB.
+    Body: { "parsed": {...doc fields + items...}, "filename": "..." }
+    """
+    body = request.get_json(force=True, silent=True) or {}
+    parsed = body.get("parsed")
+    filename = body.get("filename", "")
+
+    if not parsed or not isinstance(parsed, dict):
+        return jsonify({"success": False, "error": "No parsed data provided."}), 400
+
+    required = {"doc_type", "order_number", "items"}
+    missing = required - parsed.keys()
+    if missing:
+        return jsonify({"success": False, "error": f"Missing fields: {missing}"}), 400
+
+    invoice_id = save_parsed_document(parsed, filename=filename)
 
     if invoice_id == -1:
         return jsonify({
@@ -1351,23 +1403,10 @@ def upload_pdf():
         "invoice_id": invoice_id,
         "doc_type": parsed["doc_type"],
         "order_number": parsed["order_number"],
-        "date": parsed["date"],
-        "job_name": parsed["job_name"],
+        "date": parsed.get("date", ""),
+        "job_name": parsed.get("job_name", ""),
         "item_count": len(parsed["items"]),
-        "items_preview": parsed["items"][:5],
     })
-
-
-@app.route("/delete_invoice", methods=["POST"])
-@login_required
-def delete_invoice_route():
-    invoice_id = request.form.get("invoice_id", type=int)
-    if not invoice_id:
-        flash("Invalid invoice ID.", "danger")
-        return redirect(url_for("upload_pdf"))
-    delete_invoice(invoice_id)
-    flash("Document deleted.", "success")
-    return redirect(url_for("upload_pdf"))
 
 
 # -------------------------------

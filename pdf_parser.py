@@ -1,18 +1,19 @@
 """
-pdf_parser.py — Lion Plumbing Supply PDF Parser
-Handles two document types:
-  1. Sales Order Acknowledgement (invoice)
-  2. Bid Proposal
+pdf_parser.py — Multi-supplier PDF Parser
+Handles:
+  LPS (Lion Plumbing Supply): Sales Order Acknowledgement, Bid Proposal
+  BPS (Berger Plumbing Supply): Invoice (Ticket)
 
 Usage:
     from pdf_parser import parse_pdf
-    result = parse_pdf("path/to/file.pdf")
+    result = parse_pdf("path/to/file.pdf", supplier="LPS")
+    result = parse_pdf("path/to/file.pdf", supplier="BPS")
     # result = {
     #   "doc_type": "invoice" | "bid",
     #   "order_number": "3986708",
     #   "date": "2026-04-07",
     #   "job_name": "BH PRINCETON",
-    #   "supplier": "LPS",
+    #   "supplier": "LPS" | "BPS",
     #   "items": [
     #     {
     #       "item_number": "060600L",
@@ -34,6 +35,7 @@ from typing import Optional
 # ─── helpers ────────────────────────────────────────────────────────────────
 
 UOM_PATTERN = r'(EA|LF|FT|BX|PR|CS|GL|LB|SF|SQ|UN|RL|PK|ST|BD|CY|TN)'
+UOM_GROUP   = r'(?:EA|LF|FT|BX|PR|CS|GL|LB|SF|SQ|UN|RL|PK|ST|BD|CY|TN)'
 
 def _parse_date(raw: str) -> str:
     """Normalise various date formats to YYYY-MM-DD."""
@@ -43,13 +45,13 @@ def _parse_date(raw: str) -> str:
             return datetime.strptime(raw, fmt).strftime("%Y-%m-%d")
         except ValueError:
             continue
-    return raw  # return as-is if nothing matches
+    return raw
 
 
 def _clean_price(raw: str) -> float:
     """Remove commas and convert to float."""
     try:
-        return float(raw.replace(",", ""))
+        return float(str(raw).replace(",", ""))
     except (ValueError, AttributeError):
         return 0.0
 
@@ -64,7 +66,7 @@ def _detect_doc_type(text: str) -> str:
     return "unknown"
 
 
-# ─── Invoice parser ─────────────────────────────────────────────────────────
+# ─── LPS Invoice parser ──────────────────────────────────────────────────────
 
 # Matches lines like:
 #   001 060600L 4 HXH PVCDWV COUPLING (25) EA 10 10 0 3.2410 32.41
@@ -81,7 +83,7 @@ INVOICE_LINE_RE = re.compile(
 )
 
 
-def _parse_invoice(pdf) -> dict:
+def _parse_lps_invoice(pdf) -> dict:
     items = []
     order_number = ""
     date_str = ""
@@ -90,33 +92,24 @@ def _parse_invoice(pdf) -> dict:
     for page_num, page in enumerate(pdf.pages):
         text = page.extract_text() or ""
 
-        # Extract header metadata from first page only
         if page_num == 0:
-            # Order number — 7-digit number near top
             m = re.search(r'\b(\d{7})\b', text)
             if m:
                 order_number = m.group(1)
 
-            # Date — first m/dd/yy or m/dd/yyyy pattern
             m = re.search(r'(\d{1,2}/\d{2}/\d{2,4})', text)
             if m:
                 date_str = _parse_date(m.group(1))
 
-            # Job name — line after "SHIPPING METHOD" header row
-            m = re.search(
-                r'SHIPPING METHOD\s*\n(.+?)\n',
-                text, re.DOTALL
-            )
+            m = re.search(r'SHIPPING METHOD\s*\n(.+?)\n', text, re.DOTALL)
             if m:
-                # e.g. "BH PRINCETON 100100 WS WS 4/07/26 OUR TRUCK"
                 job_line = m.group(1).strip()
-                job_name = job_line.split()[0] if job_line else ""
-                # grab first two tokens as job name if second isn't numeric
                 parts = job_line.split()
                 if len(parts) >= 2 and not parts[1][0].isdigit():
                     job_name = f"{parts[0]} {parts[1]}"
+                elif parts:
+                    job_name = parts[0]
 
-        # Parse item lines
         seen_lines = set()
         for line in text.split('\n'):
             line = line.strip()
@@ -126,13 +119,9 @@ def _parse_invoice(pdf) -> dict:
                 if line_no in seen_lines:
                     continue
                 seen_lines.add(line_no)
-
-                # Clean up description — remove trailing pack-size like (25)
-                description = m.group(3).strip()
-
                 items.append({
                     "item_number": m.group(2),
-                    "description": description,
+                    "description": m.group(3).strip(),
                     "uom": m.group(4),
                     "quantity": int(m.group(6)),   # shipped qty
                     "unit_price": _clean_price(m.group(7)),
@@ -148,7 +137,7 @@ def _parse_invoice(pdf) -> dict:
     }
 
 
-# ─── Bid parser ─────────────────────────────────────────────────────────────
+# ─── LPS Bid parser ──────────────────────────────────────────────────────────
 
 # Matches lines like:
 #   60 70 EA T2473EPBN 85.0900 5,956.30
@@ -157,15 +146,14 @@ BID_LINE_RE = re.compile(
     r'(\d+)\s+'                             # quantity
     + UOM_PATTERN + r'\s+'                  # unit of measure
     r'(\S+)\s+'                             # SKU / item number
-    r'([\d,]+\.\d{2,4})\s+'                # net unit price
-    r'([\d,]+\.\d{2})'                      # extended price
+    r'([\d,]+\.\d{2,4})\s+'               # net unit price
+    r'([\d,]+\.\d{2})'                     # extended price
 )
 
-# Lines to skip when looking for description after SKU line
 SKIP_RE = re.compile(r'^[*\-]{3,}|^(FREIGHT|ALLOW|PLEASE|NON-CANCEL|NO REFUND|---)', re.IGNORECASE)
 
 
-def _parse_bid(pdf) -> dict:
+def _parse_lps_bid(pdf) -> dict:
     items = []
     bid_number = ""
     date_str = ""
@@ -176,17 +164,14 @@ def _parse_bid(pdf) -> dict:
         lines = text.split('\n')
 
         if page_num == 0:
-            # Bid number — 7-digit number
             m = re.search(r'\b(\d{7})\b', text)
             if m:
                 bid_number = m.group(1)
 
-            # Date — nn/nn/nn
             m = re.search(r'(\d{2}/\d{2}/\d{2,4})', text)
             if m:
                 date_str = _parse_date(m.group(1))
 
-            # Job name — line after "BID PROPOSAL" header
             m = re.search(r'BID PROPOSAL\s+\S+\s*\n(.+?)\n', text)
             if m:
                 job_name = m.group(1).strip()
@@ -197,19 +182,15 @@ def _parse_bid(pdf) -> dict:
             m = BID_LINE_RE.match(line)
             if m:
                 sku = m.group(4)
-
-                # Look ahead for description line (next non-empty, non-noise line)
-                description = sku  # fallback
+                description = sku
                 j = i + 1
                 while j < len(lines):
                     candidate = lines[j].strip()
                     if candidate and not SKIP_RE.match(candidate):
-                        # Make sure it's not another data line
                         if not BID_LINE_RE.match(candidate):
                             description = candidate
                         break
                     j += 1
-
                 items.append({
                     "item_number": sku,
                     "description": description,
@@ -229,25 +210,108 @@ def _parse_bid(pdf) -> dict:
     }
 
 
-# ─── Public entry point ─────────────────────────────────────────────────────
+# ─── LPS entry point ────────────────────────────────────────────────────────
 
-def parse_pdf(filepath: str) -> dict:
-    """
-    Parse a Lion Plumbing Supply PDF (invoice or bid).
-    Returns a dict with doc_type, order_number, date, job_name, supplier, items.
-    Raises ValueError if the document type cannot be detected.
-    """
+def parse_lps_pdf(filepath: str) -> dict:
+    """Parse a Lion Plumbing Supply PDF (invoice or bid)."""
     with pdfplumber.open(filepath) as pdf:
-        # Read first page text to detect type
         first_text = pdf.pages[0].extract_text() or ""
         doc_type = _detect_doc_type(first_text)
-
         if doc_type == "invoice":
-            return _parse_invoice(pdf)
+            return _parse_lps_invoice(pdf)
         elif doc_type == "bid":
-            return _parse_bid(pdf)
+            return _parse_lps_bid(pdf)
         else:
             raise ValueError(
-                "Unrecognised PDF format. "
+                "Unrecognised LPS PDF format. "
                 "Expected 'SALES ORDER ACKNOWLEDGEMENT' or 'BID PROPOSAL'."
             )
+
+
+# ─── Berger (BPS) Invoice parser ─────────────────────────────────────────────
+
+# Matches data lines: qty  item_no  description...  price_sell  unit  ext_price
+# Description is greedy — captures everything between item_no and the trailing
+# price / unit / ext_price cluster at the end of the line.
+BERGER_LINE_RE = re.compile(
+    r'^(\d+)\s+'                            # quantity
+    r'(\S+)\s+'                             # item number
+    r'(.+)\s+'                              # description (greedy)
+    r'([\d,]+\.\d{2,4})\s+'               # price sell
+    r'(' + UOM_GROUP + r')\s+'             # unit (non-capturing UOM group)
+    r'([\d,]+\.\d{2})\s*$'                # ext price at end of line
+)
+
+_BERGER_HEADER_RE  = re.compile(r'Quantity\s+Item\s*No', re.IGNORECASE)
+_BERGER_STOP_RE    = re.compile(r'Total\s+line\s+items|Sub-?Total', re.IGNORECASE)
+_BERGER_TICKET_NO  = re.compile(r'Ticket\s*(?:No\.?|Number|#)?\s*[:\-]?\s*(\d+)', re.IGNORECASE)
+_BERGER_TICKET_DT  = re.compile(r'Ticket\s*Date\s*[:\-]?\s*(\d{1,2}/\d{2}/\d{2,4})', re.IGNORECASE)
+
+
+def parse_berger_pdf(filepath: str) -> dict:
+    """Parse a Berger Plumbing Supply invoice (Ticket format)."""
+    order_number = ""
+    date_str = ""
+    job_name = ""
+    items = []
+
+    with pdfplumber.open(filepath) as pdf:
+        for page_num, page in enumerate(pdf.pages):
+            text = page.extract_text() or ""
+            lines = text.split('\n')
+
+            if page_num == 0:
+                m = _BERGER_TICKET_NO.search(text)
+                if m:
+                    order_number = m.group(1)
+
+                m = _BERGER_TICKET_DT.search(text)
+                if m:
+                    date_str = _parse_date(m.group(1))
+
+            in_items = False
+            for line in lines:
+                stripped = line.strip()
+
+                if not in_items:
+                    if _BERGER_HEADER_RE.search(stripped):
+                        in_items = True
+                    continue
+
+                if _BERGER_STOP_RE.search(stripped):
+                    break
+
+                if not stripped:
+                    continue
+
+                m = BERGER_LINE_RE.match(stripped)
+                if m:
+                    items.append({
+                        "item_number": m.group(2),
+                        "description": m.group(3).strip(),
+                        "uom": m.group(5),
+                        "quantity": int(m.group(1)),
+                        "unit_price": _clean_price(m.group(4)),
+                    })
+
+    return {
+        "doc_type": "invoice",
+        "order_number": order_number,
+        "date": date_str,
+        "job_name": job_name,
+        "supplier": "BPS",
+        "items": items,
+    }
+
+
+# ─── Public entry point ──────────────────────────────────────────────────────
+
+def parse_pdf(filepath: str, supplier: str = "LPS") -> dict:
+    """
+    Parse a supplier PDF and return structured data.
+    supplier: "LPS" (Lion Plumbing Supply) or "BPS" (Berger Plumbing Supply)
+    Returns dict with doc_type, order_number, date, job_name, supplier, items.
+    """
+    if supplier == "BPS":
+        return parse_berger_pdf(filepath)
+    return parse_lps_pdf(filepath)

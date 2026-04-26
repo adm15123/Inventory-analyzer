@@ -1835,24 +1835,39 @@ function TemplatesPage({ data }) {
 // UploadPdfPage
 // ================================================================
 function UploadPdfPage({ data }) {
-  const [dragging, setDragging] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
-  const [invoices, setInvoices] = useState(data.invoices || []);
-  const fileInputRef = React.useRef(null);
+  const SUPPLIERS = data.suppliers || [
+    { code: "LPS",  label: "Lion Plumbing Supply" },
+    { code: "BPS",  label: "Berger Plumbing Supply" },
+    { code: "S2",   label: "Supply 2" },
+    { code: "BOND", label: "Bond Plumbing Supply" },
+  ];
 
-  const uploadFile = async (file) => {
-    if (!file || !file.name.toLowerCase().endsWith(".pdf")) {
+  const [supplier, setSupplier]   = useState("LPS");
+  const [dragging, setDragging]   = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [saving, setSaving]       = useState(false);
+  const [parsed, setParsed]       = useState(null);   // editable preview state
+  const [file, setFile]           = useState(null);   // original File object
+  const [result, setResult]       = useState(null);   // confirmed-save result
+  const [error, setError]         = useState("");
+  const [invoices]                = useState(data.invoices || []);
+  const fileInputRef = useRef(null);
+
+  // ── Step 1: parse the PDF (does NOT save) ───────────────────────────────
+  const parseFile = async (f) => {
+    if (!f || !f.name.toLowerCase().endsWith(".pdf")) {
       setError("Please select a PDF file.");
       return;
     }
+    setFile(f);
     setUploading(true);
     setError("");
+    setParsed(null);
     setResult(null);
 
     const formData = new FormData();
-    formData.append("pdf_file", file);
+    formData.append("pdf_file", f);
+    formData.append("supplier", supplier);
 
     try {
       const resp = await fetch(data.uploadUrl || "/upload_pdf", {
@@ -1862,15 +1877,16 @@ function UploadPdfPage({ data }) {
       const json = await resp.json();
 
       if (json.success) {
-        setResult(json);
-        // Reload invoice list
-        const listResp = await fetch("/upload_pdf", { headers: { Accept: "application/json" } });
-        // Re-fetch by reloading page data — simplest approach
-        window.location.reload();
-      } else if (json.duplicate) {
-        setError(`Already imported: ${json.error}`);
+        setParsed({
+          doc_type:     json.doc_type,
+          order_number: json.order_number,
+          date:         json.date         || "",
+          job_name:     json.job_name     || "",
+          supplier:     json.supplier     || supplier,
+          items: (json.items || []).map((item, i) => ({ ...item, _id: i })),
+        });
       } else {
-        setError(json.error || "Upload failed.");
+        setError(json.error || "Parse failed.");
       }
     } catch (e) {
       setError("Network error. Please try again.");
@@ -1879,25 +1895,80 @@ function UploadPdfPage({ data }) {
     }
   };
 
-  const handleFileInput = (e) => {
-    const file = e.target.files?.[0];
-    if (file) uploadFile(file);
+  // ── Step 2: confirm & save the (possibly edited) data ───────────────────
+  const confirmSave = async () => {
+    if (!parsed) return;
+    setSaving(true);
+    setError("");
+
+    const payload = {
+      parsed: {
+        ...parsed,
+        items: parsed.items.map(({ _id, ...rest }) => rest),
+      },
+      filename: file?.name || "",
+    };
+
+    try {
+      const resp = await fetch(data.confirmUrl || "/confirm_upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const json = await resp.json();
+
+      if (json.success) {
+        setResult(json);
+        setParsed(null);
+        setFile(null);
+        window.location.reload();
+      } else if (json.duplicate) {
+        setError(`Already imported: ${json.error}`);
+      } else {
+        setError(json.error || "Save failed.");
+      }
+    } catch (e) {
+      setError("Network error during save.");
+    } finally {
+      setSaving(false);
+    }
   };
 
+  // ── Item editing helpers ────────────────────────────────────────────────
+  const updateItem = (idx, field, value) =>
+    setParsed(prev => ({
+      ...prev,
+      items: prev.items.map((item, i) => i === idx ? { ...item, [field]: value } : item),
+    }));
+
+  const deleteItem = (idx) =>
+    setParsed(prev => ({ ...prev, items: prev.items.filter((_, i) => i !== idx) }));
+
+  const addRow = () =>
+    setParsed(prev => ({
+      ...prev,
+      items: [...prev.items, { _id: Date.now(), item_number: "", description: "", uom: "EA", quantity: 1, unit_price: 0 }],
+    }));
+
+  // ── File input handlers ─────────────────────────────────────────────────
+  const handleFileInput = (e) => {
+    const f = e.target.files?.[0];
+    if (f) parseFile(f);
+    e.target.value = "";
+  };
   const handleDrop = (e) => {
     e.preventDefault();
     setDragging(false);
-    const file = e.dataTransfer.files?.[0];
-    if (file) uploadFile(file);
+    const f = e.dataTransfer.files?.[0];
+    if (f) parseFile(f);
   };
-
-  const handleDragOver = (e) => { e.preventDefault(); setDragging(true); };
+  const handleDragOver  = (e) => { e.preventDefault(); setDragging(true); };
   const handleDragLeave = () => setDragging(false);
 
   const docTypeBadge = (type) =>
-    type === "invoice"
-      ? "bg-sky-100 text-sky-700"
-      : "bg-violet-100 text-violet-700";
+    type === "invoice" ? "bg-sky-100 text-sky-700" : "bg-violet-100 text-violet-700";
+
+  const inputCls = "w-full rounded border border-transparent bg-transparent px-1 py-0.5 text-xs focus:border-sky-400 focus:outline-none focus:ring-1 focus:ring-sky-300";
 
   return (
     <div className="space-y-8">
@@ -1906,57 +1977,207 @@ function UploadPdfPage({ data }) {
       <div>
         <h1 className="text-2xl font-semibold text-slate-900">Upload PDF Invoice or Bid</h1>
         <p className="mt-1 text-sm text-slate-500">
-          Drop a Lion Plumbing Supply Sales Order Acknowledgement or Bid Proposal.
-          Items are extracted automatically and saved to the database.
+          Select a supplier, drop a PDF to parse it, review and edit the extracted items,
+          then confirm to save to the database.
         </p>
       </div>
 
-      {/* Drop zone */}
-      <div
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-        onClick={() => fileInputRef.current?.click()}
-        className={classNames(
-          "flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-12 cursor-pointer transition",
-          dragging
-            ? "border-sky-500 bg-sky-50"
-            : "border-slate-300 bg-white hover:border-sky-400 hover:bg-slate-50"
-        )}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf"
-          className="hidden"
-          onChange={handleFileInput}
-        />
-        {uploading ? (
-          <>
-            <div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
-            <p className="text-sm font-semibold text-sky-700">Parsing PDF…</p>
-          </>
-        ) : (
-          <>
-            <span className="text-4xl">📄</span>
-            <p className="text-sm font-semibold text-slate-700">
-              Drop PDF here or <span className="text-sky-600 underline">click to browse</span>
-            </p>
-            <p className="text-xs text-slate-400">Sales Order Acknowledgement or Bid Proposal</p>
-          </>
-        )}
-      </div>
+      {/* Supplier + drop zone — hidden while preview is shown */}
+      {!parsed && (
+        <>
+          {/* Supplier dropdown */}
+          <div className="flex items-center gap-3">
+            <label className="text-sm font-medium text-slate-700 shrink-0">Supplier</label>
+            <select
+              value={supplier}
+              onChange={(e) => setSupplier(e.target.value)}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 focus:outline-none focus:ring-2 focus:ring-sky-400"
+            >
+              {SUPPLIERS.map((s) => (
+                <option key={s.code} value={s.code}>{s.label}</option>
+              ))}
+            </select>
+          </div>
 
-      {/* Error */}
+          {/* Drop zone */}
+          <div
+            onDrop={handleDrop}
+            onDragOver={handleDragOver}
+            onDragLeave={handleDragLeave}
+            onClick={() => fileInputRef.current?.click()}
+            className={classNames(
+              "flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed p-12 cursor-pointer transition",
+              dragging
+                ? "border-sky-500 bg-sky-50"
+                : "border-slate-300 bg-white hover:border-sky-400 hover:bg-slate-50"
+            )}
+          >
+            <input ref={fileInputRef} type="file" accept=".pdf" className="hidden" onChange={handleFileInput} />
+            {uploading ? (
+              <>
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-sky-600 border-t-transparent" />
+                <p className="text-sm font-semibold text-sky-700">Parsing PDF…</p>
+              </>
+            ) : (
+              <>
+                <span className="text-4xl">📄</span>
+                <p className="text-sm font-semibold text-slate-700">
+                  Drop PDF here or <span className="text-sky-600 underline">click to browse</span>
+                </p>
+                <p className="text-xs text-slate-400">
+                  {SUPPLIERS.find((s) => s.code === supplier)?.label} format
+                </p>
+              </>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* Error banner */}
       {error && (
         <div className="rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-700 ring-1 ring-rose-200">
           ⚠ {error}
         </div>
       )}
 
-      {/* Success result */}
+      {/* ── Preview table (shown after parse, before save) ── */}
+      {parsed && (
+        <div className="space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h2 className="text-base font-semibold text-slate-800">
+              Review Extracted Data
+              <span className="ml-2 text-sm font-normal text-slate-500">
+                ({parsed.items.length} items —{" "}
+                {SUPPLIERS.find((s) => s.code === parsed.supplier)?.label || parsed.supplier})
+              </span>
+            </h2>
+          </div>
+
+          {/* Editable header fields */}
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200">
+            {[
+              { label: "Type",              field: "doc_type"     },
+              { label: "Order / Ticket No.", field: "order_number" },
+              { label: "Date",              field: "date"         },
+              { label: "Job Name",          field: "job_name"     },
+            ].map(({ label, field }) => (
+              <div key={field}>
+                <label className="block text-xs font-medium text-slate-500 mb-1">{label}</label>
+                <input
+                  type="text"
+                  value={parsed[field] || ""}
+                  onChange={(e) => setParsed((prev) => ({ ...prev, [field]: e.target.value }))}
+                  className="w-full rounded-lg border border-slate-300 px-2 py-1 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-sky-400"
+                />
+              </div>
+            ))}
+          </div>
+
+          {/* Items table */}
+          <div className="overflow-x-auto rounded-2xl ring-1 ring-slate-200">
+            <table className="min-w-full text-sm">
+              <thead className="bg-slate-50 text-xs font-semibold text-slate-500 uppercase">
+                <tr>
+                  <th className="px-3 py-2 text-left w-8">#</th>
+                  <th className="px-3 py-2 text-left w-28">Item Number</th>
+                  <th className="px-3 py-2 text-left">Description</th>
+                  <th className="px-3 py-2 text-left w-16">Unit</th>
+                  <th className="px-3 py-2 text-right w-16">Qty</th>
+                  <th className="px-3 py-2 text-right w-24">Unit Price</th>
+                  <th className="px-3 py-2 w-8"></th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 bg-white">
+                {parsed.items.map((item, idx) => (
+                  <tr key={item._id ?? idx} className="hover:bg-slate-50">
+                    <td className="px-3 py-1 text-slate-400 text-xs">{idx + 1}</td>
+                    <td className="px-3 py-1">
+                      <input
+                        type="text"
+                        value={item.item_number || ""}
+                        onChange={(e) => updateItem(idx, "item_number", e.target.value)}
+                        className={inputCls + " font-mono text-slate-700"}
+                      />
+                    </td>
+                    <td className="px-3 py-1">
+                      <input
+                        type="text"
+                        value={item.description || ""}
+                        onChange={(e) => updateItem(idx, "description", e.target.value)}
+                        className={inputCls + " min-w-[180px] text-slate-800"}
+                      />
+                    </td>
+                    <td className="px-3 py-1">
+                      <input
+                        type="text"
+                        value={item.uom || ""}
+                        onChange={(e) => updateItem(idx, "uom", e.target.value)}
+                        className={inputCls + " w-14 text-slate-700"}
+                      />
+                    </td>
+                    <td className="px-3 py-1">
+                      <input
+                        type="number"
+                        value={item.quantity ?? ""}
+                        onChange={(e) => updateItem(idx, "quantity", Number(e.target.value))}
+                        className={inputCls + " w-16 text-right text-slate-700"}
+                      />
+                    </td>
+                    <td className="px-3 py-1">
+                      <input
+                        type="number"
+                        step="0.0001"
+                        value={item.unit_price ?? ""}
+                        onChange={(e) => updateItem(idx, "unit_price", parseFloat(e.target.value) || 0)}
+                        className={inputCls + " w-20 text-right text-slate-700"}
+                      />
+                    </td>
+                    <td className="px-3 py-1 text-center">
+                      <button
+                        onClick={() => deleteItem(idx)}
+                        className="text-slate-300 hover:text-rose-500 transition leading-none"
+                        title="Remove row"
+                      >✕</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Add row */}
+          <button
+            onClick={addRow}
+            className="text-sm text-sky-600 hover:text-sky-800 font-medium transition"
+          >
+            + Add Row
+          </button>
+
+          {/* Action buttons */}
+          <div className="flex items-center gap-3 pt-1">
+            <button
+              onClick={confirmSave}
+              disabled={saving}
+              className="inline-flex items-center gap-2 rounded-xl bg-sky-600 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50 transition"
+            >
+              {saving && (
+                <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+              )}
+              {saving ? "Saving…" : "Confirm & Save to Turso"}
+            </button>
+            <button
+              onClick={() => { setParsed(null); setFile(null); setError(""); }}
+              className="rounded-xl bg-slate-100 px-5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-200 transition"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Success banner (brief — page reloads immediately after) */}
       {result && (
-        <div className="rounded-2xl bg-emerald-50 p-5 ring-1 ring-emerald-200 space-y-3">
+        <div className="rounded-2xl bg-emerald-50 p-5 ring-1 ring-emerald-200 space-y-2">
           <div className="flex items-center gap-2">
             <span className="text-lg">✅</span>
             <p className="text-sm font-semibold text-emerald-800">
@@ -1967,15 +2188,8 @@ function UploadPdfPage({ data }) {
             <div><span className="font-medium">Type:</span> {result.doc_type}</div>
             <div><span className="font-medium">Number:</span> {result.order_number}</div>
             <div><span className="font-medium">Date:</span> {result.date}</div>
-            <div><span className="font-medium">Job:</span> {result.job_name}</div>
+            <div><span className="font-medium">Job:</span> {result.job_name || "—"}</div>
           </div>
-          {result.items_preview?.length > 0 && (
-            <div className="text-xs text-emerald-600">
-              <span className="font-medium">First items: </span>
-              {result.items_preview.map((i) => i.description).join(" · ")}
-              {result.item_count > 5 && ` · +${result.item_count - 5} more`}
-            </div>
-          )}
         </div>
       )}
 
@@ -2019,14 +2233,12 @@ function UploadPdfPage({ data }) {
                     <td className="px-4 py-3 text-slate-600">{inv.date || "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{inv.job_name || "—"}</td>
                     <td className="px-4 py-3 text-slate-600">{inv.item_count}</td>
-                    <td className="px-4 py-3 text-xs text-slate-400">
-                      {inv.imported_at?.slice(0, 10)}
-                    </td>
-                    <td className="px-4 py-3 text-xs text-slate-400 max-w-[140px] truncate">
-                      {inv.filename || "—"}
-                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-400">{inv.imported_at?.slice(0, 10)}</td>
+                    <td className="px-4 py-3 text-xs text-slate-400 max-w-[140px] truncate">{inv.filename || "—"}</td>
                     <td className="px-4 py-3">
-                      <form method="POST" action={data.deleteUrl || "/delete_invoice"}
+                      <form
+                        method="POST"
+                        action={data.deleteUrl || "/delete_invoice"}
                         onSubmit={(e) => {
                           if (!window.confirm("Delete this import? All items will be removed.")) {
                             e.preventDefault();
