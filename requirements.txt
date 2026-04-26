@@ -10,3 +10,4 @@ pdfkit
 requests
 openai
 pdfplumber
+libsql-client
