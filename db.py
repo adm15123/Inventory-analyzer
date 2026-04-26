@@ -13,6 +13,7 @@ Local fallback: if TURSO_URL is not set, falls back to local SQLite
 at data/zamora.db (useful for local dev without Turso).
 """
 
+import json
 import os
 import sqlite3
 import time
@@ -86,6 +87,8 @@ def _pipeline(requests: list[dict]) -> list[dict]:
     POST to /v2/pipeline and return the raw results list.
     Automatically appends the required {"type": "close"} sentinel.
     """
+    payload = {"requests": requests + [{"type": "close"}]}
+    print("_pipeline payload (first 2 stmts):", json.dumps({"requests": payload["requests"][:2]}, indent=2))
     client = _get_http_client()
     resp = client.post(
         f"{TURSO_URL}/v2/pipeline",
@@ -93,8 +96,10 @@ def _pipeline(requests: list[dict]) -> list[dict]:
             "Authorization": f"Bearer {TURSO_TOKEN}",
             "Content-Type": "application/json",
         },
-        json={"requests": requests + [{"type": "close"}]},
+        json=payload,
     )
+    if not resp.is_success:
+        print(f"_pipeline HTTP {resp.status_code}: {resp.text[:500]}")
     resp.raise_for_status()
     return resp.json().get("results", [])
 
