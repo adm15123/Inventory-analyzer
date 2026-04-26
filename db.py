@@ -49,12 +49,6 @@ def _to_arg(v) -> dict:
     """Convert a Python value to a Turso HTTP API argument object."""
     if v is None:
         return {"type": "null"}
-    if isinstance(v, bool):
-        return {"type": "integer", "value": str(int(v))}
-    if isinstance(v, int):
-        return {"type": "integer", "value": str(v)}
-    if isinstance(v, float):
-        return {"type": "float", "value": str(v)}
     return {"type": "text", "value": str(v)}
 
 
