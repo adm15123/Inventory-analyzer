@@ -437,15 +437,16 @@ function ViewAllPage({ data }) {
 }
 
 // ================================================================
-// SearchPage — IMPROVEMENT #3: debounce + IMPROVEMENT #7: Add to List
+// SearchPage
 // ================================================================
 function SearchPage({ data }) {
-  const [supply, setSupply] = useState(data.supply || "supply1");
-  const [query, setQuery] = useState(data.query || "");
-  const [columns, setColumns] = useState(data.columns || []);
-  const [rows, setRows] = useState(data.rows || []);
-  const [loading, setLoading] = useState(false);
-  const [addedIndices, setAddedIndices] = useState({});
+  const [supply, setSupply]       = useState(data.supply || "supply1");
+  const [query, setQuery]         = useState(data.query || "");
+  const [columns, setColumns]     = useState(data.columns || []);
+  const [rows, setRows]           = useState(data.rows || []);
+  const [loading, setLoading]     = useState(false);
+  const [addedDescs, setAddedDescs] = useState({});   // keyed by description
+  const [expanded, setExpanded]   = useState(new Set());
   const debounceRef = useRef(null);
 
   const runSearch = useCallback((nextQuery, nextSupply) => {
@@ -466,7 +467,6 @@ function SearchPage({ data }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // IMPROVEMENT #3: debounce 300 ms
   const handleQueryChange = (e) => {
     const val = e.target.value;
     setQuery(val);
@@ -480,8 +480,15 @@ function SearchPage({ data }) {
     debounceRef.current = setTimeout(() => runSearch(query, e.target.value), 300);
   };
 
-  // IMPROVEMENT #7: add item to pending cart then redirect
-  const handleAddToList = (row, index) => {
+  const toggleExpanded = (desc) => {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      next.has(desc) ? next.delete(desc) : next.add(desc);
+      return next;
+    });
+  };
+
+  const handleAddToList = (row, desc) => {
     let listName = sessionStorage.getItem("zpl_new_list_name");
     if (!listName) {
       listName = window.prompt("Enter a name for this list:");
@@ -490,7 +497,7 @@ function SearchPage({ data }) {
     }
     const pending = getPendingItems();
     pending.push({
-      description: row.Description || row.description || "",
+      description: desc,
       supply: supplyCodes[supply] || supply,
       lookupSupply: supply,
       unit: row.Unit || row.unit || "",
@@ -498,45 +505,52 @@ function SearchPage({ data }) {
       quantity: 1,
     });
     setPendingItems(pending);
-    setAddedIndices((prev) => ({ ...prev, [index]: true }));
+    setAddedDescs((prev) => ({ ...prev, [desc]: true }));
   };
 
-  const handleGoToList = () => {
-    window.location.href = "/material_list?list=new";
-  };
-
+  const handleGoToList = () => { window.location.href = "/material_list?list=new"; };
   const pendingCount = getPendingItems().length;
+
+  // Build ordered description groups from the sorted rows
+  const groups = React.useMemo(() => {
+    const map = new Map();
+    for (const row of rows) {
+      const desc = row.Description || "";
+      if (!map.has(desc)) map.set(desc, []);
+      map.get(desc).push(row);
+    }
+    return [...map.entries()];
+  }, [rows]);
+
+  // Per-row columns (Description is the group header, so skip it here)
+  const rowCols = (columns || []).filter((c) => c !== "Description");
 
   return (
     <div className="space-y-6">
+      {/* Search controls */}
       <div className="space-y-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200">
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div>
             <h1 className="text-2xl font-semibold text-slate-900">Search Description</h1>
             <p className="text-sm text-slate-500">Results update as you type (300 ms debounce).</p>
           </div>
-          {/* IMPROVEMENT #7: cart indicator */}
           {pendingCount > 0 && (
-  <div className="flex items-center gap-2">
-    <button
-      onClick={handleGoToList}
-      className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition"
-    >
-      <span>🛒</span>
-      <span>{pendingCount} item{pendingCount !== 1 ? "s" : ""} — Go to Material List</span>
-    </button>
-    <button
-      onClick={() => {
-        setPendingItems([]);
-        sessionStorage.removeItem("zpl_new_list_name");
-        setAddedIndices({});
-      }}
-      className="rounded-xl bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600 transition"
-    >
-      ✕ Clear List
-    </button>
-  </div>
-)}
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleGoToList}
+                className="flex items-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 transition"
+              >
+                <span>🛒</span>
+                <span>{pendingCount} item{pendingCount !== 1 ? "s" : ""} — Go to Material List</span>
+              </button>
+              <button
+                onClick={() => { setPendingItems([]); sessionStorage.removeItem("zpl_new_list_name"); setAddedDescs({}); }}
+                className="rounded-xl bg-rose-500 px-3 py-2 text-sm font-semibold text-white hover:bg-rose-600 transition"
+              >
+                ✕ Clear List
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
@@ -559,46 +573,83 @@ function SearchPage({ data }) {
         </div>
       </div>
 
+      {/* Results */}
       {loading ? (
-        <SkeletonRows cols={(columns.length || 4) + 2} rows={6} />
+        <SkeletonRows cols={(rowCols.length || 4) + 1} rows={6} />
+      ) : groups.length === 0 && query.trim() ? (
+        <p className="text-sm text-slate-500 px-1">No results found.</p>
       ) : (
-        <Table
-          columns={[...columns, { key: "addToList", label: "Add to List" }, { key: "history", label: "History" }]}
-          rows={rows}
-          renderRow={(row, index) => (
-            <>
-              {columns.map((column) => (
-                <td key={`${column}-${index}`} className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">
-                  {row[column] ?? ""}
-                </td>
-              ))}
-              {/* IMPROVEMENT #7: Add to List button */}
-              <td className="px-4 py-3 text-sm">
-                <button
-                  onClick={() => handleAddToList(row, index)}
-                  disabled={!!addedIndices[index]}
-                  className={classNames(
-                    "rounded-lg px-3 py-1 text-xs font-semibold transition",
-                    addedIndices[index]
-                      ? "bg-emerald-100 text-emerald-700 cursor-default"
-                      : "bg-sky-600 text-white hover:bg-sky-700"
-                  )}
-                >
-                  {addedIndices[index] ? "✓ Added" : "+ Add"}
-                </button>
-              </td>
-              <td className="px-4 py-3 text-sm">
-                {row.graphUrl ? (
-                  <Button as="a" href={row.graphUrl} variant="secondary" className="px-3 py-1 text-xs">
-                    History
-                  </Button>
-                ) : (
-                  <span className="text-slate-400">—</span>
-                )}
-              </td>
-            </>
-          )}
-        />
+        <div className="space-y-3">
+          {groups.map(([desc, groupRows]) => {
+            const recentRows = groupRows.filter((r) => r.is_recent);
+            const histRows   = groupRows.filter((r) => !r.is_recent);
+            const isExpanded = expanded.has(desc);
+            const displayRows = isExpanded ? groupRows : recentRows;
+            const graphUrl   = groupRows[0]?.graphUrl;
+            const isAdded    = !!addedDescs[desc];
+
+            return (
+              <div key={desc} className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
+                {/* Group header */}
+                <div className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200 flex-wrap">
+                  <span className="font-semibold text-slate-800 text-sm">{desc}</span>
+                  <div className="flex items-center gap-2 shrink-0">
+                    {histRows.length > 0 && (
+                      <button
+                        onClick={() => toggleExpanded(desc)}
+                        className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-medium text-slate-600 hover:bg-slate-100 transition"
+                      >
+                        {isExpanded ? "Hide History" : `Show History (${histRows.length} more)`}
+                      </button>
+                    )}
+                    {graphUrl && (
+                      <a
+                        href={graphUrl}
+                        className="rounded-lg border border-sky-300 px-3 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 transition"
+                      >
+                        Graph
+                      </a>
+                    )}
+                    <button
+                      onClick={() => handleAddToList(recentRows[0] || groupRows[0], desc)}
+                      disabled={isAdded}
+                      className={classNames(
+                        "rounded-lg px-3 py-1 text-xs font-semibold transition",
+                        isAdded
+                          ? "bg-emerald-100 text-emerald-700 cursor-default"
+                          : "bg-sky-600 text-white hover:bg-sky-700"
+                      )}
+                    >
+                      {isAdded ? "✓ Added" : "+ Add"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Rows table */}
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm">
+                    <thead className="bg-slate-100 text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                      <tr>
+                        {rowCols.map((col) => (
+                          <th key={col} className="px-4 py-2 text-left whitespace-nowrap">{col}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {displayRows.map((row, i) => (
+                        <tr key={i} className={classNames("hover:bg-slate-50", !row.is_recent && "text-slate-400")}>
+                          {rowCols.map((col) => (
+                            <td key={col} className="px-4 py-2 whitespace-nowrap">{row[col] ?? ""}</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       )}
     </div>
   );

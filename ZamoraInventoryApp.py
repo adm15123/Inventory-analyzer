@@ -211,15 +211,22 @@ def _search_supply_data(
     if df.empty:
         return {"rows": [], "columns": [], "next_page": None, "prev_page": None}
 
-    df = df.sort_values("Date", ascending=False)
+    df = df.sort_values(["Description", "Date"], ascending=[True, False])
 
     columns = ["Item Number", "Description", "Price per Unit", "Unit", "Invoice No.", "Date"]
     if supply == "all":
         columns.append("Supply")
     existing_cols = [c for c in columns if c in df.columns]
 
-    total = len(df)
     rows = df[existing_cols].to_dict(orient="records")
+
+    # Mark first 3 rows per description as recent; the rest are historical
+    desc_counts: dict[str, int] = {}
+    for row in rows:
+        desc = row.get("Description", "")
+        idx = desc_counts.get(desc, 0)
+        row["is_recent"] = idx < 3
+        desc_counts[desc] = idx + 1
 
     if supply != "all":
         for row in rows:
@@ -229,20 +236,7 @@ def _search_supply_data(
                     "product_detail", description=desc, supply=supply, ref="search", query=query
                 )
 
-    if per_page and per_page > 0:
-        start = ((page or 1) - 1) * per_page
-        rows = rows[start : start + per_page]
-
-    next_page = None
-    prev_page = None
-    if per_page and per_page > 0:
-        current_page = page or 1
-        if total > current_page * per_page:
-            next_page = current_page + 1
-        if current_page > 1:
-            prev_page = current_page - 1
-
-    return {"rows": rows, "columns": existing_cols, "next_page": next_page, "prev_page": prev_page}
+    return {"rows": rows, "columns": existing_cols, "next_page": None, "prev_page": None}
 
 
 def _analyze_price_changes(supply: str, start_date: str, end_date: str) -> dict:
