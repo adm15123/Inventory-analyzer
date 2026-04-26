@@ -1061,6 +1061,12 @@ useEffect(() => {
   const handleDrop = (e) => { e.preventDefault(); setDraggingIndex(null); };
   const handleDragEnd = () => setDraggingIndex(null);
 
+  const handleSupplyChange = (index, supplyKey) => {
+    updateItem(index, { supply: supplyCodes[supplyKey] || supplyKey, lookupSupply: supplyKey });
+  };
+  const handleUnitChange  = (index, value) => updateItem(index, { unit: value });
+  const handlePriceChange = (index, value) => updateItem(index, { lastPrice: parseFloat(value) || 0 });
+
   // ---- totals ----
   const subtotal = useMemo(
     () =>
@@ -1088,15 +1094,6 @@ useEffect(() => {
         ((Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)).toFixed(2)
       ),
     }));
-  const [showQuickAdd, setShowQuickAdd] = useState(false);
-  const [quickForm, setQuickForm] = useState({
-    description: "",
-    quantity: 1,
-    unit: "",
-    lastPrice: "",
-    supply: supplyCodes[lookupSupply],
-    lookupSupply: lookupSupply,
-   });
   const [pdfLoading, setPdfLoading] = useState(false);
   const handleExport = () => {
     const includePrice = window.confirm("Include prices in the PDF?");
@@ -1356,19 +1353,56 @@ useEffect(() => {
                     />
                   </td>
 
-                  {/* Supply badge */}
+                  {/* Supply — badge for template rows, dropdown for manual rows */}
                   <td className="px-2 py-1 whitespace-nowrap">
-                    <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-                      {item.supply}
-                    </span>
+                    {item.predetermined ? (
+                      <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                        {item.supply}
+                      </span>
+                    ) : (
+                      <select
+                        value={item.lookupSupply || lookupSupply}
+                        onChange={(e) => handleSupplyChange(index, e.target.value)}
+                        className="rounded border border-slate-300 px-1.5 py-0.5 text-xs focus:border-sky-500 focus:outline-none"
+                      >
+                        <option value="supply1">BPS</option>
+                        <option value="supply2">S2</option>
+                        <option value="supply3">LPS</option>
+                        <option value="supply4">BOND</option>
+                      </select>
+                    )}
                   </td>
 
-                  {/* Unit */}
-                  <td className="px-2 py-1 whitespace-nowrap text-slate-500">{item.unit || "—"}</td>
+                  {/* Unit — read-only for template rows, editable for manual rows */}
+                  <td className="px-2 py-1 whitespace-nowrap text-slate-500">
+                    {item.predetermined ? (
+                      item.unit || "—"
+                    ) : (
+                      <input
+                        type="text"
+                        value={item.unit}
+                        onChange={(e) => handleUnitChange(index, e.target.value)}
+                        placeholder="EA"
+                        className="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-sm focus:border-sky-500 focus:outline-none"
+                      />
+                    )}
+                  </td>
 
-                  {/* Price */}
+                  {/* Price — read-only for template rows, editable for manual rows */}
                   <td className="px-2 py-1 whitespace-nowrap text-slate-700">
-                    ${Number(item.lastPrice || 0).toFixed(2)}
+                    {item.predetermined ? (
+                      `$${Number(item.lastPrice || 0).toFixed(2)}`
+                    ) : (
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={item.lastPrice || ""}
+                        onChange={(e) => handlePriceChange(index, e.target.value)}
+                        placeholder="0.00"
+                        className="w-20 rounded border border-slate-300 px-1.5 py-0.5 text-sm focus:border-sky-500 focus:outline-none"
+                      />
+                    )}
                   </td>
 
                   {/* Total — highlighted */}
@@ -1434,127 +1468,13 @@ useEffect(() => {
         </div>
       </div>
 
-      {/* Quick Add Panel */}
-<div>
-  {showQuickAdd ? (
-    <div className="rounded-2xl border-2 border-dashed border-sky-300 bg-sky-50 p-5 space-y-4">
-      <h3 className="text-sm font-semibold text-sky-800">Add Custom Item</h3>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <div className="col-span-2 sm:col-span-3 space-y-1">
-          <label className="text-xs font-medium text-slate-500">Description *</label>
-          <input
-            autoFocus
-            type="text"
-            value={quickForm.description}
-            onChange={(e) => setQuickForm((f) => ({ ...f, description: e.target.value }))}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && quickForm.description.trim()) {
-                const qty = Math.max(0, Number(quickForm.quantity) || 0);
-                const price = parseFloat(quickForm.lastPrice) || 0;
-                setItems((c) => [...c, {
-                  quantity: qty,
-                  description: quickForm.description.trim(),
-                  supply: quickForm.supply,
-                  lookupSupply: quickForm.lookupSupply,
-                  unit: quickForm.unit.trim(),
-                  lastPrice: price,
-                  total: Number((qty * price).toFixed(2)),
-                  predetermined: false,
-                }]);
-                setQuickForm((f) => ({ description: "", quantity: 1, unit: "", lastPrice: "", supply: f.supply, lookupSupply: f.lookupSupply }));
-              }
-            }}
-            placeholder="e.g. 3/4 copper elbow 90°"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-slate-500">Quantity</label>
-          <input
-            type="number"
-            min="0"
-            step="1"
-            value={quickForm.quantity}
-            onChange={(e) => setQuickForm((f) => ({ ...f, quantity: e.target.value }))}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-slate-500">Unit</label>
-          <input
-            type="text"
-            value={quickForm.unit}
-            onChange={(e) => setQuickForm((f) => ({ ...f, unit: e.target.value }))}
-            placeholder="EA, FT, BOX…"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-          />
-        </div>
-        <div className="space-y-1">
-          <label className="text-xs font-medium text-slate-500">Unit Price ($)</label>
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={quickForm.lastPrice}
-            onChange={(e) => setQuickForm((f) => ({ ...f, lastPrice: e.target.value }))}
-            placeholder="0.00"
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-          />
-        </div>
-        <div className="col-span-2 sm:col-span-3 space-y-1">
-          <label className="text-xs font-medium text-slate-500">Supplier</label>
-          <select
-            value={quickForm.lookupSupply}
-            onChange={(e) => setQuickForm((f) => ({ ...f, lookupSupply: e.target.value, supply: supplyCodes[e.target.value] }))}
-            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-          >
-            <option value="supply1">Supply 1 (BPS)</option>
-            <option value="supply2">Supply 2</option>
-            <option value="supply3">Lion Plumbing Supply</option>
-            <option value="supply4">Bond Plumbing Supply</option>
-          </select>
-        </div>
-      </div>
-      <div className="flex gap-2 pt-1">
-        <button
-          onClick={() => {
-            if (!quickForm.description.trim()) return;
-            const qty = Math.max(0, Number(quickForm.quantity) || 0);
-            const price = parseFloat(quickForm.lastPrice) || 0;
-            setItems((c) => [...c, {
-              quantity: qty,
-              description: quickForm.description.trim(),
-              supply: quickForm.supply,
-              lookupSupply: quickForm.lookupSupply,
-              unit: quickForm.unit.trim(),
-              lastPrice: price,
-              total: Number((qty * price).toFixed(2)),
-              predetermined: false,
-            }]);
-            setQuickForm((f) => ({ description: "", quantity: 1, unit: "", lastPrice: "", supply: f.supply, lookupSupply: f.lookupSupply }));
-          }}
-          disabled={!quickForm.description.trim()}
-          className="rounded-lg bg-sky-600 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-700 transition disabled:opacity-40"
-        >
-          + Add to List
-        </button>
-        <button
-          onClick={() => setShowQuickAdd(false)}
-          className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 transition"
-        >
-          Cancel
-        </button>
-      </div>
-    </div>
-  ) : (
-    <button
-      onClick={() => setShowQuickAdd(true)}
-      className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-6 py-3 text-sm font-semibold text-slate-500 hover:border-sky-400 hover:text-sky-600 transition w-full justify-center"
-    >
-      + Add Item
-    </button>
-  )}
-</div>
+      {/* Add Item button — appends an empty editable row to the table */}
+      <button
+        onClick={addManualItem}
+        className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-6 py-3 text-sm font-semibold text-slate-500 hover:border-sky-400 hover:text-sky-600 transition w-full justify-center"
+      >
+        + Add Item
+      </button>
 
       {/* Hidden form for PDF submit */}
       <form ref={formRef} method="POST" action={data.listUrl} className="hidden">
