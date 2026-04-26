@@ -250,7 +250,7 @@ _BERGER_HEADER_RE = re.compile(r'Quantity\s+Item\s*No', re.IGNORECASE)
 _BERGER_STOP_RE   = re.compile(r'Total\s+line\s+items|Sub-?Total', re.IGNORECASE)
 # Captures full ticket number including optional suffix, e.g. "473658-01"
 _BERGER_TICKET_NO = re.compile(r'Ticket\s*No\s*:\s*([\w\-]+)', re.IGNORECASE)
-_BERGER_TICKET_DT = re.compile(r'Ticket\s*Date\s*:\s*(\d{1,2}/\d{2}/\d{2,4})', re.IGNORECASE)
+_BERGER_TICKET_DT = re.compile(r'Ticket\s*Date\s*:\s*(\d{1,2}/\d{1,2}/\d{2,4})', re.IGNORECASE)
 
 
 def parse_berger_pdf(filepath: str) -> dict:
