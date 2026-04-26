@@ -572,28 +572,36 @@ def api_sku_judge():
 def graph():
     """Generate a graph of Price per Unit over time for a given description from the selected supply."""
     supply = request.args.get("supply", "supply1")
-    _ensure_supply_loaded(supply)
-    current_df = du.get_current_dataframe(supply)
     description = request.args.get("description")
-
-    if current_df is None or not description:
+    if not description:
         flash("⚠ Data or description not provided.")
         return redirect(url_for("index"))
-    
-    # Use a case-insensitive, trimmed partial match:
-    filtered_data = current_df[current_df["Description"].str.lower().str.strip().str.contains(description.lower().strip(), na=False)]
-    if filtered_data.empty:
+
+    supplier_code = SUPPLY_CODES.get(supply)
+    df = get_catalog_df()
+    if df is None or df.empty:
+        flash("⚠ No data available.")
+        return redirect(url_for("index"))
+
+    item_df = df[
+        (df["Description"].str.lower() == description.lower()) &
+        (df["Supply"] == supplier_code)
+    ].copy()
+
+    if item_df.empty:
         flash("⚠ No data available for the selected description.")
         return redirect(url_for("view_all", supply=supply))
-    
-    filtered_data = filtered_data.dropna(subset=["Date"]).sort_values(by="Date")
+
+    item_df = item_df.dropna(subset=["Date"]).sort_values(by="Date")
     fig, ax = plt.subplots(figsize=(8, 6))
-    ax.plot(filtered_data["Date"], filtered_data["Price per Unit"], marker="o")
+    ax.plot(item_df["Date"], item_df["Price per Unit"], marker="o")
     ax.set_title(f"Prices Over Time for '{description}'")
     ax.set_xlabel("Date")
     ax.set_ylabel("Price per Unit")
     ax.grid(True)
-    
+    plt.xticks(rotation=45, ha="right")
+    plt.tight_layout()
+
     output = io.BytesIO()
     FigureCanvas(fig).print_png(output)
     plt.close(fig)
@@ -604,15 +612,23 @@ def graph():
 @login_required
 def graph_data():
     supply = request.args.get("supply", "supply1")
-    _ensure_supply_loaded(supply)
-    current_df = du.get_current_dataframe(supply)
     description = request.args.get("description")
-    if current_df is None or not description:
+    if not description:
         return jsonify({"dates": [], "prices": []})
-    filtered_data = current_df[current_df["Description"].str.lower().str.strip().str.contains(description.lower().strip(), na=False)]
-    filtered_data = filtered_data.dropna(subset=["Date"]).sort_values(by="Date")
-    dates = filtered_data["Date"].dt.strftime("%Y-%m-%d").tolist()
-    prices = filtered_data["Price per Unit"].tolist()
+
+    supplier_code = SUPPLY_CODES.get(supply)
+    df = get_catalog_df()
+    if df is None or df.empty:
+        return jsonify({"dates": [], "prices": []})
+
+    item_df = df[
+        (df["Description"].str.lower() == description.lower()) &
+        (df["Supply"] == supplier_code)
+    ].copy()
+
+    item_df = item_df.dropna(subset=["Date"]).sort_values(by="Date")
+    dates = item_df["Date"].tolist()
+    prices = item_df["Price per Unit"].tolist()
     return jsonify({"dates": dates, "prices": prices})
 
 @app.route("/analyze", methods=["GET", "POST"])
@@ -684,24 +700,29 @@ def product_detail():
       - A table with Date and Price per Unit for that product (sorted by Date).
     """
     supply = request.args.get("supply", "supply1")
-    _ensure_supply_loaded(supply)
-    current_df = du.get_current_dataframe(supply)
     description = request.args.get("description")
-    if current_df is None or not description:
+    if not description:
         flash("⚠ Please provide a product description.")
         return redirect(url_for("index"))
 
-    # Use case-insensitive, trimmed comparison for matching.
-    filtered_data = current_df[current_df["Description"].str.lower().str.strip() == description.lower().strip()]
-    if filtered_data.empty:
+    supplier_code = SUPPLY_CODES.get(supply)
+    df = get_catalog_df()
+    if df is None or df.empty:
+        flash("⚠ No catalog data available.")
+        return redirect(url_for("index"))
+
+    item_df = df[
+        (df["Description"].str.lower() == description.lower()) &
+        (df["Supply"] == supplier_code)
+    ].copy()
+
+    if item_df.empty:
         flash("⚠ No data available for the selected product.")
         return redirect(url_for("view_all", supply=supply))
 
-    filtered_data = filtered_data.dropna(subset=["Date"]).sort_values(by="Date")
-    dates = filtered_data["Date"].dt.strftime("%Y-%m-%d").tolist()
-    prices = filtered_data["Price per Unit"].tolist()
-    table_rows = filtered_data[["Date", "Price per Unit"]].copy()
-    table_rows["Date"] = dates
+    item_df = item_df.dropna(subset=["Date"]).sort_values(by="Date")
+    dates = item_df["Date"].tolist()
+    prices = item_df["Price per Unit"].tolist()
 
     ref = request.args.get("ref", "view_all")
     query = request.args.get("query", "")
@@ -713,7 +734,7 @@ def product_detail():
     initial = {
         "description": description,
         "supply": supply,
-        "rows": table_rows.to_dict(orient="records"),
+        "rows": [{"Date": d, "Price per Unit": p} for d, p in zip(dates, prices)],
         "chart": {"dates": dates, "prices": prices},
         "backUrl": back_url,
     }
