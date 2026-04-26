@@ -229,23 +229,28 @@ def parse_lps_pdf(filepath: str) -> dict:
 
 
 # ─── Berger (BPS) Invoice parser ─────────────────────────────────────────────
+#
+# Actual column layout (from observed PDFs):
+#   Quantity  Item No  Description  Price Sell  Unit  Ext Price
+#   1         CCMA10   ADAPTER CxM 1"  7.55  EACH  7.55
+#
+# Unit is a full uppercase word (EACH, FOOT, etc.), not the short codes used by LPS.
+# Some descriptions wrap onto the next line (e.g. "BUSHING", "MIFA", "FEM").
 
-# Matches data lines: qty  item_no  description...  price_sell  unit  ext_price
-# Description is greedy — captures everything between item_no and the trailing
-# price / unit / ext_price cluster at the end of the line.
 BERGER_LINE_RE = re.compile(
-    r'^(\d+)\s+'                            # quantity
-    r'(\S+)\s+'                             # item number
-    r'(.+)\s+'                              # description (greedy)
-    r'([\d,]+\.\d{2,4})\s+'               # price sell
-    r'(' + UOM_GROUP + r')\s+'             # unit (non-capturing UOM group)
-    r'([\d,]+\.\d{2})\s*$'                # ext price at end of line
+    r'^(\d+)\s+'                           # quantity (integer)
+    r'(\S+)\s+'                            # item number
+    r'(.+?)\s+'                            # description (lazy — stops before price)
+    r'([\d,]+\.\d{2,4})\s+'              # price sell
+    r'([A-Z]{2,})\s+'                     # unit word (EACH, FOOT, …)
+    r'([\d,]+\.\d{2})\s*$'               # ext price at end of line
 )
 
-_BERGER_HEADER_RE  = re.compile(r'Quantity\s+Item\s*No', re.IGNORECASE)
-_BERGER_STOP_RE    = re.compile(r'Total\s+line\s+items|Sub-?Total', re.IGNORECASE)
-_BERGER_TICKET_NO  = re.compile(r'Ticket\s*(?:No\.?|Number|#)?\s*[:\-]?\s*(\d+)', re.IGNORECASE)
-_BERGER_TICKET_DT  = re.compile(r'Ticket\s*Date\s*[:\-]?\s*(\d{1,2}/\d{2}/\d{2,4})', re.IGNORECASE)
+_BERGER_HEADER_RE = re.compile(r'Quantity\s+Item\s*No', re.IGNORECASE)
+_BERGER_STOP_RE   = re.compile(r'Total\s+line\s+items|Sub-?Total', re.IGNORECASE)
+# Captures full ticket number including optional suffix, e.g. "473658-01"
+_BERGER_TICKET_NO = re.compile(r'Ticket\s*No\s*:\s*([\w\-]+)', re.IGNORECASE)
+_BERGER_TICKET_DT = re.compile(r'Ticket\s*Date\s*:\s*(\d{1,2}/\d{2}/\d{2,4})', re.IGNORECASE)
 
 
 def parse_berger_pdf(filepath: str) -> dict:
@@ -264,14 +269,15 @@ def parse_berger_pdf(filepath: str) -> dict:
                 m = _BERGER_TICKET_NO.search(text)
                 if m:
                     order_number = m.group(1)
-
                 m = _BERGER_TICKET_DT.search(text)
                 if m:
                     date_str = _parse_date(m.group(1))
 
             in_items = False
-            for line in lines:
-                stripped = line.strip()
+            i = 0
+            while i < len(lines):
+                stripped = lines[i].strip()
+                i += 1
 
                 if not in_items:
                     if _BERGER_HEADER_RE.search(stripped):
@@ -293,6 +299,19 @@ def parse_berger_pdf(filepath: str) -> dict:
                         "quantity": int(m.group(1)),
                         "unit_price": _clean_price(m.group(4)),
                     })
+                    # Look ahead for a wrapped description continuation line
+                    # (a short non-data, non-stop line immediately following)
+                    while i < len(lines):
+                        cont = lines[i].strip()
+                        if not cont:
+                            i += 1
+                            continue
+                        if (not BERGER_LINE_RE.match(cont)
+                                and not _BERGER_STOP_RE.search(cont)
+                                and not _BERGER_HEADER_RE.search(cont)):
+                            items[-1]["description"] += " " + cont
+                            i += 1
+                        break
 
     return {
         "doc_type": "invoice",
