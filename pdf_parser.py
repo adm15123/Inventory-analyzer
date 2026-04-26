@@ -164,11 +164,11 @@ def _parse_lps_bid(pdf) -> dict:
         lines = text.split('\n')
 
         if page_num == 0:
-            m = re.search(r'\b(\d{7})\b', text)
+            m = re.search(r'BID NUMBER[:\s]+(\d+)', text, re.IGNORECASE)
             if m:
                 bid_number = m.group(1)
 
-            m = re.search(r'(\d{2}/\d{2}/\d{2,4})', text)
+            m = re.search(r'(\d{1,2}/\d{1,2}/\d{2,4})', text)
             if m:
                 date_str = _parse_date(m.group(1))
 
@@ -181,7 +181,7 @@ def _parse_lps_bid(pdf) -> dict:
             line = lines[i].strip()
             m = BID_LINE_RE.match(line)
             if m:
-                sku = m.group(4)
+                sku = m.group(4).lstrip("/")
                 description = sku
                 j = i + 1
                 while j < len(lines):
