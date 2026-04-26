@@ -1376,6 +1376,8 @@ def confirm_upload():
     Body: { "parsed": {...doc fields + items...}, "filename": "..." }
     """
     body = request.get_json(force=True, silent=True) or {}
+    app.logger.info(f"confirm_upload received: {body}")
+    print(f"confirm_upload received: {body}")
     parsed = body.get("parsed")
     filename = body.get("filename", "")
 

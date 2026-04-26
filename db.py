@@ -119,6 +119,7 @@ def _turso_batch(statements: list[tuple]) -> list:
     """
     Execute multiple (sql, params) statements in one pipeline request.
     Returns list of parsed row-dict lists, one per statement.
+    Raises RuntimeError if any statement returns an error.
     """
     requests = [
         {
@@ -128,10 +129,12 @@ def _turso_batch(statements: list[tuple]) -> list:
         for sql, params in statements
     ]
     results = _pipeline(requests)
-    return [
-        _parse_result(r.get("response", {}).get("result", {}))
-        for r in results[: len(statements)]
-    ]
+    out = []
+    for i, r in enumerate(results[: len(statements)]):
+        if r.get("type") == "error":
+            raise RuntimeError(f"Turso batch error at statement {i}: {r.get('error')}")
+        out.append(_parse_result(r.get("response", {}).get("result", {})))
+    return out
 
 
 # ── Local SQLite connection ───────────────────────────────────────────────────
@@ -273,6 +276,8 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
     order_number = parsed["order_number"]
     doc_type     = parsed["doc_type"]
 
+    print(f"save_parsed_document: {len(parsed.get('items', []))} items for {order_number} ({doc_type})")
+
     if USE_TURSO:
         existing = _turso_execute(
             "SELECT id FROM invoices WHERE order_number = ? AND doc_type = ?",
@@ -319,6 +324,7 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
         ]
         if item_statements:
             _turso_batch(item_statements)
+            print(f"save_parsed_document: inserted {len(item_statements)} items for invoice_id={invoice_id}")
 
     else:
         with _local_conn() as conn:
