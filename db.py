@@ -15,7 +15,9 @@ at data/zamora.db (useful for local dev without Turso).
 
 import os
 import sqlite3
+import time
 from typing import Optional
+import pandas as pd
 
 # ── Driver selection ──────────────────────────────────────────────────────────
 TURSO_URL   = os.environ.get("TURSO_URL", "").replace("libsql://", "https://")
@@ -27,6 +29,21 @@ if USE_TURSO:
 
 # Local fallback path (only used if TURSO_URL is not set)
 LOCAL_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "zamora.db")
+
+
+# ── Turso client (module-level singleton) ─────────────────────────────────────
+
+_turso_client = None
+
+def _get_turso_client():
+    """Return the shared Turso client, creating it once on first call."""
+    global _turso_client
+    if _turso_client is None:
+        _turso_client = libsql_client.create_client_sync(
+            url=TURSO_URL,
+            auth_token=TURSO_TOKEN,
+        )
+    return _turso_client
 
 
 # ── Connection helpers ────────────────────────────────────────────────────────
@@ -48,15 +65,12 @@ def _turso_execute(sql: str, params: list = None) -> list[dict]:
     For INSERT/UPDATE/DELETE, returns [] but commits the change.
     """
     params = params or []
-    with libsql_client.create_client_sync(
-        url=TURSO_URL,
-        auth_token=TURSO_TOKEN,
-    ) as client:
-        result = client.execute(sql, params)
-        if result.rows:
-            columns = [col for col in result.columns]
-            return [dict(zip(columns, row)) for row in result.rows]
-        return []
+    client = _get_turso_client()
+    result = client.execute(sql, params)
+    if result.rows:
+        columns = [col for col in result.columns]
+        return [dict(zip(columns, row)) for row in result.rows]
+    return []
 
 
 def _turso_batch(statements: list[tuple]) -> list:
@@ -65,15 +79,82 @@ def _turso_batch(statements: list[tuple]) -> list:
     Each item in `statements` is a (sql, params) tuple.
     Returns list of ResultSet objects.
     """
-    with libsql_client.create_client_sync(
-        url=TURSO_URL,
-        auth_token=TURSO_TOKEN,
-    ) as client:
-        batch = [
-            libsql_client.Statement(sql, params)
-            for sql, params in statements
-        ]
-        return client.batch(batch)
+    client = _get_turso_client()
+    batch = [
+        libsql_client.Statement(sql, params)
+        for sql, params in statements
+    ]
+    return client.batch(batch)
+
+
+# ── In-memory cache ───────────────────────────────────────────────────────────
+
+_cache: dict[str, tuple[float, object]] = {}
+_LATEST_PRICES_TTL = 300   # 5 minutes
+_LIST_INVOICES_TTL = 120   # 2 minutes
+
+
+def _cache_get(key: str) -> object:
+    """Return cached value if still fresh, else None."""
+    entry = _cache.get(key)
+    if entry is None:
+        return None
+    expires_at, value = entry
+    if time.monotonic() > expires_at:
+        del _cache[key]
+        return None
+    return value
+
+
+def _cache_set(key: str, value: object, ttl: float):
+    _cache[key] = (time.monotonic() + ttl, value)
+
+
+def cache_clear():
+    """Invalidate all cached query results."""
+    _cache.clear()
+
+
+# ── In-memory catalog DataFrame ───────────────────────────────────────────────
+
+_catalog_df: pd.DataFrame | None = None
+
+_CATALOG_SQL = """
+    SELECT
+        ii.description   AS "Description",
+        ii.item_number   AS "Item Number",
+        ii.uom           AS "Unit",
+        ii.unit_price    AS "Price per Unit",
+        inv.date         AS "Date",
+        inv.order_number AS "Invoice No.",
+        ii.supplier      AS "Supply"
+    FROM invoice_items ii
+    JOIN invoices inv ON inv.id = ii.invoice_id
+"""
+
+
+def load_catalog_to_memory():
+    """Pull every item row from the DB into _catalog_df once at startup."""
+    global _catalog_df
+    if USE_TURSO:
+        rows = _turso_execute(_CATALOG_SQL)
+        _catalog_df = pd.DataFrame(rows) if rows else pd.DataFrame(
+            columns=["Description", "Item Number", "Unit", "Price per Unit",
+                     "Date", "Invoice No.", "Supply"]
+        )
+    else:
+        with _local_conn() as conn:
+            _catalog_df = pd.read_sql_query(_CATALOG_SQL, conn)
+
+
+def get_catalog_df() -> pd.DataFrame | None:
+    """Return the in-memory catalog DataFrame."""
+    return _catalog_df
+
+
+def refresh_catalog():
+    """Reload the catalog from the DB (call after a new upload)."""
+    load_catalog_to_memory()
 
 
 # ── Public API ────────────────────────────────────────────────────────────────
@@ -130,6 +211,7 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
     """
     Insert a parsed PDF result into the DB.
     Returns the new invoice id, or -1 if already imported (duplicate).
+    Clears the cache so subsequent reads reflect the new data.
     """
     order_number = parsed["order_number"]
     doc_type     = parsed["doc_type"]
@@ -185,8 +267,6 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
         if item_statements:
             _turso_batch(item_statements)
 
-        return invoice_id
-
     else:
         # ── Local SQLite path ──────────────────────────────────────────────
         with _local_conn() as conn:
@@ -228,13 +308,16 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 rows,
             )
-            return invoice_id
+
+    cache_clear()
+    return invoice_id
 
 
 def search_items(query: str, supplier: Optional[str] = None, limit: int = 200) -> list[dict]:
     """
     Full-text search across description and item_number.
     Returns rows ordered by invoice date DESC (newest price first).
+    Not cached — results must always be fresh.
     """
     sql = """
         SELECT
@@ -273,7 +356,13 @@ def get_latest_prices(supplier: Optional[str] = None) -> list[dict]:
     """
     Returns the latest price for every unique description per supplier.
     Used to populate the catalog for autocomplete / Material List.
+    Cached for 5 minutes; cache is invalidated on save_parsed_document().
     """
+    cache_key = f"latest_prices:{supplier or 'all'}"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     sql = """
         SELECT
             ii.description  AS "Description",
@@ -300,15 +389,26 @@ def get_latest_prices(supplier: Optional[str] = None) -> list[dict]:
     sql += " ORDER BY ii.description"
 
     if USE_TURSO:
-        return _turso_execute(sql, params)
+        result = _turso_execute(sql, params)
     else:
         with _local_conn() as conn:
             rows = conn.execute(sql, params).fetchall()
-            return [dict(r) for r in rows]
+            result = [dict(r) for r in rows]
+
+    _cache_set(cache_key, result, _LATEST_PRICES_TTL)
+    return result
 
 
 def list_invoices() -> list[dict]:
-    """Return all imported documents with item counts, newest first."""
+    """
+    Return all imported documents with item counts, newest first.
+    Cached for 2 minutes; cache is invalidated on save_parsed_document().
+    """
+    cache_key = "list_invoices"
+    cached = _cache_get(cache_key)
+    if cached is not None:
+        return cached
+
     sql = """
         SELECT
             id, doc_type, order_number, date, job_name,
@@ -318,11 +418,14 @@ def list_invoices() -> list[dict]:
         ORDER BY imported_at DESC
     """
     if USE_TURSO:
-        return _turso_execute(sql)
+        result = _turso_execute(sql)
     else:
         with _local_conn() as conn:
             rows = conn.execute(sql).fetchall()
-            return [dict(r) for r in rows]
+            result = [dict(r) for r in rows]
+
+    _cache_set(cache_key, result, _LIST_INVOICES_TTL)
+    return result
 
 
 def delete_invoice(invoice_id: int):
@@ -335,3 +438,5 @@ def delete_invoice(invoice_id: int):
     else:
         with _local_conn() as conn:
             conn.execute(sql, (invoice_id,))
+
+    cache_clear()

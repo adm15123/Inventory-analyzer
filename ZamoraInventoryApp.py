@@ -26,7 +26,11 @@ from werkzeug.utils import secure_filename
 
 from sku_matcher import judge_same_product
 from pdf_parser import parse_pdf
-from db import init_db, save_parsed_document, list_invoices, delete_invoice, search_items, get_latest_prices
+from db import (
+    init_db, save_parsed_document, list_invoices, delete_invoice,
+    search_items, get_latest_prices,
+    load_catalog_to_memory, get_catalog_df, refresh_catalog,
+)
 import tempfile
 
 # Additional imports for login functionality
@@ -43,6 +47,7 @@ import data_utils as du
 
 app = Flask(__name__)
 init_db()
+load_catalog_to_memory()
 app.secret_key = config.SECRET_KEY
 
 app.config["SESSION_PERMANENT"] = config.SESSION_PERMANENT
@@ -187,16 +192,37 @@ def _search_supply_data(
     page: int | None = None,
     per_page: int | None = None,
 ):
-    """Search the DB and shape the result for JSON/React."""
+    """Search the in-memory catalog DataFrame and shape the result for JSON/React."""
     if not query:
         return {"rows": [], "columns": [], "next_page": None, "prev_page": None}
 
-    code = SUPPLY_CODES.get(supply)  # None → search all suppliers
-    rows = search_items(query, supplier=code)
+    df = get_catalog_df()
+    if df is None or df.empty:
+        return {"rows": [], "columns": [], "next_page": None, "prev_page": None}
+
+    # Filter by supplier when not searching all
+    code = SUPPLY_CODES.get(supply)
+    if code:
+        df = df[df["Supply"] == code]
+
+    # Multi-keyword case-insensitive match on Description
+    for kw in query.lower().split():
+        df = df[df["Description"].str.lower().str.contains(kw, na=False, regex=False)]
+
+    if df.empty:
+        return {"rows": [], "columns": [], "next_page": None, "prev_page": None}
+
+    df = df.sort_values("Date", ascending=False)
+
     columns = ["Item Number", "Description", "Price per Unit", "Unit", "Invoice No.", "Date"]
     if supply == "all":
         columns.append("Supply")
-    else:
+    existing_cols = [c for c in columns if c in df.columns]
+
+    total = len(df)
+    rows = df[existing_cols].to_dict(orient="records")
+
+    if supply != "all":
         for row in rows:
             desc = row.get("Description")
             if desc:
@@ -204,7 +230,6 @@ def _search_supply_data(
                     "product_detail", description=desc, supply=supply, ref="search", query=query
                 )
 
-    total = len(rows)
     if per_page and per_page > 0:
         start = ((page or 1) - 1) * per_page
         rows = rows[start : start + per_page]
@@ -218,7 +243,7 @@ def _search_supply_data(
         if current_page > 1:
             prev_page = current_page - 1
 
-    return {"rows": rows, "columns": columns, "next_page": next_page, "prev_page": prev_page}
+    return {"rows": rows, "columns": existing_cols, "next_page": next_page, "prev_page": prev_page}
 
 
 def _analyze_price_changes(supply: str, start_date: str, end_date: str) -> dict:
@@ -400,16 +425,30 @@ def view_all():
     per_page = request.args.get("per_page", 200, type=int)
 
     code = SUPPLY_CODES.get(supply)
-    all_rows = get_latest_prices(supplier=code)
+    df = get_catalog_df()
+
+    if df is not None and not df.empty:
+        if code:
+            df = df[df["Supply"] == code]
+        # Latest price per description: sort desc by Date, keep first occurrence
+        df = (
+            df.sort_values("Date", ascending=False)
+            .drop_duplicates(subset=["Description"], keep="first")
+            .sort_values("Description")
+        )
+    else:
+        df = pd.DataFrame(columns=["Item Number", "Description", "Price per Unit", "Unit", "Date"])
+
     columns = ["Item Number", "Description", "Price per Unit", "Unit", "Date"]
-    total_rows = len(all_rows)
+    existing_cols = [c for c in columns if c in df.columns]
+    total_rows = len(df)
     start = (page - 1) * per_page
-    page_rows = all_rows[start : start + per_page]
+    df_page = df.iloc[start : start + per_page]
 
     rows = []
-    for row in page_rows:
-        payload_row = {col: row.get(col, "") for col in columns}
-        desc = row.get("Description")
+    for record in df_page[existing_cols].to_dict(orient="records"):
+        payload_row = {col: record.get(col, "") for col in existing_cols}
+        desc = record.get("Description")
         if desc:
             payload_row["graphUrl"] = url_for(
                 "product_detail", description=desc, supply=supply, ref="view_all"
@@ -425,7 +464,7 @@ def view_all():
 
     payload = {
         "supply": supply,
-        "columns": columns,
+        "columns": existing_cols,
         "rows": rows,
         "supplyOptions": supply_options,
         "productDetailBase": url_for("product_detail"),
@@ -828,10 +867,11 @@ def material_list():
     else:
         product_list = []
 
-    supply1_products = get_latest_prices(supplier="BPS")
-    supply2_products = get_latest_prices(supplier="S2")
-    supply3_products = get_latest_prices(supplier="LPS")
-    supply4_products = get_latest_prices(supplier="BOND")
+    all_catalog = get_latest_prices()  # one round trip, split below
+    supply1_products = [r for r in all_catalog if r.get("Supply") == "BPS"]
+    supply2_products = [r for r in all_catalog if r.get("Supply") == "S2"]
+    supply3_products = [r for r in all_catalog if r.get("Supply") == "LPS"]
+    supply4_products = [r for r in all_catalog if r.get("Supply") == "BOND"]
     template_name_arg = request.args.get("template_name", "")
     if not template_name_arg and list_option_lower not in ["underground", "rough", "final", "new"]:
         template_name_arg = list_option
@@ -1287,6 +1327,8 @@ def upload_pdf():
             "duplicate": True,
             "error": f"Document {parsed['order_number']} has already been imported.",
         }), 409
+
+    refresh_catalog()
 
     return jsonify({
         "success": True,
