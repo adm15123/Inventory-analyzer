@@ -6,7 +6,7 @@ Tables:
   invoice_items — one row per line item in a document
 
 Credentials come from environment variables:
-  TURSO_URL    = libsql://your-db-name.turso.io
+  TURSO_URL    = libsql://your-db-name.turso.io  (or https://)
   TURSO_TOKEN  = your-auth-token
 
 Local fallback: if TURSO_URL is not set, falls back to local SQLite
@@ -17,36 +17,124 @@ import os
 import sqlite3
 import time
 from typing import Optional
+
+import httpx
 import pandas as pd
 
+
 # ── Driver selection ──────────────────────────────────────────────────────────
+
 TURSO_URL   = os.environ.get("TURSO_URL", "").replace("libsql://", "https://")
 TURSO_TOKEN = os.environ.get("TURSO_TOKEN", "")
 USE_TURSO   = bool(TURSO_URL)
 
-if USE_TURSO:
-    import libsql_client  # pip install libsql-client
-
-# Local fallback path (only used if TURSO_URL is not set)
 LOCAL_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "zamora.db")
 
 
-# ── Turso client (module-level singleton) ─────────────────────────────────────
+# ── Turso HTTP transport ──────────────────────────────────────────────────────
 
-_turso_client = None
-
-def _get_turso_client():
-    """Return the shared Turso client, creating it once on first call."""
-    global _turso_client
-    if _turso_client is None:
-        _turso_client = libsql_client.create_client_sync(
-            url=TURSO_URL,
-            auth_token=TURSO_TOKEN,
-        )
-    return _turso_client
+_http_client: httpx.Client | None = None
 
 
-# ── Connection helpers ────────────────────────────────────────────────────────
+def _get_http_client() -> httpx.Client:
+    """Return the shared httpx client, creating it once on first call."""
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.Client(timeout=30)
+    return _http_client
+
+
+def _to_arg(v) -> dict:
+    """Convert a Python value to a Turso HTTP API argument object."""
+    if v is None:
+        return {"type": "null"}
+    if isinstance(v, bool):
+        return {"type": "integer", "value": "1" if v else "0"}
+    if isinstance(v, int):
+        return {"type": "integer", "value": str(v)}
+    if isinstance(v, float):
+        return {"type": "real", "value": str(v)}
+    return {"type": "text", "value": str(v)}
+
+
+def _extract_value(cell: dict):
+    """Convert a Turso response cell {type, value} to a Python value."""
+    t = cell.get("type")
+    v = cell.get("value")
+    if t == "null" or v is None:
+        return None
+    if t == "integer":
+        return int(v)
+    if t == "real":
+        return float(v)
+    return v  # text / blob → string
+
+
+def _parse_result(result: dict) -> list[dict]:
+    """Turn a Turso execute result object into a list of row dicts."""
+    cols = [c["name"] for c in result.get("cols", [])]
+    if not cols:
+        return []
+    return [
+        dict(zip(cols, (_extract_value(cell) for cell in row)))
+        for row in result.get("rows", [])
+    ]
+
+
+def _pipeline(requests: list[dict]) -> list[dict]:
+    """
+    POST to /v2/pipeline and return the raw results list.
+    Automatically appends the required {"type": "close"} sentinel.
+    """
+    client = _get_http_client()
+    resp = client.post(
+        f"{TURSO_URL}/v2/pipeline",
+        headers={
+            "Authorization": f"Bearer {TURSO_TOKEN}",
+            "Content-Type": "application/json",
+        },
+        json={"requests": requests + [{"type": "close"}]},
+    )
+    resp.raise_for_status()
+    return resp.json().get("results", [])
+
+
+def _turso_execute(sql: str, params: list = None) -> list[dict]:
+    """
+    Execute a single SQL statement against Turso and return rows as dicts.
+    For INSERT/UPDATE/DELETE, returns [].
+    """
+    params = params or []
+    stmt = {"sql": sql, "args": [_to_arg(v) for v in params]}
+    results = _pipeline([{"type": "execute", "stmt": stmt}])
+    if not results:
+        return []
+    first = results[0]
+    if first.get("type") == "error":
+        raise RuntimeError(f"Turso error: {first.get('error')}")
+    return _parse_result(first.get("response", {}).get("result", {}))
+
+
+def _turso_batch(statements: list[tuple]) -> list:
+    """
+    Execute multiple (sql, params) statements in one pipeline request.
+    Returns list of parsed row-dict lists, one per statement.
+    """
+    requests = [
+        {
+            "type": "execute",
+            "stmt": {"sql": sql, "args": [_to_arg(v) for v in (params or [])]},
+        }
+        for sql, params in statements
+    ]
+    results = _pipeline(requests)
+    return [
+        _parse_result(r.get("response", {}).get("result", {}))
+        for r in results[: len(statements)]
+    ]
+
+
+# ── Local SQLite connection ───────────────────────────────────────────────────
 
 def _local_conn() -> sqlite3.Connection:
     """Return a local SQLite connection (dev/fallback only)."""
@@ -59,35 +147,7 @@ def _local_conn() -> sqlite3.Connection:
 get_conn = _local_conn  # alias for migration scripts
 
 
-def _turso_execute(sql: str, params: list = None) -> list[dict]:
-    """
-    Execute a single SQL statement against Turso and return rows as dicts.
-    For INSERT/UPDATE/DELETE, returns [] but commits the change.
-    """
-    params = params or []
-    client = _get_turso_client()
-    result = client.execute(sql, params)
-    if result.rows:
-        columns = [col for col in result.columns]
-        return [dict(zip(columns, row)) for row in result.rows]
-    return []
-
-
-def _turso_batch(statements: list[tuple]) -> list:
-    """
-    Execute multiple SQL statements in a single Turso batch (atomic).
-    Each item in `statements` is a (sql, params) tuple.
-    Returns list of ResultSet objects.
-    """
-    client = _get_turso_client()
-    batch = [
-        libsql_client.Statement(sql, params)
-        for sql, params in statements
-    ]
-    return client.batch(batch)
-
-
-# ── In-memory cache ───────────────────────────────────────────────────────────
+# ── In-memory result cache ────────────────────────────────────────────────────
 
 _cache: dict[str, tuple[float, object]] = {}
 _LATEST_PRICES_TTL = 300   # 5 minutes
@@ -95,7 +155,6 @@ _LIST_INVOICES_TTL = 120   # 2 minutes
 
 
 def _cache_get(key: str) -> object:
-    """Return cached value if still fresh, else None."""
     entry = _cache.get(key)
     if entry is None:
         return None
@@ -148,7 +207,6 @@ def load_catalog_to_memory():
 
 
 def get_catalog_df() -> pd.DataFrame | None:
-    """Return the in-memory catalog DataFrame."""
     return _catalog_df
 
 
@@ -195,7 +253,6 @@ def init_db():
     """
 
     if USE_TURSO:
-        # Split DDL into individual statements for Turso batch
         statements = [
             (stmt.strip(), [])
             for stmt in ddl.split(";")
@@ -217,7 +274,6 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
     doc_type     = parsed["doc_type"]
 
     if USE_TURSO:
-        # Check for duplicate
         existing = _turso_execute(
             "SELECT id FROM invoices WHERE order_number = ? AND doc_type = ?",
             [order_number, doc_type],
@@ -225,7 +281,6 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
         if existing:
             return -1
 
-        # Insert invoice header
         _turso_execute(
             """INSERT INTO invoices (doc_type, order_number, date, job_name, supplier, filename)
                VALUES (?, ?, ?, ?, ?, ?)""",
@@ -239,14 +294,12 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
             ],
         )
 
-        # Get the new invoice id
         rows = _turso_execute(
             "SELECT id FROM invoices WHERE order_number = ? AND doc_type = ? ORDER BY id DESC LIMIT 1",
             [order_number, doc_type],
         )
         invoice_id = rows[0]["id"]
 
-        # Insert all items in a single batch
         item_statements = [
             (
                 """INSERT INTO invoice_items
@@ -254,11 +307,11 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 [
                     invoice_id,
-                    item["item_number"],
-                    item["description"],
-                    item["uom"],
-                    item["quantity"],
-                    item["unit_price"],
+                    item.get("item_number", ""),
+                    item.get("description", ""),
+                    item.get("uom", ""),
+                    item.get("quantity", 0),
+                    item.get("unit_price", 0),
                     parsed.get("supplier", "LPS"),
                 ],
             )
@@ -268,7 +321,6 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
             _turso_batch(item_statements)
 
     else:
-        # ── Local SQLite path ──────────────────────────────────────────────
         with _local_conn() as conn:
             existing = conn.execute(
                 "SELECT id FROM invoices WHERE order_number = ? AND doc_type = ?",
@@ -290,23 +342,22 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
                 ),
             )
             invoice_id = cur.lastrowid
-            rows = [
-                (
-                    invoice_id,
-                    item["item_number"],
-                    item["description"],
-                    item["uom"],
-                    item["quantity"],
-                    item["unit_price"],
-                    parsed.get("supplier", "LPS"),
-                )
-                for item in parsed["items"]
-            ]
             conn.executemany(
                 """INSERT INTO invoice_items
                    (invoice_id, item_number, description, uom, quantity, unit_price, supplier)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                rows,
+                [
+                    (
+                        invoice_id,
+                        item.get("item_number", ""),
+                        item.get("description", ""),
+                        item.get("uom", ""),
+                        item.get("quantity", 0),
+                        item.get("unit_price", 0),
+                        parsed.get("supplier", "LPS"),
+                    )
+                    for item in parsed["items"]
+                ],
             )
 
     cache_clear()
@@ -316,8 +367,7 @@ def save_parsed_document(parsed: dict, filename: str = "") -> int:
 def search_items(query: str, supplier: Optional[str] = None, limit: int = 200) -> list[dict]:
     """
     Full-text search across description and item_number.
-    Returns rows ordered by invoice date DESC (newest price first).
-    Not cached — results must always be fresh.
+    Returns rows ordered by invoice date DESC. Not cached.
     """
     sql = """
         SELECT
@@ -335,7 +385,7 @@ def search_items(query: str, supplier: Optional[str] = None, limit: int = 200) -
             OR ii.item_number LIKE '%' || ? || '%'
         )
     """
-    params = [query, query]
+    params: list = [query, query]
 
     if supplier:
         sql += " AND ii.supplier = ?"
@@ -355,8 +405,7 @@ def search_items(query: str, supplier: Optional[str] = None, limit: int = 200) -
 def get_latest_prices(supplier: Optional[str] = None) -> list[dict]:
     """
     Returns the latest price for every unique description per supplier.
-    Used to populate the catalog for autocomplete / Material List.
-    Cached for 5 minutes; cache is invalidated on save_parsed_document().
+    Cached for 5 minutes.
     """
     cache_key = f"latest_prices:{supplier or 'all'}"
     cached = _cache_get(cache_key)
@@ -381,11 +430,10 @@ def get_latest_prices(supplier: Optional[str] = None) -> list[dict]:
               AND ii2.supplier = ii.supplier
         )
     """
-    params = []
+    params: list = []
     if supplier:
         sql += " AND ii.supplier = ?"
         params.append(supplier)
-
     sql += " ORDER BY ii.description"
 
     if USE_TURSO:
@@ -402,7 +450,7 @@ def get_latest_prices(supplier: Optional[str] = None) -> list[dict]:
 def list_invoices() -> list[dict]:
     """
     Return all imported documents with item counts, newest first.
-    Cached for 2 minutes; cache is invalidated on save_parsed_document().
+    Cached for 2 minutes.
     """
     cache_key = "list_invoices"
     cached = _cache_get(cache_key)

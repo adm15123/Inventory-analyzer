@@ -6,7 +6,8 @@
       "Bash(python -c ' *)",
       "Bash(TURSO_URL=\"libsql://zamora-inventory-alpha7199.aws-us-east-1.turso.io\" TURSO_TOKEN=\"eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzcyMjQyNTEsImlkIjoiMDE5ZGNhZDEtODUwMS03MGU0LTg0M2EtMDJkYTliNTE5Mjg0IiwicmlkIjoiODE4Mjg0ZTAtZDFmYy00NDc0LWE0OWItMjU5OTkxN2YyOTBmIn0.XIwC-3VBE_lRVbYlWAFVZAmKSsoKsnvmAnhqJHbVdiSW5EzqUw_zBtMNlGxsPlOEJAcTjflWg_NsmsTyX5AbDQ\" python migrate_excel_to_turso.py)",
       "Bash(TURSO_URL=\"libsql://zamora-inventory-alpha7199.aws-us-east-1.turso.io\" TURSO_TOKEN=\"eyJhbGciOiJFZERTQSIsInR5cCI6IkpXVCJ9.eyJhIjoicnciLCJpYXQiOjE3NzcyMjQyNTEsImlkIjoiMDE5ZGNhZDEtODUwMS03MGU0LTg0M2EtMDJkYTliNTE5Mjg0IiwicmlkIjoiODE4Mjg0ZTAtZDFmYy00NDc0LWE0OWItMjU5OTkxN2YyOTBmIn0.XIwC-3VBE_lRVbYlWAFVZAmKSsoKsnvmAnhqJHbVdiSW5EzqUw_zBtMNlGxsPlOEJAcTjflWg_NsmsTyX5AbDQ\" PYTHONIOENCODING=utf-8 python migrate_excel_to_turso.py)",
-      "Bash(python -c \"import ZamoraInventoryApp; print\\('App OK'\\)\")"
+      "Bash(python -c \"import ZamoraInventoryApp; print\\('App OK'\\)\")",
+      "Bash(python -c \"import httpx; print\\(httpx.__version__\\)\")"
     ]
   }
 }
