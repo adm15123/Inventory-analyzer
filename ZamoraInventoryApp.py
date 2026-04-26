@@ -28,7 +28,6 @@ from sku_matcher import judge_same_product
 from pdf_parser import parse_pdf
 from db import (
     init_db, save_parsed_document, list_invoices, delete_invoice,
-    search_items, get_latest_prices,
     load_catalog_to_memory, get_catalog_df, refresh_catalog,
 )
 import tempfile
@@ -395,11 +394,17 @@ def index():
         for _root, _dirs, files in os.walk(templates_dir):
             template_count += sum(1 for f in files if f.endswith(".json"))
 
+    _df = get_catalog_df()
+    def _unique_count(code):
+        if _df is None or _df.empty:
+            return 0
+        return int(_df[_df["Supply"] == code]["Description"].nunique())
+
     stats = {
-        "supply1Count": len(get_latest_prices(supplier="BPS")),
-        "supply2Count": len(get_latest_prices(supplier="S2")),
-        "supply3Count": len(get_latest_prices(supplier="LPS")),
-        "supply4Count": len(get_latest_prices(supplier="BOND")),
+        "supply1Count": _unique_count("BPS"),
+        "supply2Count": _unique_count("S2"),
+        "supply3Count": _unique_count("LPS"),
+        "supply4Count": _unique_count("BOND"),
         "templateCount": template_count,
     }
 
@@ -867,11 +872,22 @@ def material_list():
     else:
         product_list = []
 
-    all_catalog = get_latest_prices()  # one round trip, split below
-    supply1_products = [r for r in all_catalog if r.get("Supply") == "BPS"]
-    supply2_products = [r for r in all_catalog if r.get("Supply") == "S2"]
-    supply3_products = [r for r in all_catalog if r.get("Supply") == "LPS"]
-    supply4_products = [r for r in all_catalog if r.get("Supply") == "BOND"]
+    _cat = get_catalog_df()
+    def _catalog_for(code):
+        if _cat is None or _cat.empty:
+            return []
+        sub = _cat[_cat["Supply"] == code]
+        return (
+            sub.sort_values("Date", ascending=False)
+            .drop_duplicates(subset=["Description"], keep="first")
+            .sort_values("Description")
+            .to_dict(orient="records")
+        )
+
+    supply1_products = _catalog_for("BPS")
+    supply2_products = _catalog_for("S2")
+    supply3_products = _catalog_for("LPS")
+    supply4_products = _catalog_for("BOND")
     template_name_arg = request.args.get("template_name", "")
     if not template_name_arg and list_option_lower not in ["underground", "rough", "final", "new"]:
         template_name_arg = list_option
