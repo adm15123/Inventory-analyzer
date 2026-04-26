@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(OPENAI_API_KEY=sk-test python -c \"import ZamoraInventoryApp; print\\('App OK'\\)\")",
+      "Bash(pip install *)"
+    ]
+  }
+}

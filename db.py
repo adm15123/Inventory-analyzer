@@ -18,7 +18,7 @@ import sqlite3
 from typing import Optional
 
 # ── Driver selection ──────────────────────────────────────────────────────────
-TURSO_URL   = os.environ.get("TURSO_URL", "")
+TURSO_URL   = os.environ.get("TURSO_URL", "").replace("libsql://", "https://")
 TURSO_TOKEN = os.environ.get("TURSO_TOKEN", "")
 USE_TURSO   = bool(TURSO_URL)
 
