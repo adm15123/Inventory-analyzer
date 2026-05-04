@@ -1394,6 +1394,20 @@ def estimate_builder():
         for t in ml_raw
     ]
 
+    # Refresh ML totals for any linked rows so edits to a ML propagate automatically
+    for section in content.get("sections", []):
+        for row in section.get("rows", []):
+            if row.get("type") == "material_list" and row.get("material_list_name"):
+                ml_name = row["material_list_name"]
+                ml_folder, ml_tname = _split_template_path(ml_name)
+                current_total = get_material_list_total(
+                    ml_tname, ml_folder,
+                    session.get("email", ""), session.get("role", "user")
+                )
+                if current_total is not None:
+                    row["unit_cost"] = current_total
+                    row["total"]     = current_total
+
     return render_app("estimate_builder", {
         "estimateName": name,
         "content":      content,
@@ -1403,6 +1417,7 @@ def estimate_builder():
         "catalogUrl":   url_for("api_estimate_catalog"),
         "mlTotalUrl":   url_for("api_material_list_total"),
         "mlNames":      ml_names,
+        "mlListUrl":    url_for("material_list"),
     })
 
 

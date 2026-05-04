@@ -2401,6 +2401,7 @@ function EstimateBuilderPage({ data }) {
   const [pdfLoading, setPdfLoading]       = useState(false);
   const [xlsLoading, setXlsLoading]       = useState(false);
   const [mlModal, setMlModal]             = useState(null);   // { sectionIdx, rowIdx }
+  const [mlSearch, setMlSearch]           = useState("");
   const [catalogSuggestions, setCatalogSuggestions] = useState([]);
   const [activeInput, setActiveInput]     = useState(null);   // { si, ri }
   const [popupAnchor, setPopupAnchor]     = useState(null);   // { top, left }
@@ -2691,9 +2692,18 @@ function EstimateBuilderPage({ data }) {
                     {/* DESCRIPTION with autocomplete */}
                     <td className="px-3 py-1.5">
                       {row.type === "material_list" ? (
-                        <div className="flex items-center gap-1">
+                        <div className="flex items-center gap-1 flex-wrap">
                           <span className="inline-block bg-sky-100 text-sky-700 text-xs font-semibold rounded px-1.5 py-0.5">ML</span>
                           <span className="text-sm text-slate-700">{row.description}</span>
+                          {row.material_list_name && (
+                            <a
+                              href={`${data.mlListUrl || "/material_list"}?list=${encodeURIComponent(row.material_list_name)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-sky-500 hover:text-sky-700 text-xs font-bold transition"
+                              title="Open material list in new tab"
+                            >↗</a>
+                          )}
                         </div>
                       ) : (
                         <AutoTextarea
@@ -2761,7 +2771,7 @@ function EstimateBuilderPage({ data }) {
                     <td className="px-3 py-1.5">
                       <div className="flex items-center gap-1">
                         <button
-                          onClick={() => setMlModal({ si, ri })}
+                          onClick={() => { setMlModal({ si, ri }); setMlSearch(""); }}
                           title="Link Material List"
                           className="text-sky-500 hover:text-sky-700 text-xs font-semibold px-1.5 py-1 rounded hover:bg-sky-50 transition"
                         >ML</button>
@@ -2927,32 +2937,52 @@ function EstimateBuilderPage({ data }) {
       )}
 
       {/* Material List link modal */}
-      {mlModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
-            <h2 className="text-base font-semibold text-slate-800">Link a Material List</h2>
-            <p className="text-sm text-slate-500">
-              Select a saved material list. Its grand total (with tax) will be used as the row cost.
-            </p>
-            <div className="max-h-60 overflow-y-auto space-y-1 rounded-lg border border-slate-200 p-2">
-              {(data.mlNames || []).length === 0 ? (
-                <p className="text-sm text-slate-400 text-center py-4">No material lists saved yet.</p>
-              ) : (
-                (data.mlNames || []).map((name) => (
-                  <button
-                    key={name}
-                    onClick={() => linkMaterialList(name)}
-                    className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-sky-50 hover:text-sky-700 transition"
-                  >{name}</button>
-                ))
-              )}
-            </div>
-            <div className="flex justify-end">
-              <button onClick={() => setMlModal(null)} className="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+      {mlModal && (() => {
+        const filtered = (data.mlNames || []).filter((n) =>
+          n.toLowerCase().includes(mlSearch.toLowerCase())
+        );
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+            <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md space-y-4">
+              <h2 className="text-base font-semibold text-slate-800">Link a Material List</h2>
+              <input
+                type="text"
+                value={mlSearch}
+                onChange={(e) => setMlSearch(e.target.value)}
+                placeholder="Search material lists…"
+                autoFocus
+                className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+              />
+              <div className="max-h-64 overflow-y-auto space-y-1 rounded-lg border border-slate-200 p-2">
+                {filtered.length === 0 ? (
+                  <p className="text-sm text-slate-400 text-center py-4">
+                    {(data.mlNames || []).length === 0 ? "No material lists saved yet." : "No matches."}
+                  </p>
+                ) : (
+                  filtered.map((name) => (
+                    <div key={name} className="flex items-center gap-1 rounded-lg hover:bg-sky-50 transition">
+                      <button
+                        onClick={() => linkMaterialList(name)}
+                        className="flex-1 text-left px-3 py-2 text-sm text-slate-700 hover:text-sky-700"
+                      >{name}</button>
+                      <a
+                        href={`${data.mlListUrl || "/material_list"}?list=${encodeURIComponent(name)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2 py-2 text-slate-400 hover:text-sky-600 text-sm font-bold transition"
+                        title="Open in new tab"
+                      >↗</a>
+                    </div>
+                  ))
+                )}
+              </div>
+              <div className="flex justify-end">
+                <button onClick={() => setMlModal(null)} className="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
