@@ -188,15 +188,18 @@ def _ensure_supply_loaded(supply: str):
 
 def default_nav_links() -> list[dict[str, str]]:
     """Return the default navigation links for the React shell."""
-    return [
-        {"label": "Home", "href": url_for("index"), "page": "home"},
-        {"label": "View All", "href": url_for("view_all"), "page": "view_all"},
-        {"label": "Search", "href": url_for("search"), "page": "search"},
-        {"label": "Analyze", "href": url_for("analyze"), "page": "analyze"},
-        {"label": "Material List", "href": url_for("material_list"), "page": "material_list"},
-        {"label": "Templates", "href": url_for("templates_list"), "page": "templates"},
-        {"label": "Upload PDF", "href": url_for("upload_pdf"), "page": "upload_pdf"},
+    links = [
+        {"label": "Home",          "href": url_for("index"),          "page": "home"},
+        {"label": "View All",      "href": url_for("view_all"),        "page": "view_all"},
+        {"label": "Search",        "href": url_for("search"),          "page": "search"},
+        {"label": "Analyze",       "href": url_for("analyze"),         "page": "analyze"},
+        {"label": "Material List", "href": url_for("material_list"),   "page": "material_list"},
+        {"label": "Templates",     "href": url_for("templates_list"),  "page": "templates"},
+        {"label": "Upload PDF",    "href": url_for("upload_pdf"),      "page": "upload_pdf"},
     ]
+    if session.get("role") == "admin":
+        links.append({"label": "⚙ Admin", "href": url_for("admin_users"), "page": "admin"})
+    return links
 
 
 def render_app(
