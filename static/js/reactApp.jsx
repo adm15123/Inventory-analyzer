@@ -2402,6 +2402,7 @@ function EstimateBuilderPage({ data }) {
   const [mlModal, setMlModal]             = useState(null);   // { sectionIdx, rowIdx }
   const [catalogSuggestions, setCatalogSuggestions] = useState([]);
   const [activeInput, setActiveInput]     = useState(null);   // { si, ri }
+  const [popupAnchor, setPopupAnchor]     = useState(null);   // { top, left }
 
   const exportFormRef = useRef(null);
   const exportDataRef = useRef(null);
@@ -2476,6 +2477,7 @@ function EstimateBuilderPage({ data }) {
     });
     setCatalogSuggestions([]);
     setActiveInput(null);
+    setPopupAnchor(null);
   };
 
   // ── link material list ────────────────────────────────────────────
@@ -2681,61 +2683,25 @@ function EstimateBuilderPage({ data }) {
                     </td>
 
                     {/* DESCRIPTION with autocomplete */}
-                    <td className="px-3 py-1.5 relative">
+                    <td className="px-3 py-1.5">
                       {row.type === "material_list" ? (
                         <div className="flex items-center gap-1">
                           <span className="inline-block bg-sky-100 text-sky-700 text-xs font-semibold rounded px-1.5 py-0.5">ML</span>
                           <span className="text-sm text-slate-700">{row.description}</span>
                         </div>
                       ) : (
-                        <>
-                          <AutoTextarea
-                            value={row.description}
-                            onChange={(e) => {
-                              updateRow(si, ri, { description: e.target.value });
-                              fetchCatalog(e.target.value, si, ri);
-                            }}
-                            onBlur={() => setTimeout(() => setCatalogSuggestions([]), 200)}
-                            className={inputClass}
-                            placeholder="Description…"
-                          />
-                          {catalogSuggestions.length > 0 && activeInput?.si === si && activeInput?.ri === ri && (
-                            <div className="absolute z-30 top-full left-0 mt-1 bg-white rounded-xl shadow-2xl ring-1 ring-slate-200" style={{ minWidth: "420px" }}>
-                              <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 bg-slate-50 rounded-t-xl sticky top-0">
-                                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
-                                  {catalogSuggestions.length} suggestion{catalogSuggestions.length !== 1 ? "s" : ""}
-                                </span>
-                                <button onMouseDown={() => setCatalogSuggestions([])} className="text-slate-400 hover:text-slate-600 text-base leading-none">×</button>
-                              </div>
-                              {(() => {
-                                const groups = {};
-                                catalogSuggestions.forEach((item) => {
-                                  const cat = item.category || "Other";
-                                  if (!groups[cat]) groups[cat] = [];
-                                  groups[cat].push(item);
-                                });
-                                return Object.entries(groups).map(([cat, items]) => (
-                                  <div key={cat}>
-                                    <div className="px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white bg-slate-700 sticky top-8">{cat}</div>
-                                    {items.map((item) => (
-                                      <button
-                                        key={item.id}
-                                        onMouseDown={() => applyCatalogItem(si, ri, item)}
-                                        className="w-full text-left px-3 py-2 text-xs hover:bg-sky-50 border-b border-slate-100 last:border-0 transition"
-                                      >
-                                        <div className="font-medium text-slate-800 leading-snug">{item.description}</div>
-                                        <div className="flex flex-wrap gap-x-3 mt-0.5">
-                                          <span className="text-emerald-600 font-semibold">${Number(item.unit_cost || 0).toLocaleString()}</span>
-                                          {item.used_in && <span className="text-sky-600">Used in: {item.used_in}</span>}
-                                        </div>
-                                      </button>
-                                    ))}
-                                  </div>
-                                ));
-                              })()}
-                            </div>
-                          )}
-                        </>
+                        <AutoTextarea
+                          value={row.description}
+                          onChange={(e) => {
+                            updateRow(si, ri, { description: e.target.value });
+                            const rect = e.target.getBoundingClientRect();
+                            setPopupAnchor({ top: rect.bottom + 4, left: rect.left });
+                            fetchCatalog(e.target.value, si, ri);
+                          }}
+                          onBlur={() => setTimeout(() => { setCatalogSuggestions([]); setPopupAnchor(null); }, 200)}
+                          className={inputClass}
+                          placeholder="Description…"
+                        />
                       )}
                     </td>
 
@@ -2833,6 +2799,47 @@ function EstimateBuilderPage({ data }) {
           </div>
         )}
       </div>
+
+      {/* Catalog autocomplete popup — fixed so it escapes all overflow containers */}
+      {catalogSuggestions.length > 0 && activeInput && popupAnchor && (
+        <div
+          style={{ position: "fixed", top: popupAnchor.top, left: popupAnchor.left, minWidth: "420px", zIndex: 9999 }}
+          className="bg-white rounded-xl shadow-2xl ring-1 ring-slate-200"
+        >
+          <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 bg-slate-50 rounded-t-xl">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+              {catalogSuggestions.length} suggestion{catalogSuggestions.length !== 1 ? "s" : ""}
+            </span>
+            <button onMouseDown={() => { setCatalogSuggestions([]); setPopupAnchor(null); }} className="text-slate-400 hover:text-slate-600 text-base leading-none">×</button>
+          </div>
+          {(() => {
+            const groups = {};
+            catalogSuggestions.forEach((item) => {
+              const cat = item.category || "Other";
+              if (!groups[cat]) groups[cat] = [];
+              groups[cat].push(item);
+            });
+            return Object.entries(groups).map(([cat, items]) => (
+              <div key={cat}>
+                <div className="px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white bg-slate-700">{cat}</div>
+                {items.map((item) => (
+                  <button
+                    key={item.id}
+                    onMouseDown={() => applyCatalogItem(activeInput.si, activeInput.ri, item)}
+                    className="w-full text-left px-3 py-2 text-xs hover:bg-sky-50 border-b border-slate-100 last:border-0 transition"
+                  >
+                    <div className="font-medium text-slate-800 leading-snug">{item.description}</div>
+                    <div className="flex flex-wrap gap-x-3 mt-0.5">
+                      <span className="text-emerald-600 font-semibold">${Number(item.unit_cost || 0).toLocaleString()}</span>
+                      {item.used_in && <span className="text-sky-600">Used in: {item.used_in}</span>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            ));
+          })()}
+        </div>
+      )}
 
       {/* Material List link modal */}
       {mlModal && (
