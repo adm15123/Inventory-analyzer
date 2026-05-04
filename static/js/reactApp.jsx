@@ -2476,13 +2476,23 @@ function EstimateBuilderPage({ data }) {
       .catch(() => window.alert("Error fetching material list total."));
   };
 
-  // ── computed grand total ─────────────────────────────────────────
-  const grandTotal = useMemo(
-    () => sections.reduce((sum, s) => sum + s.rows.reduce((rs, r) => rs + (parseFloat(r.total) || 0), 0), 0),
+  // ── computed totals ──────────────────────────────────────────────
+  const plumbingTotal = useMemo(
+    () => sections.filter((s) => !s.is_gas).reduce((sum, s) => sum + s.rows.reduce((rs, r) => rs + (parseFloat(r.total) || 0), 0), 0),
     [sections]
   );
+  const gasTotal = useMemo(
+    () => sections.filter((s) => s.is_gas).reduce((sum, s) => sum + s.rows.reduce((rs, r) => rs + (parseFloat(r.total) || 0), 0), 0),
+    [sections]
+  );
+  const grandTotal = plumbingTotal + gasTotal;
 
-  const buildPayload = () => JSON.stringify({ project_info: projectInfo, sections, grand_total: grandTotal });
+  const buildPayload = () => JSON.stringify({
+    project_info: projectInfo, sections,
+    plumbing_total: parseFloat(plumbingTotal.toFixed(2)),
+    gas_total:      parseFloat(gasTotal.toFixed(2)),
+    grand_total:    parseFloat(grandTotal.toFixed(2)),
+  });
 
   // ── save ─────────────────────────────────────────────────────────
   const handleSave = () => {
@@ -2597,7 +2607,7 @@ function EstimateBuilderPage({ data }) {
       {sections.map((section, si) => (
         <div key={section.id} className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
           {/* Section header */}
-          <div className="flex items-center gap-3 bg-slate-800 px-5 py-3">
+          <div className={classNames("flex items-center gap-3 px-5 py-3", section.is_gas ? "bg-emerald-900" : "bg-slate-800")}>
             <input
               value={section.name}
               onChange={(e) => updateSectionName(si, e.target.value)}
@@ -2756,16 +2766,26 @@ function EstimateBuilderPage({ data }) {
         </div>
       ))}
 
-      {/* Add section + Grand total */}
+      {/* Plumbing Project Total banner (after last non-gas section) */}
+      {sections.some((s) => !s.is_gas) && (
+        <div className="rounded-2xl bg-slate-800 px-6 py-4 text-white shadow flex items-center justify-between">
+          <p className="text-sm font-semibold uppercase tracking-wide text-slate-300">Plumbing Project Total</p>
+          <p className="text-2xl font-bold">${plumbingTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+        </div>
+      )}
+
+      {/* Add section + Gas Total */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <button
           onClick={addSection}
           className="inline-flex items-center gap-1.5 rounded-lg border-2 border-dashed border-slate-300 px-5 py-3 text-sm font-semibold text-slate-500 hover:border-sky-400 hover:text-sky-600 transition"
         >+ Add Section</button>
-        <div className="rounded-2xl bg-slate-800 px-6 py-4 text-white shadow">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Project Total</p>
-          <p className="text-2xl font-bold">${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-        </div>
+        {sections.some((s) => s.is_gas) && (
+          <div className="rounded-2xl bg-emerald-900 px-6 py-4 text-white shadow">
+            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-300">Gas System Total</p>
+            <p className="text-2xl font-bold">${gasTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+          </div>
+        )}
       </div>
 
       {/* Material List link modal */}

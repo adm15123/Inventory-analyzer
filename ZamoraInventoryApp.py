@@ -1141,14 +1141,119 @@ def restore_template_version(version_id):
 
 # ── Estimate helpers & routes ─────────────────────────────────────────────────
 
-DEFAULT_ESTIMATE_SECTIONS = [
-    "Material Take Out",
-    "Water Distribution System",
-    "Drainage System",
-    "A/C System",
-    "Rain Water System",
-    "Extras",
-    "Gas System",
+def _row(qty, desc, unit_cost, comments="", add_comments=""):
+    total = round((qty or 0) * (unit_cost or 0), 2)
+    return {
+        "id": str(uuid.uuid4()), "type": "manual",
+        "qty": qty if qty is not None else "",
+        "description": desc, "unit_cost": unit_cost or 0,
+        "total": total, "comments": comments, "add_comments": add_comments,
+    }
+
+
+_TEMPLATE_SECTIONS = [
+    ("Material Take Out", False, [
+        _row(112, "Residential", 1000, "Waste and water. Drain includes the underground, rough in and final portion of the fixtures. These include material, labor and installation."),
+        _row(None, "Floor drains for the ADA Bathroom (Not in plans)", 900, "Piping, furnish and installation of the FD + Trap primer"),
+        _row(None, "Outdoor shower", 1000, "Water and installation"),
+        _row(6, "Commercial Outlet", 1000, "Waste and water. Drain includes the underground, rough in and final portion of the fixtures. These include material, labor and installation."),
+    ]),
+    ("Water Distribution System", False, [
+        _row(15, "Electrical tank water heater 30 gal", 1000, "Installation, pan drain and relief lines connection"),
+        _row(None, "Electrical tankless water heater", 800, "Installation, relief line"),
+        _row(None, "Hose Bibbs on the roof (standard) with SOV", 800, "Water piping + SOV+HB installation and labor"),
+        _row(1, "Hose bibbs on dumpster room (standard) with SOV", 800, "Water piping + SOV+HB installation and labor"),
+        _row(None, "Hydrant box BBQ area with SOV", 800, "Furnish, install and labor (model # 5509QTSAP SMITH WALL HYDRANT W/SS BOX)(400.00 Each)"),
+        _row(None, "Hydrant box pool area (Below outdoor shower) with SOV", 800, "Furnish, install and labor (model # 5509QTSAP SMITH WALL HYDRANT W/SS BOX)"),
+        _row(None, "Hydrant box for bathrooms", 800, "Furnish, install and labor (model # 5509QTSAP SMITH WALL HYDRANT W/SS BOX)"),
+        _row(14, "Ice makers", 130, "Furnish and install ice maker box", "Fire rated?"),
+        _row(None, "Hammer arrestors", 4000, "Furnish and install"),
+        _row(None, "Mixing valve for lavatories", 0, "Furnish and install"),
+        _row(1, "Pan drain Riser and horizontal Size CPVC", 4000, "Above and below grade to discharge above ground. Material and labor"),
+        _row(1, "Pan Drain Connection", 10, "Connection to the pan drain"),
+        _row(None, "Water distribution inside the unit", 0, "Material and labor"),
+        _row(None, '1-1/4" CPVC Above Ceiling', 30, "Material and labor for the installation of the piping"),
+        _row(200, '1-1/2" CPVC Above Ceiling', 40, "Material and labor for the installation of the piping"),
+        _row(60, '2" CPVC above Ceiling', 50, "Material and labor for the installation of the piping"),
+        _row(None, '2 1/2" CPVC above Ceiling', 51, "Material and labor for the installation of the piping"),
+        _row(None, '3" CPVC Schedule 80 Above Ceiling', 70, "Material and labor for the installation of the piping"),
+        _row(7, 'Water Riser Type 1"', 150, "Material and labor for the installation of the piping"),
+        _row(None, 'Water Riser Type 1-1/4"', 10, "Material and labor for the installation of the piping"),
+        _row(None, 'Water Riser Type 1-1/2"', 0, ""),
+        _row(None, "Pool equipment 1-1/4 water and furnish and install 1-1/4 backflow preventor. With SOV", 2000, ""),
+        _row(None, '3/4 S.O.V for 1 bath units (two per units)', 30, "Bronze or CPVC — decide"),
+        _row(14, '1" S.O.V for 2 bath units (two per units)', 40, "Bronze or CPVC — decide"),
+        _row(None, "SOV for the riser 1-1/2 CPVC SOV", 50, ""),
+        _row(None, "Water submeter", 100, ""),
+        _row(1, "Water service connection", 2000, ""),
+        _row(None, '3" backflow preventor', 6000, ""),
+        _row(None, "Water for the trash shutter", 1500, ""),
+        _row(None, "Booster pump furnish", 35000, ""),
+        _row(None, "Booster pump installation", 20000, ""),
+    ]),
+    ("Drainage System", False, [
+        _row(1, "Sewer and connection", 2000, "Piping / connection / clean outs"),
+        _row(400, '4" PVC Underground', 20, "Material and installation"),
+        _row(None, '6" PVC Underground', 38, "Material and installation"),
+        _row(None, '8" PVC Underground', 48, "Material and installation"),
+        _row(None, 'PVC Stack up 3"', 5, "Riser, hanger, labor etc"),
+        _row(None, 'Relief vent 3"', 5, "Riser, hanger, labor etc"),
+        _row(None, 'Stack up from garage 3"', 5, "Riser, hanger, labor etc"),
+        _row(None, 'Insulation for the san riser 3"', 5, "Material and labor"),
+        _row(None, '4" PVC Underground Hanger', 15, "Teardrop hanger and asphalts"),
+        _row(None, '6" PVC Underground Hanger', 15, "Teardrop hanger and asphalts"),
+        _row(None, '8" PVC Underground Hanger', 15, "Teardrop hanger and asphalts"),
+        _row(1, "Sump pump Installation", 2500, ""),
+        _row(1, "Furnish sump pump", 4000, ""),
+        _row(None, "Hub drain for the sump pump", 1500, ""),
+        _row(None, "FD to the trash room", 1500, ""),
+        _row(None, "Hub drain for the fire pump", 1500, ""),
+        _row(None, "Lint intercept furnish", 2000, ""),
+        _row(None, "Installation of lint intercept", 9000, ""),
+    ]),
+    ("A/C System", False, [
+        _row(14, "Inside the units CPVC", 600, "UNDERGROUND A/C ONLY"),
+        _row(None, '3" Underground line 200x2 missing', 20, "UNDERGROUND A/C ONLY"),
+        _row(None, '2" Riser PVC', 10, "AIR HANDLER CLOSET Branch"),
+        _row(None, '2" Above ground horizontal', 10, "AIR HANDLER CLOSET Branch"),
+        _row(None, "Connection to french drain or Civil", 1000, ""),
+        _row(None, '2" insulation 1/2 thickness', 5, ""),
+        _row(None, '3" PVC Underground Hanger', 15, "Teardrop hanger and asphalts"),
+    ]),
+    ("Rain Water System", False, [
+        _row(None, 'ROOF AREA DRAINS (4")', 700, "Furnish and install (250 each)", "Model: 21504-22-Y Cast iron JOSAM"),
+        _row(None, 'AD (Deck Drain 4")', 800, "Furnish and install", "Per BH princeton"),
+        _row(None, 'Planter Drain 3"', 1500, "Furnish and install"),
+        _row(None, '3" PVC Underground', 0, "Material and installation"),
+        _row(None, '4" PVC Underground', 20, "Material and installation"),
+        _row(None, '6" PVC Underground', 38, "Material and installation"),
+        _row(None, '8" PVC Underground', 48, "Material and installation"),
+        _row(None, "SD Riser roof 45' 27 Riserx 45' (4\")", 20, "Riser, hanger, labor etc"),
+        _row(None, "AD deck drain riser 11 riser x 16' (4\")", 20, "Riser, hanger, labor etc"),
+        _row(None, "Planter drain riser pool deck 4x16' (3\")", 10, "Riser, hanger, labor etc"),
+        _row(None, "Planter drain to civil", 3000, "Riser, hanger, labor etc"),
+        _row(None, "Connection to french drain or Civil", 500, ""),
+        _row(None, '4" Riser insulation (stacks only)', 10, "", "Verify material: fiberglass or armaflex"),
+        _row(None, '4" horizontal ceiling space insulation', 10, "", "Verify material: fiberglass or armaflex"),
+        _row(None, '4" PVC Underground Hanger', 15, "Teardrop hanger and asphalts"),
+        _row(None, '6" PVC Underground Hanger', 15, "Teardrop hanger and asphalts"),
+        _row(None, '8" PVC Underground Hanger', 15, "Teardrop hanger and asphalts"),
+    ]),
+    ("Extras", False, [
+        _row(None, "Backfilling", 4000, ""),
+        _row(1, "Sleeves", 2500, ""),
+        _row(None, "Fixtures handling", 4000, ""),
+        _row(None, "Excavation", 4000, ""),
+        _row(None, "Sand", 3000, ""),
+        _row(None, "Temporary works", 1500, ""),
+    ]),
+    ("Gas System", True, [
+        _row(0, "Gas Outlets", 400, "Propane / Metalic pipe A / Flex B", "Gas not included in plumbing price"),
+        _row(0, "Piping length", 20, "Furnish / installation / meter connection / MP"),
+        _row(0, "Permit", 500, "License"),
+        _row(0, "Extra", 1500, "Extra"),
+        _row(0, "Tank 1000 gal.", 12000, "Furnish and install / concrete slab / no tank fill"),
+    ]),
 ]
 
 
@@ -1164,29 +1269,44 @@ def _estimate_entry(e: dict) -> dict:
         content  = json.loads(e["data"])
         sections = content.get("sections", [])
         row_count = sum(len(s.get("rows", [])) for s in sections)
-        grand_total = content.get("grand_total", 0.0)
+        plumbing_total = content.get("plumbing_total", 0.0)
+        gas_total      = content.get("gas_total", 0.0)
+        grand_total    = content.get("grand_total", plumbing_total)
     except Exception:
-        row_count, grand_total = 0, 0.0
+        row_count, plumbing_total, gas_total, grand_total = 0, 0.0, 0.0, 0.0
     return {
-        "id":          e["id"],
-        "name":        name,
-        "full_name":   full_name,
-        "group":       folder,
-        "owner_email": e.get("owner_email", ""),
-        "mtime":       mtime,
-        "row_count":   row_count,
-        "grand_total": grand_total,
+        "id":             e["id"],
+        "name":           name,
+        "full_name":      full_name,
+        "group":          folder,
+        "owner_email":    e.get("owner_email", ""),
+        "mtime":          mtime,
+        "row_count":      row_count,
+        "plumbing_total": plumbing_total,
+        "gas_total":      gas_total,
+        "grand_total":    grand_total,
     }
 
 
 def _build_empty_estimate():
+    sections = [
+        {"id": str(uuid.uuid4()), "name": name, "is_gas": is_gas, "rows": rows}
+        for name, is_gas, rows in _TEMPLATE_SECTIONS
+    ]
+    plumbing_total = sum(
+        sum(float(r.get("total") or 0) for r in s["rows"])
+        for s in sections if not s["is_gas"]
+    )
+    gas_total = sum(
+        sum(float(r.get("total") or 0) for r in s["rows"])
+        for s in sections if s["is_gas"]
+    )
     return {
-        "project_info": {"name": "", "address": "", "contractor": "", "date": ""},
-        "sections": [
-            {"id": str(uuid.uuid4()), "name": sec, "rows": []}
-            for sec in DEFAULT_ESTIMATE_SECTIONS
-        ],
-        "grand_total": 0.0,
+        "project_info":   {"name": "", "address": "", "contractor": "", "date": ""},
+        "sections":       sections,
+        "plumbing_total": plumbing_total,
+        "gas_total":      gas_total,
+        "grand_total":    plumbing_total + gas_total,
     }
 
 
@@ -1247,15 +1367,22 @@ def save_estimate():
 
     folder, ename = _split_template_path(estimate_name)
 
-    # Keep grand_total up to date
+    # Keep totals up to date
     try:
         content = json.loads(data_json)
-        total = sum(
+        plumbing_total = sum(
             float(r.get("total") or 0)
-            for s in content.get("sections", [])
+            for s in content.get("sections", []) if not s.get("is_gas")
             for r in s.get("rows", [])
         )
-        content["grand_total"] = round(total, 2)
+        gas_total = sum(
+            float(r.get("total") or 0)
+            for s in content.get("sections", []) if s.get("is_gas")
+            for r in s.get("rows", [])
+        )
+        content["plumbing_total"] = round(plumbing_total, 2)
+        content["gas_total"]      = round(gas_total, 2)
+        content["grand_total"]    = round(plumbing_total + gas_total, 2)
         data_json = json.dumps(content)
     except Exception:
         pass
@@ -1343,13 +1470,19 @@ def export_estimate_pdf():
         flash("Invalid estimate data.", "danger")
         return redirect(url_for("estimates_list"))
 
+    all_sections   = content.get("sections", [])
+    plumb_sections = [s for s in all_sections if not s.get("is_gas")]
+    gas_sections   = [s for s in all_sections if s.get("is_gas")]
     css_path = os.path.join(app.root_path, "static", "css", "order_summary.css")
     rendered = render_template(
         "estimate_summary.html",
-        project_info = content.get("project_info", {}),
-        sections     = content.get("sections", []),
-        grand_total  = content.get("grand_total", 0.0),
-        css_link     = f"file://{css_path}",
+        project_info    = content.get("project_info", {}),
+        plumb_sections  = plumb_sections,
+        gas_sections    = gas_sections,
+        plumbing_total  = content.get("plumbing_total", 0.0),
+        gas_total       = content.get("gas_total", 0.0),
+        grand_total     = content.get("grand_total", 0.0),
+        css_link        = f"file://{css_path}",
     )
 
     try:
@@ -1440,25 +1573,23 @@ def export_estimate_excel():
         c.border = border
     r += 1
 
-    for section in sections:
-        # Section name row
+    gas_fill = PatternFill("solid", fgColor="1A4731")
+
+    def _write_section(ws, section, r, section_fill, alt_fill, border, bold_white, bold_dark, subtotal_fill):
         ws.merge_cells(f"A{r}:F{r}")
         c = ws.cell(r, 1, section.get("name", "").upper())
         c.font = bold_white
         c.fill = section_fill
         c.alignment = Alignment(horizontal="left")
         r += 1
-
         subtotal = 0.0
         for i, row in enumerate(section.get("rows", [])):
             fill = alt_fill if i % 2 == 0 else PatternFill()
-            row_type = row.get("type", "manual")
             desc = row.get("description", "")
-            if row_type == "material_list":
+            if row.get("type") == "material_list":
                 desc = f"[ML] {desc}"
-
             cells_data = [
-                row.get("qty") or "",
+                row.get("qty") if row.get("qty") != "" else "",
                 desc,
                 row.get("unit_cost") or 0,
                 row.get("total") or 0,
@@ -1475,8 +1606,6 @@ def export_estimate_excel():
                     c.alignment = Alignment(wrap_text=True)
             subtotal += float(row.get("total") or 0)
             r += 1
-
-        # Section subtotal
         ws.merge_cells(f"A{r}:C{r}")
         ws.cell(r, 1, "Subtotal").font = bold_dark
         ws.cell(r, 1).fill = subtotal_fill
@@ -1486,16 +1615,39 @@ def export_estimate_excel():
         c.fill = subtotal_fill
         c.number_format = '"$"#,##0.00'
         r += 1
+        return r
 
-    # Grand total
+    plumb_sections = [s for s in sections if not s.get("is_gas")]
+    gas_sections   = [s for s in sections if s.get("is_gas")]
+
+    for section in plumb_sections:
+        r = _write_section(ws, section, r, section_fill, alt_fill, border, bold_white, bold_dark, subtotal_fill)
+
+    # Plumbing Project Total
     r += 1
     ws.merge_cells(f"A{r}:C{r}")
     ws.cell(r, 1, "PLUMBING PROJECT TOTAL").font = Font(bold=True, size=12, color="FFFFFF")
     ws.cell(r, 1).fill = header_fill
     ws.cell(r, 1).alignment = Alignment(horizontal="right")
-    c = ws.cell(r, 4, content.get("grand_total", 0.0))
+    c = ws.cell(r, 4, content.get("plumbing_total", 0.0))
     c.font = Font(bold=True, size=12, color="FFFFFF")
     c.fill = header_fill
+    c.number_format = '"$"#,##0.00'
+    r += 2
+
+    # Gas System sections
+    for section in gas_sections:
+        r = _write_section(ws, section, r, gas_fill, alt_fill, border, bold_white, bold_dark, subtotal_fill)
+
+    # Gas Total
+    r += 1
+    ws.merge_cells(f"A{r}:C{r}")
+    ws.cell(r, 1, "GAS SYSTEM TOTAL").font = Font(bold=True, size=12, color="FFFFFF")
+    ws.cell(r, 1).fill = gas_fill
+    ws.cell(r, 1).alignment = Alignment(horizontal="right")
+    c = ws.cell(r, 4, content.get("gas_total", 0.0))
+    c.font = Font(bold=True, size=12, color="FFFFFF")
+    c.fill = gas_fill
     c.number_format = '"$"#,##0.00'
 
     buf = io.BytesIO()
