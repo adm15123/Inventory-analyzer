@@ -1533,6 +1533,7 @@ def export_estimate_pdf():
         plumbing_total  = content.get("plumbing_total", 0.0),
         gas_total       = content.get("gas_total", 0.0),
         grand_total     = content.get("grand_total", 0.0),
+        bids            = content.get("bids", []),
         css_link        = f"file://{css_path}",
     )
 
@@ -1700,6 +1701,36 @@ def export_estimate_excel():
     c.font = Font(bold=True, size=12, color="FFFFFF")
     c.fill = gas_fill
     c.number_format = '"$"#,##0.00'
+
+    # Bids section
+    bids = content.get("bids", [])
+    r += 2
+    bids_header_fill = PatternFill("solid", fgColor="374151")
+    bids_col_fill    = PatternFill("solid", fgColor="4B5563")
+    ws.merge_cells(f"A{r}:F{r}")
+    c = ws.cell(r, 1, "BIDS")
+    c.font = Font(bold=True, size=12, color="FFFFFF")
+    c.fill = bids_header_fill
+    c.alignment = Alignment(horizontal="center")
+    r += 1
+    for col, label in [(1, "BID #"), (2, "AMOUNT ($)"), (3, "COMMENTS")]:
+        c = ws.cell(r, col, label)
+        c.font = bold_white
+        c.fill = bids_col_fill
+        c.alignment = Alignment(horizontal="center")
+        c.border = border
+    ws.merge_cells(f"C{r}:F{r}")
+    r += 1
+    for i, bid in enumerate(bids):
+        fill = alt_fill if i % 2 == 0 else PatternFill()
+        c = ws.cell(r, 1, bid.get("bid_num", ""))
+        c.fill = fill; c.border = border
+        c = ws.cell(r, 2, float(bid.get("amount") or 0))
+        c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
+        ws.merge_cells(f"C{r}:F{r}")
+        c = ws.cell(r, 3, bid.get("comments", ""))
+        c.fill = fill; c.border = border; c.alignment = Alignment(wrap_text=True)
+        r += 1
 
     buf = io.BytesIO()
     wb.save(buf)

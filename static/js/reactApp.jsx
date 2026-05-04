@@ -2395,6 +2395,7 @@ function EstimateBuilderPage({ data }) {
   const [estimateFolder, setEstimateFolder] = useState("");
   const [projectInfo, setProjectInfo]     = useState(data.content?.project_info || { name: "", address: "", contractor: "", date: "" });
   const [sections, setSections]           = useState(data.content?.sections || []);
+  const [bids, setBids]                   = useState(data.content?.bids || []);
   const [saving, setSaving]               = useState(false);
   const [saveOk, setSaveOk]               = useState(false);
   const [pdfLoading, setPdfLoading]       = useState(false);
@@ -2449,6 +2450,11 @@ function EstimateBuilderPage({ data }) {
       return { ...s, rows };
     }));
   };
+
+  // ── bid helpers ──────────────────────────────────────────────────
+  const addBid    = () => setBids((b) => [...b, { id: crypto.randomUUID(), bid_num: "", amount: "", comments: "" }]);
+  const removeBid = (i) => setBids((b) => b.filter((_, j) => j !== i));
+  const updateBid = (i, patch) => setBids((b) => b.map((bid, j) => j === i ? { ...bid, ...patch } : bid));
 
   // ── catalog autocomplete (debounced fetch as user types) ─────────
   const fetchCatalog = useCallback(
@@ -2515,7 +2521,7 @@ function EstimateBuilderPage({ data }) {
   const grandTotal = plumbingTotal + gasTotal;
 
   const buildPayload = () => JSON.stringify({
-    project_info: projectInfo, sections,
+    project_info: projectInfo, sections, bids,
     plumbing_total: parseFloat(plumbingTotal.toFixed(2)),
     gas_total:      parseFloat(gasTotal.toFixed(2)),
     grand_total:    parseFloat(grandTotal.toFixed(2)),
@@ -2805,6 +2811,70 @@ function EstimateBuilderPage({ data }) {
             <p className="text-2xl font-bold">${gasTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
           </div>
         )}
+      </div>
+
+      {/* Bids table */}
+      <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div className="flex items-center justify-between px-5 py-3 bg-slate-700 rounded-t-2xl">
+          <span className="text-white font-semibold text-sm uppercase tracking-wide">Bids</span>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-200">
+                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-36">BID #</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-40">AMOUNT ($)</th>
+                <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">COMMENTS</th>
+                <th className="px-3 py-2 w-10"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {bids.map((bid, i) => (
+                <tr key={bid.id} className={i % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                  <td className="px-3 py-1.5">
+                    <input
+                      type="text"
+                      value={bid.bid_num}
+                      onChange={(e) => updateBid(i, { bid_num: e.target.value })}
+                      className={inputClass}
+                      placeholder="Bid #…"
+                    />
+                  </td>
+                  <td className="px-3 py-1.5">
+                    <input
+                      type="number" min="0" step="0.01"
+                      value={bid.amount}
+                      onChange={(e) => updateBid(i, { amount: e.target.value })}
+                      className={inputClass}
+                      placeholder="0.00"
+                    />
+                  </td>
+                  <td className="px-3 py-1.5">
+                    <AutoTextarea
+                      value={bid.comments}
+                      onChange={(e) => updateBid(i, { comments: e.target.value })}
+                      className={inputClass}
+                      placeholder="Comments…"
+                    />
+                  </td>
+                  <td className="px-3 py-1.5 text-center">
+                    <button
+                      onClick={() => removeBid(i)}
+                      className="text-slate-400 hover:text-rose-500 text-lg leading-none transition"
+                      title="Remove bid"
+                    >×</button>
+                  </td>
+                </tr>
+              ))}
+              {bids.length === 0 && (
+                <tr><td colSpan="4" className="px-3 py-4 text-center text-sm text-slate-400">No bids yet — click + Add Bid below.</td></tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+        <div className="px-5 py-3 border-t border-slate-100">
+          <button onClick={addBid} className="text-sm text-sky-600 font-semibold hover:text-sky-800 transition">+ Add Bid</button>
+        </div>
       </div>
 
       {/* Catalog autocomplete popup — fixed so it escapes all overflow containers */}
