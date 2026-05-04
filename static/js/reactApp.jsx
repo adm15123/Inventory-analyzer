@@ -2630,9 +2630,9 @@ function EstimateBuilderPage({ data }) {
 
       {/* Sections */}
       {sections.map((section, si) => (
-        <div key={section.id} className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
+        <div key={section.id} className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
           {/* Section header */}
-          <div className={classNames("flex items-center gap-3 px-5 py-3", section.is_gas ? "bg-emerald-900" : "bg-slate-800")}>
+          <div className={classNames("flex items-center gap-3 px-5 py-3 rounded-t-2xl", section.is_gas ? "bg-emerald-900" : "bg-slate-800")}>
             <input
               value={section.name}
               onChange={(e) => updateSectionName(si, e.target.value)}
