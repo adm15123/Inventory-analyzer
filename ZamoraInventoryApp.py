@@ -36,6 +36,10 @@ from db import (
     save_template_db, get_template_db, list_templates_db,
     delete_template_db, rename_template_db, duplicate_template_db,
     get_template_versions_db, restore_template_version_db, count_templates_db,
+    save_estimate_db, get_estimate_db, list_estimates_db,
+    delete_estimate_db, duplicate_estimate_db,
+    search_estimate_catalog, upsert_estimate_catalog,
+    get_material_list_total,
 )
 import tempfile
 
@@ -195,6 +199,7 @@ def default_nav_links() -> list[dict[str, str]]:
         {"label": "Analyze",       "href": url_for("analyze"),         "page": "analyze"},
         {"label": "Material List", "href": url_for("material_list"),   "page": "material_list"},
         {"label": "Templates",     "href": url_for("templates_list"),  "page": "templates"},
+        {"label": "Estimates",     "href": url_for("estimates_list"),  "page": "estimates"},
         {"label": "Upload PDF",    "href": url_for("upload_pdf"),      "page": "upload_pdf"},
     ]
     if session.get("role") == "admin":
@@ -1132,6 +1137,379 @@ def restore_template_version(version_id):
     else:
         flash("Restore failed: version not found or access denied.", "danger")
     return redirect(request.referrer or url_for("templates_list"))
+
+
+# ── Estimate helpers & routes ─────────────────────────────────────────────────
+
+DEFAULT_ESTIMATE_SECTIONS = [
+    "Material Take Out",
+    "Water Distribution System",
+    "Drainage System",
+    "A/C System",
+    "Rain Water System",
+    "Extras",
+    "Gas System",
+]
+
+
+def _estimate_entry(e: dict) -> dict:
+    folder    = e.get("folder", "")
+    name      = e["name"]
+    full_name = f"{folder}/{name}" if folder else name
+    try:
+        mtime = datetime.strptime(e["updated_at"], "%Y-%m-%d %H:%M:%S").timestamp()
+    except Exception:
+        mtime = 0.0
+    try:
+        content  = json.loads(e["data"])
+        sections = content.get("sections", [])
+        row_count = sum(len(s.get("rows", [])) for s in sections)
+        grand_total = content.get("grand_total", 0.0)
+    except Exception:
+        row_count, grand_total = 0, 0.0
+    return {
+        "id":          e["id"],
+        "name":        name,
+        "full_name":   full_name,
+        "group":       folder,
+        "owner_email": e.get("owner_email", ""),
+        "mtime":       mtime,
+        "row_count":   row_count,
+        "grand_total": grand_total,
+    }
+
+
+def _build_empty_estimate():
+    return {
+        "project_info": {"name": "", "address": "", "contractor": "", "date": ""},
+        "sections": [
+            {"id": str(uuid.uuid4()), "name": sec, "rows": []}
+            for sec in DEFAULT_ESTIMATE_SECTIONS
+        ],
+        "grand_total": 0.0,
+    }
+
+
+@app.route("/estimates")
+@login_required
+def estimates_list():
+    raw = list_estimates_db(session.get("email", ""), session.get("role", "user"))
+    entries = [_estimate_entry(e) for e in raw]
+    return render_app("estimates", {
+        "estimates":  entries,
+        "newUrl":     url_for("estimate_builder"),
+        "deleteUrl":  "/delete_estimate/",
+        "duplicateUrl": url_for("api_duplicate_estimate"),
+    })
+
+
+@app.route("/estimate")
+@login_required
+def estimate_builder():
+    name = request.args.get("name", "").strip()
+    if name:
+        folder, ename = _split_template_path(name)
+        e = get_estimate_db(ename, folder, session.get("email", ""), session.get("role", "user"))
+        if e:
+            content = json.loads(e["data"])
+        else:
+            flash("Estimate not found.", "warning")
+            content = _build_empty_estimate()
+    else:
+        content = _build_empty_estimate()
+
+    # Attach available material list names for the link-ML modal
+    ml_raw = list_templates_db(session.get("email", ""), session.get("role", "user"))
+    ml_names = [
+        (f"{t['folder']}/{t['name']}" if t.get("folder") else t["name"])
+        for t in ml_raw
+    ]
+
+    return render_app("estimate_builder", {
+        "estimateName": name,
+        "content":      content,
+        "saveUrl":      url_for("save_estimate"),
+        "exportPdfUrl": url_for("export_estimate_pdf"),
+        "exportXlsUrl": url_for("export_estimate_excel"),
+        "catalogUrl":   url_for("api_estimate_catalog"),
+        "mlTotalUrl":   url_for("api_material_list_total"),
+        "mlNames":      ml_names,
+    })
+
+
+@app.route("/save_estimate", methods=["POST"])
+@login_required
+def save_estimate():
+    estimate_name = request.form.get("estimate_name", "").strip()
+    data_json     = request.form.get("estimate_data", "")
+    if not estimate_name or not data_json:
+        return jsonify({"ok": False, "error": "Missing name or data"}), 400
+
+    folder, ename = _split_template_path(estimate_name)
+
+    # Keep grand_total up to date
+    try:
+        content = json.loads(data_json)
+        total = sum(
+            float(r.get("total") or 0)
+            for s in content.get("sections", [])
+            for r in s.get("rows", [])
+        )
+        content["grand_total"] = round(total, 2)
+        data_json = json.dumps(content)
+    except Exception:
+        pass
+
+    # Auto-save catalog entries for manual rows
+    try:
+        for section in content.get("sections", []):
+            for row in section.get("rows", []):
+                if row.get("type") == "manual" and row.get("description", "").strip():
+                    upsert_estimate_catalog(
+                        description  = row["description"].strip(),
+                        unit_cost    = float(row.get("unit_cost") or 0),
+                        comments     = row.get("comments", ""),
+                        add_comments = row.get("add_comments", ""),
+                        category     = section.get("name", ""),
+                    )
+    except Exception:
+        pass
+
+    tid = save_estimate_db(ename, folder, session["email"], session.get("role", "user"), data_json)
+    if tid is None:
+        return jsonify({"ok": False, "error": "Access denied"}), 403
+    return jsonify({"ok": True, "id": tid})
+
+
+@app.route("/delete_estimate/<path:name>", methods=["POST"])
+@login_required
+def delete_estimate(name):
+    folder, ename = _split_template_path(name)
+    ok = delete_estimate_db(ename, folder, session["email"], session.get("role", "user"))
+    if ok:
+        flash("Estimate deleted.", "success")
+    else:
+        flash("Delete failed.", "danger")
+    return redirect(url_for("estimates_list"))
+
+
+@app.route("/api/duplicate_estimate", methods=["POST"])
+@login_required
+def api_duplicate_estimate():
+    src  = request.form.get("src_name", "").strip()
+    dst  = request.form.get("dst_name", "").strip()
+    if not src or not dst:
+        flash("Source and destination names required.", "danger")
+        return redirect(url_for("estimates_list"))
+    sf, sn = _split_template_path(src)
+    df, dn = _split_template_path(dst)
+    ok = duplicate_estimate_db(sn, sf, dn, df, session["email"], session.get("role", "user"))
+    if ok:
+        flash(f"Estimate duplicated as '{dst}'.", "success")
+    else:
+        flash("Duplicate failed: destination already exists or access denied.", "danger")
+    return redirect(url_for("estimates_list"))
+
+
+@app.route("/api/estimate_catalog")
+@login_required
+def api_estimate_catalog():
+    q = request.args.get("q", "").strip()
+    results = search_estimate_catalog(q, limit=20) if q else []
+    return jsonify(results)
+
+
+@app.route("/api/material_list_total")
+@login_required
+def api_material_list_total():
+    name = request.args.get("name", "").strip()
+    if not name:
+        return jsonify({"ok": False}), 400
+    folder, tname = _split_template_path(name)
+    total = get_material_list_total(tname, folder, session.get("email", ""), session.get("role", "user"))
+    if total is None:
+        return jsonify({"ok": False, "error": "Not found"}), 404
+    return jsonify({"ok": True, "total": total})
+
+
+@app.route("/estimate/export_pdf", methods=["POST"])
+@login_required
+def export_estimate_pdf():
+    import pdfkit
+    data_json = request.form.get("estimate_data", "")
+    try:
+        content = json.loads(data_json)
+    except Exception:
+        flash("Invalid estimate data.", "danger")
+        return redirect(url_for("estimates_list"))
+
+    css_path = os.path.join(app.root_path, "static", "css", "order_summary.css")
+    rendered = render_template(
+        "estimate_summary.html",
+        project_info = content.get("project_info", {}),
+        sections     = content.get("sections", []),
+        grand_total  = content.get("grand_total", 0.0),
+        css_link     = f"file://{css_path}",
+    )
+
+    try:
+        pdf_bytes = pdfkit.from_string(rendered, False,
+                                       options={"enable-local-file-access": None},
+                                       css=css_path)
+    except Exception as e:
+        app.logger.error(f"pdfkit error: {e}")
+        flash("PDF generation failed. Is wkhtmltopdf installed?", "danger")
+        return redirect(url_for("estimates_list"))
+
+    proj_name = content.get("project_info", {}).get("name", "estimate")
+    safe_name = "".join(c for c in proj_name if c.isalnum() or c in " _-").strip() or "estimate"
+    return send_file(
+        io.BytesIO(pdf_bytes),
+        mimetype="application/pdf",
+        as_attachment=True,
+        download_name=f"{safe_name}.pdf",
+    )
+
+
+@app.route("/estimate/export_excel", methods=["POST"])
+@login_required
+def export_estimate_excel():
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+    from openpyxl.utils import get_column_letter
+
+    data_json = request.form.get("estimate_data", "")
+    try:
+        content = json.loads(data_json)
+    except Exception:
+        flash("Invalid estimate data.", "danger")
+        return redirect(url_for("estimates_list"))
+
+    pi = content.get("project_info", {})
+    sections = content.get("sections", [])
+
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Estimate"
+
+    # Column widths
+    ws.column_dimensions["A"].width = 8
+    ws.column_dimensions["B"].width = 45
+    ws.column_dimensions["C"].width = 16
+    ws.column_dimensions["D"].width = 16
+    ws.column_dimensions["E"].width = 35
+    ws.column_dimensions["F"].width = 35
+
+    header_fill   = PatternFill("solid", fgColor="1E3A5F")
+    section_fill  = PatternFill("solid", fgColor="2B6CB0")
+    subtotal_fill = PatternFill("solid", fgColor="EBF4FF")
+    alt_fill      = PatternFill("solid", fgColor="F7FAFC")
+    bold_white    = Font(bold=True, color="FFFFFF")
+    bold_dark     = Font(bold=True, color="1E3A5F")
+    thin = Side(style="thin", color="CBD5E0")
+    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+
+    # Project info header
+    ws.merge_cells("A1:F1")
+    ws["A1"] = "Zamora Plumbing Corp — Estimate"
+    ws["A1"].font = Font(bold=True, size=14, color="FFFFFF")
+    ws["A1"].fill = header_fill
+    ws["A1"].alignment = Alignment(horizontal="center")
+
+    info_rows = [
+        ("Project", pi.get("name", "")),
+        ("Address", pi.get("address", "")),
+        ("Contractor", pi.get("contractor", "")),
+        ("Date", pi.get("date", "")),
+    ]
+    r = 2
+    for label, val in info_rows:
+        ws.cell(r, 1, label).font = Font(bold=True)
+        ws.cell(r, 2, val)
+        r += 1
+
+    r += 1  # blank row
+
+    # Column headers
+    headers = ["QTY", "SYSTEM / DESCRIPTION", "UNIT OUTLET COST", "TOTAL COST", "COMMENTS", "ADDITIONAL COMMENTS"]
+    for col, h in enumerate(headers, 1):
+        c = ws.cell(r, col, h)
+        c.font = bold_white
+        c.fill = header_fill
+        c.alignment = Alignment(horizontal="center")
+        c.border = border
+    r += 1
+
+    for section in sections:
+        # Section name row
+        ws.merge_cells(f"A{r}:F{r}")
+        c = ws.cell(r, 1, section.get("name", "").upper())
+        c.font = bold_white
+        c.fill = section_fill
+        c.alignment = Alignment(horizontal="left")
+        r += 1
+
+        subtotal = 0.0
+        for i, row in enumerate(section.get("rows", [])):
+            fill = alt_fill if i % 2 == 0 else PatternFill()
+            row_type = row.get("type", "manual")
+            desc = row.get("description", "")
+            if row_type == "material_list":
+                desc = f"[ML] {desc}"
+
+            cells_data = [
+                row.get("qty") or "",
+                desc,
+                row.get("unit_cost") or 0,
+                row.get("total") or 0,
+                row.get("comments", ""),
+                row.get("add_comments", ""),
+            ]
+            for col, val in enumerate(cells_data, 1):
+                c = ws.cell(r, col, val)
+                c.fill = fill
+                c.border = border
+                if col in (3, 4) and isinstance(val, (int, float)):
+                    c.number_format = '"$"#,##0.00'
+                if col == 2:
+                    c.alignment = Alignment(wrap_text=True)
+            subtotal += float(row.get("total") or 0)
+            r += 1
+
+        # Section subtotal
+        ws.merge_cells(f"A{r}:C{r}")
+        ws.cell(r, 1, "Subtotal").font = bold_dark
+        ws.cell(r, 1).fill = subtotal_fill
+        ws.cell(r, 1).alignment = Alignment(horizontal="right")
+        c = ws.cell(r, 4, subtotal)
+        c.font = bold_dark
+        c.fill = subtotal_fill
+        c.number_format = '"$"#,##0.00'
+        r += 1
+
+    # Grand total
+    r += 1
+    ws.merge_cells(f"A{r}:C{r}")
+    ws.cell(r, 1, "PLUMBING PROJECT TOTAL").font = Font(bold=True, size=12, color="FFFFFF")
+    ws.cell(r, 1).fill = header_fill
+    ws.cell(r, 1).alignment = Alignment(horizontal="right")
+    c = ws.cell(r, 4, content.get("grand_total", 0.0))
+    c.font = Font(bold=True, size=12, color="FFFFFF")
+    c.fill = header_fill
+    c.number_format = '"$"#,##0.00'
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+
+    proj_name = pi.get("name", "estimate")
+    safe_name = "".join(c for c in proj_name if c.isalnum() or c in " _-").strip() or "estimate"
+    return send_file(
+        buf,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        as_attachment=True,
+        download_name=f"{safe_name}.xlsx",
+    )
 
 
 # -------------------------------

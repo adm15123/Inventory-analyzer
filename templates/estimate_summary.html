@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Estimate — Zamora Plumbing Corp</title>
+  <link rel="stylesheet" href="{{ css_link }}">
+  <style>
+    .section-header {
+      background: #1e3a5f;
+      color: #fff;
+      font-weight: 700;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      padding: 5px 8px;
+      margin-top: 12px;
+    }
+    .section-subtotal {
+      text-align: right;
+      font-weight: 600;
+      font-size: 11px;
+      padding: 4px 8px;
+      background: #ebf4ff;
+      border-top: 1px solid #bee3f8;
+    }
+    .col-qty   { width: 7%;  text-align: center; }
+    .col-desc  { width: 30%; }
+    .col-cost  { width: 13%; text-align: right; }
+    .col-total { width: 13%; text-align: right; }
+    .col-cmt   { width: 19%; font-size: 9px; color: #555; }
+    .col-add   { width: 18%; font-size: 9px; color: #555; }
+    .grand-total-row td {
+      background: #1e3a5f !important;
+      color: #fff !important;
+      font-weight: 700;
+      font-size: 12px;
+      padding: 7px 8px;
+    }
+    .ml-badge {
+      display: inline-block;
+      background: #ebf4ff;
+      color: #2b6cb0;
+      font-size: 8px;
+      border-radius: 3px;
+      padding: 1px 4px;
+      margin-right: 3px;
+      font-weight: 600;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="page-header">
+    <div class="page-header-left">
+      <span class="company-name-small">Zamora Plumbing Corp</span>
+      <span class="header-address">{{ project_info.get('address', '') }}</span>
+    </div>
+    <div class="page-header-right">
+      <span class="header-label">Estimate</span>
+    </div>
+  </div>
+
+  <div class="page-footer">
+    <span>Zamora Plumbing Corp &mdash; Confidential</span>
+    <span class="page-num">Page <span class="page"></span> of <span class="topage"></span></span>
+  </div>
+
+  <div class="first-page-header">
+    <div class="brand-block">
+      <div class="brand-logo-area">
+        <div class="brand-logo-circle">ZP</div>
+      </div>
+      <div class="brand-info">
+        <h1 class="company-name">Zamora Plumbing Corp</h1>
+        <p class="company-tagline">Licensed Plumbing Contractor &mdash; South Florida</p>
+      </div>
+    </div>
+    <div class="header-divider"></div>
+    <div class="project-info-grid">
+      <div class="project-info-block">
+        <p class="info-label">PROJECT</p>
+        <p class="info-value">{{ project_info.get('name') or '—' }}</p>
+      </div>
+      <div class="project-info-block">
+        <p class="info-label">CONTRACTOR</p>
+        <p class="info-value">{{ project_info.get('contractor') or '—' }}</p>
+      </div>
+      <div class="project-info-block">
+        <p class="info-label">JOB ADDRESS</p>
+        <p class="info-value">{{ project_info.get('address') or '—' }}</p>
+      </div>
+      <div class="project-info-block">
+        <p class="info-label">DATE</p>
+        <p class="info-value">{{ project_info.get('date') or '—' }}</p>
+      </div>
+    </div>
+  </div>
+
+  <table class="items-table" style="table-layout:fixed; width:100%;">
+    <thead>
+      <tr>
+        <th class="col-qty">QTY</th>
+        <th class="col-desc">SYSTEM / DESCRIPTION</th>
+        <th class="col-cost">UNIT OUTLET COST</th>
+        <th class="col-total">TOTAL COST</th>
+        <th class="col-cmt">COMMENTS</th>
+        <th class="col-add">ADD. COMMENTS</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% set ns = namespace(row_num=0, grand=0) %}
+      {% for section in sections %}
+        <tr>
+          <td colspan="6" class="section-header">{{ section.name }}</td>
+        </tr>
+        {% set sec_ns = namespace(subtotal=0) %}
+        {% for row in section.rows %}
+          {% set ns.row_num = ns.row_num + 1 %}
+          {% set row_total = (row.total or 0)|float %}
+          {% set sec_ns.subtotal = sec_ns.subtotal + row_total %}
+          <tr class="{{ 'row-even' if ns.row_num % 2 == 0 else 'row-odd' }}">
+            <td class="col-qty cell-center">{{ row.qty if row.qty else '—' }}</td>
+            <td class="col-desc">
+              {% if row.type == 'material_list' %}
+                <span class="ml-badge">ML</span>
+              {% endif %}
+              {{ row.description or '—' }}
+            </td>
+            <td class="col-cost cell-right">
+              {% if row.unit_cost %}${{ "%.2f"|format(row.unit_cost|float) }}{% else %}—{% endif %}
+            </td>
+            <td class="col-total cell-right">
+              {% if row_total > 0 %}${{ "%.2f"|format(row_total) }}{% else %}—{% endif %}
+            </td>
+            <td class="col-cmt">{{ row.comments or '' }}</td>
+            <td class="col-add">{{ row.add_comments or '' }}</td>
+          </tr>
+        {% endfor %}
+        {% set ns.grand = ns.grand + sec_ns.subtotal %}
+        <tr>
+          <td colspan="3" style="text-align:right; font-weight:600; font-size:10px; padding:4px 8px; background:#ebf4ff;">
+            {{ section.name }} Subtotal
+          </td>
+          <td colspan="3" class="section-subtotal">
+            ${{ "%.2f"|format(sec_ns.subtotal) }}
+          </td>
+        </tr>
+      {% endfor %}
+
+      <tr class="grand-total-row">
+        <td colspan="3" style="text-align:right;">PLUMBING PROJECT TOTAL</td>
+        <td colspan="3">${{ "%.2f"|format(grand_total|float) }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="doc-footer-note">
+    <p>This estimate was generated by Zamora Plumbing Corp's estimating system.</p>
+    <p>All figures are estimates and subject to final engineering review.</p>
+  </div>
+
+</body>
+</html>

@@ -2277,6 +2277,529 @@ function LoginPage({ data }) {
 }
 
 // ================================================================
+// EstimatesPage — list of saved estimates
+// ================================================================
+function EstimatesPage({ data }) {
+  const [estimates, setEstimates] = useState(data.estimates || []);
+  const [dupSrc, setDupSrc] = useState(null);
+  const [dupName, setDupName] = useState("");
+
+  const handleDelete = (fullName) => {
+    if (!window.confirm(`Delete estimate "${fullName}"?`)) return;
+    fetch(`/delete_estimate/${encodeURIComponent(fullName)}`, { method: "POST" })
+      .then(() => setEstimates((c) => c.filter((e) => e.full_name !== fullName)))
+      .catch(() => window.alert("Delete failed."));
+  };
+
+  const handleDuplicate = () => {
+    if (!dupName.trim()) return;
+    const payload = new URLSearchParams({ src_name: dupSrc, dst_name: dupName.trim() });
+    fetch("/api/duplicate_estimate", { method: "POST", body: payload })
+      .then(() => window.location.reload())
+      .catch(() => window.alert("Duplicate failed."));
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between flex-wrap gap-3">
+        <h1 className="text-2xl font-semibold text-slate-900">Estimates</h1>
+        <Button as="a" href={data.newUrl}>+ New Estimate</Button>
+      </div>
+
+      {estimates.length === 0 ? (
+        <div className="rounded-2xl bg-white p-10 text-center shadow-sm ring-1 ring-slate-200">
+          <p className="text-slate-500">No estimates yet.</p>
+          <Button as="a" href={data.newUrl} className="mt-4">Create your first estimate</Button>
+        </div>
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {estimates.map((est) => (
+            <div key={est.id} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 space-y-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <p className="font-semibold text-slate-800 text-sm">{est.name}</p>
+                  {est.group && <p className="text-xs text-slate-400">{est.group}</p>}
+                </div>
+                <Badge tone="info">${Number(est.grand_total || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Badge>
+              </div>
+              <p className="text-xs text-slate-500">{est.row_count} line item{est.row_count !== 1 ? "s" : ""}</p>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <Button as="a" href={`/estimate?name=${encodeURIComponent(est.full_name)}`} variant="secondary" className="text-xs px-3 py-1.5">Edit</Button>
+                <button
+                  onClick={() => { setDupSrc(est.full_name); setDupName(`${est.name} Copy`); }}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 transition"
+                >Duplicate</button>
+                <button
+                  onClick={() => handleDelete(est.full_name)}
+                  className="text-xs px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 transition"
+                >Delete</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Duplicate modal */}
+      {dupSrc && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+            <h2 className="text-base font-semibold text-slate-800">Duplicate Estimate</h2>
+            <p className="text-sm text-slate-500">New name for the copy of <strong>{dupSrc}</strong>:</p>
+            <input
+              value={dupName}
+              onChange={(e) => setDupName(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+              autoFocus
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setDupSrc(null)} className="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+              <Button onClick={handleDuplicate} className="text-sm">Duplicate</Button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ================================================================
+// EstimateBuilderPage — create / edit a sectioned estimate
+// ================================================================
+function EstimateBuilderPage({ data }) {
+  const [estimateName, setEstimateName]   = useState(data.estimateName || "");
+  const [estimateFolder, setEstimateFolder] = useState("");
+  const [projectInfo, setProjectInfo]     = useState(data.content?.project_info || { name: "", address: "", contractor: "", date: "" });
+  const [sections, setSections]           = useState(data.content?.sections || []);
+  const [saving, setSaving]               = useState(false);
+  const [saveOk, setSaveOk]               = useState(false);
+  const [pdfLoading, setPdfLoading]       = useState(false);
+  const [xlsLoading, setXlsLoading]       = useState(false);
+  const [mlModal, setMlModal]             = useState(null);   // { sectionIdx, rowIdx }
+  const [catalogSuggestions, setCatalogSuggestions] = useState([]);
+  const [activeInput, setActiveInput]     = useState(null);   // { sectionIdx, rowIdx }
+
+  const exportFormRef = useRef(null);
+  const exportDataRef = useRef(null);
+
+  // ── section helpers ──────────────────────────────────────────────
+  const addSection = () => {
+    setSections((c) => [...c, { id: crypto.randomUUID(), name: "New Section", rows: [] }]);
+  };
+
+  const removeSection = (si) => {
+    if (!window.confirm("Remove this section and all its rows?")) return;
+    setSections((c) => c.filter((_, i) => i !== si));
+  };
+
+  const updateSectionName = (si, name) => {
+    setSections((c) => c.map((s, i) => i === si ? { ...s, name } : s));
+  };
+
+  // ── row helpers ──────────────────────────────────────────────────
+  const addRow = (si) => {
+    setSections((c) => c.map((s, i) => i !== si ? s : {
+      ...s,
+      rows: [...s.rows, { id: crypto.randomUUID(), type: "manual", qty: "", description: "", unit_cost: "", total: "", comments: "", add_comments: "" }],
+    }));
+  };
+
+  const removeRow = (si, ri) => {
+    setSections((c) => c.map((s, i) => i !== si ? s : { ...s, rows: s.rows.filter((_, j) => j !== ri) }));
+  };
+
+  const updateRow = (si, ri, patch) => {
+    setSections((c) => c.map((s, i) => {
+      if (i !== si) return s;
+      const rows = s.rows.map((r, j) => {
+        if (j !== ri) return r;
+        const next = { ...r, ...patch };
+        const qty = parseFloat(next.qty) || 0;
+        const cost = parseFloat(next.unit_cost) || 0;
+        if (next.type !== "material_list") {
+          next.total = parseFloat((qty * cost).toFixed(2));
+        }
+        return next;
+      });
+      return { ...s, rows };
+    }));
+  };
+
+  // ── catalog autocomplete ─────────────────────────────────────────
+  const fetchCatalog = useCallback(
+    (() => {
+      let timer;
+      return (q, si, ri) => {
+        clearTimeout(timer);
+        if (!q || q.length < 2) { setCatalogSuggestions([]); return; }
+        timer = setTimeout(() => {
+          fetch(`${data.catalogUrl}?q=${encodeURIComponent(q)}`)
+            .then((r) => r.json())
+            .then((rows) => { setCatalogSuggestions(rows); setActiveInput({ si, ri }); })
+            .catch(() => {});
+        }, 250);
+      };
+    })(),
+    [data.catalogUrl]
+  );
+
+  const applyCatalogItem = (si, ri, item) => {
+    updateRow(si, ri, {
+      description:  item.description,
+      unit_cost:    item.unit_cost,
+      comments:     item.comments,
+      add_comments: item.add_comments,
+    });
+    setCatalogSuggestions([]);
+    setActiveInput(null);
+  };
+
+  // ── link material list ────────────────────────────────────────────
+  const linkMaterialList = (mlName) => {
+    if (!mlModal) return;
+    const { si, ri } = mlModal;
+    fetch(`${data.mlTotalUrl}?name=${encodeURIComponent(mlName)}`)
+      .then((r) => r.json())
+      .then((res) => {
+        if (!res.ok) { window.alert("Could not fetch material list total."); return; }
+        const total = res.total;
+        updateRow(si, ri, {
+          type:                "material_list",
+          description:         mlName,
+          unit_cost:           total,
+          total:               total,
+          qty:                 1,
+          comments:            "See linked material list",
+          material_list_name:  mlName,
+        });
+        setMlModal(null);
+      })
+      .catch(() => window.alert("Error fetching material list total."));
+  };
+
+  // ── computed grand total ─────────────────────────────────────────
+  const grandTotal = useMemo(
+    () => sections.reduce((sum, s) => sum + s.rows.reduce((rs, r) => rs + (parseFloat(r.total) || 0), 0), 0),
+    [sections]
+  );
+
+  const buildPayload = () => JSON.stringify({ project_info: projectInfo, sections, grand_total: grandTotal });
+
+  // ── save ─────────────────────────────────────────────────────────
+  const handleSave = () => {
+    const folder = estimateFolder.trim();
+    const fullName = folder ? `${folder}/${estimateName.trim()}` : estimateName.trim();
+    if (!fullName) { window.alert("Estimate name required."); return; }
+    setSaving(true); setSaveOk(false);
+    const payload = new URLSearchParams({ estimate_name: fullName, estimate_data: buildPayload() });
+    fetch(data.saveUrl, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: payload.toString() })
+      .then((r) => r.json())
+      .then((res) => { if (res.ok) { setSaveOk(true); setEstimateName(fullName); } else window.alert(res.error || "Save failed."); })
+      .catch(() => window.alert("Save failed."))
+      .finally(() => setSaving(false));
+  };
+
+  // ── export helpers ────────────────────────────────────────────────
+  const triggerExport = (action) => {
+    const url = action === "pdf" ? data.exportPdfUrl : data.exportXlsUrl;
+    if (!exportFormRef.current) return;
+    exportFormRef.current.action = url;
+    if (exportDataRef.current) exportDataRef.current.value = buildPayload();
+    if (action === "pdf") setPdfLoading(true);
+    if (action === "xls") setXlsLoading(true);
+    setTimeout(() => {
+      exportFormRef.current?.submit();
+      setTimeout(() => { setPdfLoading(false); setXlsLoading(false); }, 8000);
+    }, 100);
+  };
+
+  // ── section subtotals ─────────────────────────────────────────────
+  const sectionSubtotal = (s) => s.rows.reduce((sum, r) => sum + (parseFloat(r.total) || 0), 0);
+
+  const inputClass = "w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200";
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold text-slate-900">
+            {estimateName ? `Estimate: ${estimateName}` : "New Estimate"}
+          </h1>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-700 disabled:opacity-50 transition"
+          >
+            {saving ? "Saving…" : saveOk ? "✓ Saved" : "Save Estimate"}
+          </button>
+          <button
+            onClick={() => triggerExport("pdf")}
+            disabled={pdfLoading}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 disabled:opacity-50 transition"
+          >
+            {pdfLoading ? "⏳ Generating…" : "📄 Export PDF"}
+          </button>
+          <button
+            onClick={() => triggerExport("xls")}
+            disabled={xlsLoading}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-slate-700 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-800 disabled:opacity-50 transition"
+          >
+            {xlsLoading ? "⏳ Generating…" : "📊 Export Excel"}
+          </button>
+        </div>
+      </div>
+
+      {/* Hidden export form */}
+      <form ref={exportFormRef} method="POST" style={{ display: "none" }}>
+        <input ref={exportDataRef} name="estimate_data" />
+      </form>
+
+      {/* Project info */}
+      <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 space-y-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-slate-500">Estimate Details</h2>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {[
+            ["Estimate Name", "name", estimateName, setEstimateName, false],
+            ["Folder (optional)", "folder", estimateFolder, setEstimateFolder, false],
+          ].map(([label, , val, setter]) => (
+            <div key={label} className="space-y-1">
+              <label className="text-xs text-slate-500">{label}</label>
+              <input value={val} onChange={(e) => setter(e.target.value)} className={inputClass} placeholder={label} />
+            </div>
+          ))}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ["Project Name", "name"],
+            ["Contractor", "contractor"],
+            ["Job Address", "address"],
+            ["Date", "date"],
+          ].map(([label, field]) => (
+            <div key={field} className="space-y-1">
+              <label className="text-xs text-slate-500">{label}</label>
+              <input
+                type={field === "date" ? "date" : "text"}
+                value={projectInfo[field] || ""}
+                onChange={(e) => setProjectInfo((p) => ({ ...p, [field]: e.target.value }))}
+                className={inputClass}
+                placeholder={label}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Sections */}
+      {sections.map((section, si) => (
+        <div key={section.id} className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
+          {/* Section header */}
+          <div className="flex items-center gap-3 bg-slate-800 px-5 py-3">
+            <input
+              value={section.name}
+              onChange={(e) => updateSectionName(si, e.target.value)}
+              className="flex-1 bg-transparent text-white font-semibold text-sm focus:outline-none placeholder-slate-400"
+              placeholder="Section name"
+            />
+            <span className="text-slate-300 text-sm font-medium">
+              ${sectionSubtotal(section).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            <button
+              onClick={() => removeSection(si)}
+              className="text-slate-400 hover:text-rose-400 text-lg leading-none transition"
+              title="Remove section"
+            >×</button>
+          </div>
+
+          {/* Rows table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-20">QTY</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-64">DESCRIPTION</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-32">UNIT COST</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-32">TOTAL</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-44">COMMENTS</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-44">ADD. COMMENTS</th>
+                  <th className="px-3 py-2 w-20"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {section.rows.map((row, ri) => (
+                  <tr key={row.id} className={ri % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                    {/* QTY */}
+                    <td className="px-3 py-1.5">
+                      {row.type === "material_list" ? (
+                        <span className="text-xs text-slate-400">1</span>
+                      ) : (
+                        <input
+                          type="number" min="0" step="1"
+                          value={row.qty}
+                          onChange={(e) => updateRow(si, ri, { qty: e.target.value })}
+                          className={inputClass}
+                        />
+                      )}
+                    </td>
+
+                    {/* DESCRIPTION with autocomplete */}
+                    <td className="px-3 py-1.5 relative">
+                      {row.type === "material_list" ? (
+                        <div className="flex items-center gap-1">
+                          <span className="inline-block bg-sky-100 text-sky-700 text-xs font-semibold rounded px-1.5 py-0.5">ML</span>
+                          <span className="text-sm text-slate-700 truncate">{row.description}</span>
+                        </div>
+                      ) : (
+                        <>
+                          <input
+                            value={row.description}
+                            onChange={(e) => {
+                              updateRow(si, ri, { description: e.target.value });
+                              fetchCatalog(e.target.value, si, ri);
+                            }}
+                            onBlur={() => setTimeout(() => setCatalogSuggestions([]), 200)}
+                            className={inputClass}
+                            placeholder="Description…"
+                          />
+                          {catalogSuggestions.length > 0 && activeInput?.si === si && activeInput?.ri === ri && (
+                            <div className="absolute z-30 top-full left-0 mt-1 w-full bg-white rounded-lg shadow-lg ring-1 ring-slate-200 max-h-48 overflow-y-auto">
+                              {catalogSuggestions.map((item) => (
+                                <button
+                                  key={item.id}
+                                  onMouseDown={() => applyCatalogItem(si, ri, item)}
+                                  className="w-full text-left px-3 py-2 text-xs hover:bg-sky-50 border-b border-slate-100 last:border-0"
+                                >
+                                  <span className="font-medium text-slate-800">{item.description}</span>
+                                  <span className="ml-2 text-slate-400">${Number(item.unit_cost || 0).toLocaleString()}</span>
+                                  {item.category && <span className="ml-2 text-slate-400 italic">{item.category}</span>}
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </td>
+
+                    {/* UNIT COST */}
+                    <td className="px-3 py-1.5">
+                      {row.type === "material_list" ? (
+                        <span className="text-sm text-slate-700">${Number(row.unit_cost || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      ) : (
+                        <input
+                          type="number" min="0" step="0.01"
+                          value={row.unit_cost}
+                          onChange={(e) => updateRow(si, ri, { unit_cost: e.target.value })}
+                          className={inputClass}
+                        />
+                      )}
+                    </td>
+
+                    {/* TOTAL (auto) */}
+                    <td className="px-3 py-1.5 text-sm font-medium text-slate-700">
+                      ${Number(row.total || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+
+                    {/* COMMENTS */}
+                    <td className="px-3 py-1.5">
+                      <input
+                        value={row.comments}
+                        onChange={(e) => updateRow(si, ri, { comments: e.target.value })}
+                        className={inputClass}
+                        placeholder="Comments…"
+                      />
+                    </td>
+
+                    {/* ADD. COMMENTS */}
+                    <td className="px-3 py-1.5">
+                      <input
+                        value={row.add_comments}
+                        onChange={(e) => updateRow(si, ri, { add_comments: e.target.value })}
+                        className={inputClass}
+                        placeholder="Additional…"
+                      />
+                    </td>
+
+                    {/* ACTIONS */}
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setMlModal({ si, ri })}
+                          title="Link Material List"
+                          className="text-sky-500 hover:text-sky-700 text-xs font-semibold px-1.5 py-1 rounded hover:bg-sky-50 transition"
+                        >ML</button>
+                        <button
+                          onClick={() => removeRow(si, ri)}
+                          className="text-slate-400 hover:text-rose-500 text-lg leading-none transition"
+                          title="Remove row"
+                        >×</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Section footer */}
+          <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100">
+            <button
+              onClick={() => addRow(si)}
+              className="text-sm text-sky-600 font-semibold hover:text-sky-800 transition"
+            >+ Add Row</button>
+            <span className="text-xs text-slate-400">
+              Subtotal: <span className="font-semibold text-slate-700">${sectionSubtotal(section).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </span>
+          </div>
+        </div>
+      ))}
+
+      {/* Add section + Grand total */}
+      <div className="flex items-center justify-between flex-wrap gap-4">
+        <button
+          onClick={addSection}
+          className="inline-flex items-center gap-1.5 rounded-lg border-2 border-dashed border-slate-300 px-5 py-3 text-sm font-semibold text-slate-500 hover:border-sky-400 hover:text-sky-600 transition"
+        >+ Add Section</button>
+        <div className="rounded-2xl bg-slate-800 px-6 py-4 text-white shadow">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Project Total</p>
+          <p className="text-2xl font-bold">${grandTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+        </div>
+      </div>
+
+      {/* Material List link modal */}
+      {mlModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+            <h2 className="text-base font-semibold text-slate-800">Link a Material List</h2>
+            <p className="text-sm text-slate-500">
+              Select a saved material list. Its grand total (with tax) will be used as the row cost.
+            </p>
+            <div className="max-h-60 overflow-y-auto space-y-1 rounded-lg border border-slate-200 p-2">
+              {(data.mlNames || []).length === 0 ? (
+                <p className="text-sm text-slate-400 text-center py-4">No material lists saved yet.</p>
+              ) : (
+                (data.mlNames || []).map((name) => (
+                  <button
+                    key={name}
+                    onClick={() => linkMaterialList(name)}
+                    className="w-full text-left px-3 py-2 text-sm rounded-lg hover:bg-sky-50 hover:text-sky-700 transition"
+                  >{name}</button>
+                ))
+              )}
+            </div>
+            <div className="flex justify-end">
+              <button onClick={() => setMlModal(null)} className="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ================================================================
 // App shell
 // ================================================================
 const pageComponentMap = {
@@ -2287,6 +2810,8 @@ const pageComponentMap = {
   product_detail: ProductDetailPage,
   material_list: MaterialListPage,
   templates: TemplatesPage,
+  estimates: EstimatesPage,
+  estimate_builder: EstimateBuilderPage,
   upload_pdf: UploadPdfPage,
   login: LoginPage,
 };

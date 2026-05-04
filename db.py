@@ -299,6 +299,45 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_tver_tid
             ON template_versions (template_id);
+
+        CREATE TABLE IF NOT EXISTS estimates (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            folder      TEXT NOT NULL DEFAULT '',
+            owner_email TEXT NOT NULL,
+            data        TEXT NOT NULL,
+            created_at  TEXT DEFAULT (datetime('now')),
+            updated_at  TEXT DEFAULT (datetime('now')),
+            updated_by  TEXT
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_estimates_name_folder
+            ON estimates (name, folder);
+
+        CREATE TABLE IF NOT EXISTS estimate_versions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            estimate_id INTEGER NOT NULL REFERENCES estimates(id) ON DELETE CASCADE,
+            data        TEXT NOT NULL,
+            saved_by    TEXT NOT NULL,
+            saved_at    TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ever_eid
+            ON estimate_versions (estimate_id);
+
+        CREATE TABLE IF NOT EXISTS estimate_catalog (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            description  TEXT NOT NULL,
+            unit_cost    REAL DEFAULT 0,
+            comments     TEXT DEFAULT '',
+            add_comments TEXT DEFAULT '',
+            category     TEXT DEFAULT '',
+            use_count    INTEGER DEFAULT 0,
+            last_used    TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ecat_desc
+            ON estimate_catalog (description);
     """
 
     if USE_TURSO:
@@ -896,3 +935,211 @@ def count_templates_db(viewer_email: str, viewer_role: str) -> int:
         with _local_conn() as conn:
             rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
     return rows[0]["cnt"] if rows else 0
+
+
+# ── Estimate storage ───────────────────────────────────────────────────────────
+
+def _can_write_estimate(estimate: dict, actor_email: str, actor_role: str) -> bool:
+    return actor_role == "admin" or estimate["owner_email"] == actor_email
+
+
+def _can_read_estimate(estimate: dict, viewer_email: str, viewer_role: str) -> bool:
+    return viewer_role == "admin" or estimate["owner_email"] == viewer_email
+
+
+def save_estimate_db(
+    name: str, folder: str, actor_email: str, actor_role: str, data_json: str
+) -> int | None:
+    now      = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    find_sql = "SELECT id, owner_email, data FROM estimates WHERE name=? AND folder=?"
+    ver_sql  = "INSERT INTO estimate_versions (estimate_id, data, saved_by, saved_at) VALUES (?,?,?,?)"
+    upd_sql  = "UPDATE estimates SET data=?, updated_at=?, updated_by=? WHERE id=?"
+    ins_sql  = ("INSERT INTO estimates (name, folder, owner_email, data, created_at, updated_at, updated_by)"
+                " VALUES (?,?,?,?,?,?,?)")
+
+    if USE_TURSO:
+        rows = _turso_execute(find_sql, [name, folder])
+        if rows:
+            t = rows[0]
+            if not _can_write_estimate(t, actor_email, actor_role):
+                return None
+            tid = t["id"]
+            _turso_execute(ver_sql, [tid, t["data"], actor_email, now])
+            _turso_execute(upd_sql, [data_json, now, actor_email, tid])
+            return tid
+        _turso_execute(ins_sql, [name, folder, actor_email, data_json, now, now, actor_email])
+        new = _turso_execute(
+            "SELECT id FROM estimates WHERE name=? AND folder=? ORDER BY id DESC LIMIT 1",
+            [name, folder],
+        )
+        tid = new[0]["id"]
+        _turso_execute(ver_sql, [tid, data_json, actor_email, now])
+        return tid
+    else:
+        with _local_conn() as conn:
+            row = conn.execute(find_sql, (name, folder)).fetchone()
+            if row:
+                t = dict(row)
+                if not _can_write_estimate(t, actor_email, actor_role):
+                    return None
+                tid = t["id"]
+                conn.execute(ver_sql, (tid, t["data"], actor_email, now))
+                conn.execute(upd_sql, (data_json, now, actor_email, tid))
+                return tid
+            cur = conn.execute(ins_sql, (name, folder, actor_email, data_json, now, now, actor_email))
+            tid = cur.lastrowid
+            conn.execute(ver_sql, (tid, data_json, actor_email, now))
+            return tid
+
+
+def get_estimate_db(name: str, folder: str, viewer_email: str, viewer_role: str) -> dict | None:
+    sql = ("SELECT id, name, folder, owner_email, data, created_at, updated_at, updated_by"
+           " FROM estimates WHERE name=? AND folder=?")
+    if USE_TURSO:
+        rows = _turso_execute(sql, [name, folder])
+    else:
+        with _local_conn() as conn:
+            rows = [dict(r) for r in conn.execute(sql, (name, folder)).fetchall()]
+    if not rows:
+        return None
+    t = rows[0]
+    return t if _can_read_estimate(t, viewer_email, viewer_role) else None
+
+
+def list_estimates_db(viewer_email: str, viewer_role: str) -> list[dict]:
+    if viewer_role == "admin":
+        sql    = ("SELECT id, name, folder, owner_email, data, created_at, updated_at, updated_by"
+                  " FROM estimates ORDER BY updated_at DESC")
+        params: list = []
+    else:
+        sql    = ("SELECT id, name, folder, owner_email, data, created_at, updated_at, updated_by"
+                  " FROM estimates WHERE owner_email=? ORDER BY updated_at DESC")
+        params = [viewer_email]
+
+    if USE_TURSO:
+        return _turso_execute(sql, params)
+    else:
+        with _local_conn() as conn:
+            return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def delete_estimate_db(name: str, folder: str, actor_email: str, actor_role: str) -> bool:
+    find_sql = "SELECT id, owner_email FROM estimates WHERE name=? AND folder=?"
+    del_sql  = "DELETE FROM estimates WHERE id=?"
+    if USE_TURSO:
+        rows = _turso_execute(find_sql, [name, folder])
+        if not rows or not _can_write_estimate(rows[0], actor_email, actor_role):
+            return False
+        _turso_execute(del_sql, [rows[0]["id"]])
+    else:
+        with _local_conn() as conn:
+            row = conn.execute(find_sql, (name, folder)).fetchone()
+            if not row or not _can_write_estimate(dict(row), actor_email, actor_role):
+                return False
+            conn.execute(del_sql, (row["id"],))
+    return True
+
+
+def duplicate_estimate_db(
+    src_name: str, src_folder: str, dst_name: str, dst_folder: str,
+    actor_email: str, actor_role: str,
+) -> bool:
+    find_sql  = "SELECT id, owner_email, data FROM estimates WHERE name=? AND folder=?"
+    check_sql = "SELECT id FROM estimates WHERE name=? AND folder=?"
+    ins_sql   = ("INSERT INTO estimates (name, folder, owner_email, data, created_at, updated_at, updated_by)"
+                 " VALUES (?,?,?,?,?,?,?)")
+    ver_sql   = "INSERT INTO estimate_versions (estimate_id, data, saved_by, saved_at) VALUES (?,?,?,?)"
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    if USE_TURSO:
+        src_rows = _turso_execute(find_sql, [src_name, src_folder])
+        if not src_rows or not _can_read_estimate(src_rows[0], actor_email, actor_role):
+            return False
+        if _turso_execute(check_sql, [dst_name, dst_folder]):
+            return False
+        src = src_rows[0]
+        _turso_execute(ins_sql, [dst_name, dst_folder, actor_email, src["data"], now, now, actor_email])
+        new = _turso_execute(
+            "SELECT id FROM estimates WHERE name=? AND folder=? ORDER BY id DESC LIMIT 1",
+            [dst_name, dst_folder],
+        )
+        _turso_execute(ver_sql, [new[0]["id"], src["data"], actor_email, now])
+    else:
+        with _local_conn() as conn:
+            row = conn.execute(find_sql, (src_name, src_folder)).fetchone()
+            if not row or not _can_read_estimate(dict(row), actor_email, actor_role):
+                return False
+            if conn.execute(check_sql, (dst_name, dst_folder)).fetchone():
+                return False
+            cur = conn.execute(ins_sql, (
+                dst_name, dst_folder, actor_email, row["data"], now, now, actor_email,
+            ))
+            conn.execute(ver_sql, (cur.lastrowid, row["data"], actor_email, now))
+    return True
+
+
+# ── Estimate catalog ───────────────────────────────────────────────────────────
+
+def search_estimate_catalog(query: str, limit: int = 20) -> list[dict]:
+    sql = """
+        SELECT id, description, unit_cost, comments, add_comments, category, use_count
+        FROM estimate_catalog
+        WHERE description LIKE '%' || ? || '%'
+        ORDER BY use_count DESC, description
+        LIMIT ?
+    """
+    if USE_TURSO:
+        return _turso_execute(sql, [query, limit])
+    else:
+        with _local_conn() as conn:
+            return [dict(r) for r in conn.execute(sql, (query, limit)).fetchall()]
+
+
+def upsert_estimate_catalog(
+    description: str, unit_cost: float, comments: str, add_comments: str, category: str
+) -> int:
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    find_sql = "SELECT id FROM estimate_catalog WHERE description = ?"
+    upd_sql  = ("UPDATE estimate_catalog SET unit_cost=?, comments=?, add_comments=?, category=?,"
+                " use_count=use_count+1, last_used=? WHERE id=?")
+    ins_sql  = ("INSERT INTO estimate_catalog (description, unit_cost, comments, add_comments, category,"
+                " use_count, last_used) VALUES (?,?,?,?,?,1,?)")
+
+    if USE_TURSO:
+        rows = _turso_execute(find_sql, [description])
+        if rows:
+            eid = rows[0]["id"]
+            _turso_execute(upd_sql, [unit_cost, comments, add_comments, category, now, eid])
+            return eid
+        _turso_execute(ins_sql, [description, unit_cost, comments, add_comments, category, now])
+        new = _turso_execute(
+            "SELECT id FROM estimate_catalog WHERE description=? ORDER BY id DESC LIMIT 1",
+            [description],
+        )
+        return new[0]["id"]
+    else:
+        with _local_conn() as conn:
+            row = conn.execute(find_sql, (description,)).fetchone()
+            if row:
+                conn.execute(upd_sql, (unit_cost, comments, add_comments, category, now, row["id"]))
+                return row["id"]
+            cur = conn.execute(ins_sql, (description, unit_cost, comments, add_comments, category, now))
+            return cur.lastrowid
+
+
+def get_material_list_total(name: str, folder: str, viewer_email: str, viewer_role: str) -> float | None:
+    """Return the grand total (with tax) of a saved material list template."""
+    t = get_template_db(name, folder, viewer_email, viewer_role)
+    if not t:
+        return None
+    try:
+        content  = json.loads(t["data"])
+        products = content.get("products", []) if isinstance(content, dict) else content
+        subtotal = sum(
+            float(p.get("total") or 0) or float(p.get("last_price") or 0) * float(p.get("quantity") or 0)
+            for p in products
+        )
+    except Exception:
+        return None
+    from config import TAX_RATE
+    return round(subtotal * (1 + TAX_RATE), 2)
