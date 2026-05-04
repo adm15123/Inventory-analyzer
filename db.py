@@ -264,6 +264,16 @@ def init_db():
 
         INSERT OR IGNORE INTO users (email, role, active)
             VALUES ('zamoraplumbing01@gmail.com', 'admin', 1);
+
+        CREATE TABLE IF NOT EXISTS login_history (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            email     TEXT NOT NULL,
+            logged_at TEXT DEFAULT (datetime('now')),
+            ip        TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_login_history_email
+            ON login_history (email);
     """
 
     if USE_TURSO:
@@ -584,3 +594,43 @@ def reset_failed_attempts(email: str):
     else:
         with _local_conn() as conn:
             conn.execute(sql, (email,))
+
+
+# ── Login history ──────────────────────────────────────────────────────────────
+
+def log_login(email: str, ip: str = None):
+    """Record a successful login event."""
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    sql = "INSERT INTO login_history (email, logged_at, ip) VALUES (?, ?, ?)"
+    if USE_TURSO:
+        _turso_execute(sql, [email, now, ip or ""])
+    else:
+        with _local_conn() as conn:
+            conn.execute(sql, (email, now, ip or ""))
+
+
+def get_login_history(email: str = None, limit: int = 200) -> list[dict]:
+    """Return login events newest-first, optionally filtered by email."""
+    if email:
+        sql = """
+            SELECT id, email, logged_at, ip
+            FROM login_history
+            WHERE email = ?
+            ORDER BY logged_at DESC
+            LIMIT ?
+        """
+        params = [email, limit]
+    else:
+        sql = """
+            SELECT id, email, logged_at, ip
+            FROM login_history
+            ORDER BY logged_at DESC
+            LIMIT ?
+        """
+        params = [limit]
+
+    if USE_TURSO:
+        return _turso_execute(sql, params)
+    else:
+        with _local_conn() as conn:
+            return [dict(r) for r in conn.execute(sql, params).fetchall()]

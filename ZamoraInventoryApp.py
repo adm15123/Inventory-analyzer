@@ -32,6 +32,7 @@ from db import (
     load_catalog_to_memory, get_catalog_df, refresh_catalog,
     get_user, list_users, add_user, set_user_active, set_user_role,
     increment_failed_attempts, reset_failed_attempts,
+    log_login, get_login_history,
 )
 import tempfile
 
@@ -1351,6 +1352,7 @@ def verify_code():
         # Success — clear pending code and open session
         session.pop("login_pending", None)
         reset_failed_attempts(email)
+        log_login(email, request.remote_addr)
 
         user = get_user(email)
         session["email"] = email
@@ -1373,6 +1375,7 @@ def verify_login(token):
         if not user or not user["active"]:
             flash("This account is not authorised.", "danger")
             return redirect(url_for("login"))
+        log_login(email, request.remote_addr)
         session["email"] = email
         session["role"] = user["role"]
         session.permanent = True
@@ -1450,6 +1453,20 @@ def admin_set_role():
     set_user_role(email, role)
     flash(f"{email} role set to {role}.", "success")
     return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/login_history")
+@admin_required
+def admin_login_history():
+    email = request.args.get("email", "").strip().lower() or None
+    history = get_login_history(email=email, limit=200)
+    users = list_users()
+    return render_template(
+        "admin_login_history.html",
+        history=history,
+        filter_email=email or "",
+        users=users,
+    )
 
 # -------------------------------
 # PDF Upload Routes
