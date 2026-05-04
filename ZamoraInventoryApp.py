@@ -33,6 +33,9 @@ from db import (
     get_user, list_users, add_user, set_user_active, set_user_role,
     increment_failed_attempts, reset_failed_attempts,
     log_login, get_login_history,
+    save_template_db, get_template_db, list_templates_db,
+    delete_template_db, rename_template_db, duplicate_template_db,
+    get_template_versions_db, restore_template_version_db, count_templates_db,
 )
 import tempfile
 
@@ -324,86 +327,65 @@ def _analyze_price_changes(supply: str, start_date: str, end_date: str) -> dict:
     return {"rows": shaped.to_dict(orient="records"), "columns": columns or list(results_df.columns)}
 
 
-# GitHub template saving helper
-def save_template_to_github(filename: str, content: str) -> bool:
-    """Save the given content to a GitHub repository as filename."""
-    token = config.GITHUB_TOKEN
-    repo = config.GITHUB_REPO
-    branch = config.GITHUB_BRANCH
-    if not token or not repo:
-        app.logger.error("GitHub credentials not configured")
-        return False
+# ── Template helpers ──────────────────────────────────────────────────────────
 
-    api_url = f"https://api.github.com/repos/{repo}/contents/{filename}"
-    headers = {"Authorization": f"Bearer {token}"}
-    get_resp = requests.get(api_url, headers=headers, params={"ref": branch})
-    sha = get_resp.json().get("sha") if get_resp.status_code == 200 else None
-    data = {
-        "message": f"Add template {filename}",
-        "content": base64.b64encode(content.encode()).decode(),
-        "branch": branch,
-    }
-    if sha:
-        data["sha"] = sha
-    resp = requests.put(api_url, headers=headers, json=data)
-    return resp.status_code in (200, 201)
+def _split_template_path(full_name: str):
+    """Return (folder, name) from 'folder/name' or 'name'."""
+    if "/" in full_name:
+        folder, name = full_name.rsplit("/", 1)
+        return folder.strip(), name.strip()
+    return "", full_name.strip()
 
-# Helper to delete templates from GitHub
-def delete_template_from_github(filename: str) -> bool:
-    """Delete a template file from GitHub."""
-    token = config.GITHUB_TOKEN
-    repo = config.GITHUB_REPO
-    branch = config.GITHUB_BRANCH
-    if not token or not repo:
-        return False
 
-    api_url = f"https://api.github.com/repos/{repo}/contents/{filename}"
-    headers = {"Authorization": f"Bearer {token}"}
-    get_resp = requests.get(api_url, headers=headers, params={"ref": branch})
-    if get_resp.status_code != 200:
-        return False
-    sha = get_resp.json().get("sha")
-    if not sha:
-        return False
-    data = {"message": f"Delete template {filename}", "sha": sha, "branch": branch}
-    resp = requests.delete(api_url, headers=headers, json=data)
-    return resp.status_code == 200
-# Helper to pull templates from GitHub when not present locally
-def load_templates_if_stale():
-    """Fetch template JSON files from GitHub and cache them locally."""
-    token = config.GITHUB_TOKEN
-    repo = config.GITHUB_REPO
-    branch = config.GITHUB_BRANCH
-    if not token or not repo:
-        return
-
-    templates_dir = config.TEMPLATE_DATA_DIR
-    os.makedirs(templates_dir, exist_ok=True)
-
-    api_url = f"https://api.github.com/repos/{repo}/contents/data"
-    headers = {"Authorization": f"Bearer {token}"}
-    params = {"ref": branch}
+def _template_entry(t: dict) -> dict:
+    """Build the dict that the React app expects from a DB template row."""
+    folder    = t.get("folder", "")
+    name      = t["name"]
+    full_name = f"{folder}/{name}" if folder else name
     try:
-        resp = requests.get(api_url, headers=headers, params=params)
-        resp.raise_for_status()
-        for item in resp.json():
-            if item.get("name", "").endswith(".json"):
-                download_url = item.get("url")
-                if not download_url:
-                    continue
-                file_resp = requests.get(download_url, headers=headers, params=params)
-                if file_resp.status_code != 200:
-                    continue
-                content = base64.b64decode(file_resp.json().get("content", "")).decode()
-                with open(os.path.join(templates_dir, item["name"]), "w") as f:
-                    f.write(content)
-    except Exception as e:
-        app.logger.error(f"Error fetching templates from GitHub: {e}")
-# Load template/list data on startup
+        mtime = datetime.strptime(t["updated_at"], "%Y-%m-%d %H:%M:%S").timestamp()
+    except Exception:
+        mtime = 0.0
+    try:
+        content   = json.loads(t["data"])
+        products  = content.get("products", []) if isinstance(content, dict) else content
+        item_count = len(products)
+        subtotal  = 0.0
+        for item in products:
+            try:
+                total = item.get("total")
+                subtotal += float(total) if total is not None else (
+                    float(item.get("last_price") or item.get("Last Price") or 0)
+                    * float(item.get("quantity", 0))
+                )
+            except (TypeError, ValueError):
+                pass
+    except Exception:
+        products, item_count, subtotal = [], 0, 0.0
+    tax = subtotal * config.TAX_RATE
+    return {
+        "id":             t["id"],
+        "name":           name,
+        "full_name":      full_name,
+        "group":          folder,
+        "owner_email":    t.get("owner_email", ""),
+        "mtime":          mtime,
+        "item_count":     item_count,
+        "total_with_tax": subtotal + tax,
+        "edit_url":       url_for("edit_template",    name=full_name),
+        "delete_url":     url_for("delete_template",  name=full_name),
+        "rename_url":     url_for("rename_template",  name=full_name),
+        "move_url":       url_for("move_template",    name=full_name),
+        "versions_url":   url_for("api_template_versions", name=full_name),
+    }
+
+
+# (GitHub sync removed — templates are now stored in Turso)
+
+# Load predefined material list DataFrames on startup
 du.load_underground_list()
 du.load_rough_list()
 du.load_final_list()
-load_templates_if_stale()
 
 
 # -------------------------------
@@ -414,11 +396,7 @@ load_templates_if_stale()
 @app.route("/")
 @login_required
 def index():
-    template_count = 0
-    templates_dir = config.TEMPLATE_DATA_DIR
-    if os.path.exists(templates_dir):
-        for _root, _dirs, files in os.walk(templates_dir):
-            template_count += sum(1 for f in files if f.endswith(".json"))
+    template_count = count_templates_db(session.get("email", ""), session.get("role", "user"))
 
     _df = get_catalog_df()
     def _unique_count(code):
@@ -849,25 +827,21 @@ def material_list():
     
     # For GET: load predetermined or saved templates
     list_option = request.args.get("list", "underground")
-    load_templates_if_stale()
-    templates_dir = config.TEMPLATE_DATA_DIR
-    os.makedirs(templates_dir, exist_ok=True)
+    viewer_email = session.get("email", "")
+    viewer_role  = session.get("role", "user")
+    db_templates = list_templates_db(viewer_email, viewer_role)
     custom_templates = {}
     template_folders = set()
-    for root, dirs, files in os.walk(templates_dir):
-        rel_dir = os.path.relpath(root, templates_dir)
-        if rel_dir != ".":
-            template_folders.add(rel_dir)
-        for fname in files:
-            if fname.endswith(".json"):
-                try:
-                    path = os.path.join(root, fname)
-                    with open(path) as f:
-                        name = os.path.splitext(fname)[0]
-                        full_name = os.path.join(rel_dir, name) if rel_dir != "." else name
-                        custom_templates[full_name] = json.load(f)
-                except Exception:
-                    pass
+    for t in db_templates:
+        folder    = t.get("folder", "")
+        tname     = t["name"]
+        full_name = f"{folder}/{tname}" if folder else tname
+        if folder:
+            template_folders.add(folder)
+        try:
+            custom_templates[full_name] = json.loads(t["data"])
+        except Exception:
+            pass
     list_option_lower = list_option.lower()
     project_info = {"contractor": "", "address": "", "date": ""}
     if list_option in custom_templates:
@@ -970,12 +944,16 @@ def material_list():
 @app.route("/save_template", methods=["POST"])
 @login_required
 def save_template():
-    template_name = request.form.get("template_name")
-    product_data = request.form.get("product_data")
-    project_info_str = request.form.get("project_info")
-    if not template_name or not product_data:
+    template_name_full = request.form.get("template_name", "").strip()
+    product_data       = request.form.get("product_data")
+    project_info_str   = request.form.get("project_info")
+
+    if not template_name_full or not product_data:
         flash("Template name and data are required.", "danger")
         return redirect(url_for("material_list"))
+
+    folder, tname = _split_template_path(template_name_full)
+
     try:
         products = json.loads(product_data)
     except Exception:
@@ -985,23 +963,16 @@ def save_template():
         project_info = json.loads(project_info_str) if project_info_str else {}
     except Exception:
         project_info = {}
-    content = json.dumps({"project_info": project_info, "products": products})
-    filename = f"data/{template_name}.json"
-    # Save locally
-    templates_dir = config.TEMPLATE_DATA_DIR
-    filepath = os.path.join(templates_dir, f"{template_name}.json")
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    try:
-        with open(filepath, "w") as f:
-            f.write(content)
-    except Exception as e:
-        app.logger.error(f"Local template save failed: {e}")
 
-    success = save_template_to_github(filename, content)
-    if success:
-        flash("Template saved to GitHub.", "success")
+    data_json = json.dumps({"project_info": project_info, "products": products})
+    actor_email = session["email"]
+    actor_role  = session.get("role", "user")
+
+    tid = save_template_db(tname, folder, actor_email, actor_role, data_json)
+    if tid is None:
+        flash("Access denied: a template with that name belongs to another user.", "danger")
     else:
-        flash("Failed to save template to GitHub.", "danger")
+        flash("Template saved.", "success")
     return redirect(url_for("material_list"))
 
 # -------------------------------
@@ -1011,75 +982,34 @@ def save_template():
 @app.route("/templates")
 @login_required
 def templates_list():
-    load_templates_if_stale()
-    templates_dir = config.TEMPLATE_DATA_DIR
-    os.makedirs(templates_dir, exist_ok=True)
-    sort_key = request.args.get("sort", "name")
-    group_by = request.args.get("group", "folder")
-    entries = []
-    folder_set = set()
-    for root, dirs, files in os.walk(templates_dir):
-        for d in dirs:
-            rel_dir = os.path.relpath(os.path.join(root, d), templates_dir)
-            folder_set.add(rel_dir)
-        for f in files:
-            if f.endswith(".json"):
-                path = os.path.join(root, f)
-                rel_dir = os.path.relpath(root, templates_dir)
-                group = "" if rel_dir == "." else rel_dir
-                name = os.path.splitext(f)[0]
-                full_name = os.path.join(group, name) if group else name
+    sort_key     = request.args.get("sort", "name")
+    group_by     = request.args.get("group", "folder")
+    viewer_email = session.get("email", "")
+    viewer_role  = session.get("role", "user")
 
-                subtotal = 0.0
-                item_count = 0
-                try:
-                    with open(path, "r") as fh:
-                        content = json.load(fh)
-                    products = content.get("products", []) if isinstance(content, dict) else content
-                    item_count = len(products)
-                    for item in products:
-                        try:
-                            total = item.get("total")
-                            subtotal += float(total) if total is not None else float(item.get("last_price", 0)) * float(item.get("quantity", 0))
-                        except (TypeError, ValueError):
-                            continue
-                except Exception:
-                    subtotal = 0.0
+    db_rows = list_templates_db(viewer_email, viewer_role)
+    entries = [_template_entry(t) for t in db_rows]
+    folders = sorted({e["group"] for e in entries if e["group"]})
 
-                tax = subtotal * config.TAX_RATE
-                total_with_tax = subtotal + tax
-
-                entries.append({
-                    "name": name,
-                    "full_name": full_name,
-                    "group": group,
-                    "mtime": os.path.getmtime(path),
-                    "item_count": item_count,
-                    "total_with_tax": total_with_tax,
-                    "edit_url": url_for("edit_template", name=full_name),
-                    "delete_url": url_for("delete_template", name=full_name),
-                    "rename_url": url_for("rename_template", name=full_name),
-                    "move_url": url_for("move_template", name=full_name),
-                })
-    folders = sorted(folder_set)
     if sort_key == "date":
-        entries.sort(key=lambda x: x["mtime"])
+        entries.sort(key=lambda x: x["mtime"], reverse=True)
     else:
         entries.sort(key=lambda x: x["name"].lower())
+
     grouped = {}
     if group_by == "folder":
         for e in entries:
             grouped.setdefault(e["group"], []).append(e)
 
     initial = {
-        "entries": entries,
-        "grouped": grouped if group_by == "folder" else None,
-        "sortKey": sort_key,
-        "groupBy": group_by,
-        "folders": folders,
-        "createFolderUrl": url_for("create_template_folder"),
+        "entries":          entries,
+        "grouped":          grouped if group_by == "folder" else None,
+        "sortKey":          sort_key,
+        "groupBy":          group_by,
+        "folders":          folders,
+        "createFolderUrl":  url_for("create_template_folder"),
+        "isAdmin":          viewer_role == "admin",
     }
-
     return render_app("templates", initial)
 
 
@@ -1092,25 +1022,16 @@ def edit_template(name):
 @app.route("/api/template_preview")
 @login_required
 def api_template_preview():
-    """Return the products inside a saved template for the preview panel."""
-    name = request.args.get("name", "").strip()
-    if not name:
+    full_name = request.args.get("name", "").strip()
+    if not full_name:
         return jsonify({"products": []}), 400
-
-    templates_dir = config.TEMPLATE_DATA_DIR
-    filepath = os.path.join(templates_dir, f"{name}.json")
-
-    if not os.path.exists(filepath):
+    folder, tname = _split_template_path(full_name)
+    t = get_template_db(tname, folder, session.get("email", ""), session.get("role", "user"))
+    if not t:
         return jsonify({"products": []}), 404
-
     try:
-        with open(filepath) as f:
-            content = json.load(f)
-        products = (
-            content.get("products", [])
-            if isinstance(content, dict)
-            else content
-        )
+        content  = json.loads(t["data"])
+        products = content.get("products", []) if isinstance(content, dict) else content
         return jsonify({"products": products})
     except Exception as e:
         app.logger.error(f"Template preview error: {e}")
@@ -1120,99 +1041,58 @@ def api_template_preview():
 @app.route("/api/duplicate_template", methods=["POST"])
 @login_required
 def api_duplicate_template():
-    """Duplicate a saved template under a new name."""
     source_name = request.form.get("source_name", "").strip()
-    new_name = request.form.get("new_name", "").strip()
-
+    new_name    = request.form.get("new_name", "").strip()
     if not source_name or not new_name:
         return jsonify({"error": "source_name and new_name are required"}), 400
+    src_folder, src_tname = _split_template_path(source_name)
+    dst_folder, dst_tname = _split_template_path(new_name)
+    actor_email = session["email"]
+    actor_role  = session.get("role", "user")
+    ok = duplicate_template_db(src_tname, src_folder, dst_tname, dst_folder, actor_email, actor_role)
+    if not ok:
+        return jsonify({"error": "Source not found, destination already exists, or access denied."}), 409
+    return jsonify({"success": True, "new_name": new_name})
 
-    templates_dir = config.TEMPLATE_DATA_DIR
-    src_path = os.path.join(templates_dir, f"{source_name}.json")
-    dst_path = os.path.join(templates_dir, f"{new_name}.json")
-
-    if not os.path.exists(src_path):
-        return jsonify({"error": "Source template not found"}), 404
-
-    if os.path.exists(dst_path):
-        return jsonify({"error": "A template with that name already exists"}), 409
-
-    try:
-        with open(src_path) as f:
-            content = f.read()
-
-        os.makedirs(os.path.dirname(dst_path), exist_ok=True)
-
-        with open(dst_path, "w") as f:
-            f.write(content)
-
-        # Also save to GitHub
-        success = save_template_to_github(f"data/{new_name}.json", content)
-        if not success:
-            app.logger.warning("Duplicate saved locally but GitHub sync failed.")
-
-        return jsonify({"success": True, "new_name": new_name})
-    except Exception as e:
-        app.logger.error(f"Duplicate template error: {e}")
-        return jsonify({"error": str(e)}), 500
 
 @app.route("/delete_template/<path:name>", methods=["POST"])
 @login_required
 def delete_template(name):
-    templates_dir = config.TEMPLATE_DATA_DIR
-    filepath = os.path.join(templates_dir, f"{name}.json")
-    if os.path.exists(filepath):
-        os.remove(filepath)
-    delete_template_from_github(f"data/{name}.json")
-    flash("Template deleted.", "info")
+    folder, tname = _split_template_path(name)
+    ok = delete_template_db(tname, folder, session["email"], session.get("role", "user"))
+    if ok:
+        flash("Template deleted.", "info")
+    else:
+        flash("Template not found or access denied.", "danger")
     return redirect(request.referrer or url_for("templates_list"))
 
 
 @app.route("/create_template_folder", methods=["POST"])
 @login_required
 def create_template_folder():
+    # Folders are virtual in the DB (just the folder column).
+    # They appear automatically when a template is saved into them.
     folder_name = request.form.get("folder_name", "").strip()
-    if not folder_name:
-        flash("Folder name required.", "danger")
-        return redirect(request.referrer or url_for("templates_list"))
-    templates_dir = config.TEMPLATE_DATA_DIR
-    path = os.path.join(templates_dir, folder_name)
-    try:
-        os.makedirs(path, exist_ok=True)
-        flash("Folder created.", "success")
-    except Exception as e:
-        flash(f"Failed to create folder: {e}", "danger")
+    if folder_name:
+        flash(f'Folder "{folder_name}" ready — save a template into it to make it appear.', "info")
     return redirect(request.referrer or url_for("templates_list"))
 
 
 @app.route("/rename_template/<path:name>", methods=["POST"])
 @login_required
 def rename_template(name):
-    new_name = request.form.get("new_name")
+    new_name = request.form.get("new_name", "").strip()
     if not new_name:
         flash("New name required.", "danger")
         return redirect(request.referrer or url_for("templates_list"))
-    templates_dir = config.TEMPLATE_DATA_DIR
-    old_path = os.path.join(templates_dir, f"{name}.json")
-    new_path = os.path.join(templates_dir, f"{new_name}.json")
-    if not os.path.exists(old_path):
-        flash("Template not found.", "danger")
-        return redirect(request.referrer or url_for("templates_list"))
-    try:
-        with open(old_path) as f:
-            content = f.read()
-        os.makedirs(os.path.dirname(new_path), exist_ok=True)
-        os.rename(old_path, new_path)
-    except Exception as e:
-        flash(f"Rename failed: {e}", "danger")
-        return redirect(request.referrer or url_for("templates_list"))
-    success = save_template_to_github(f"data/{new_name}.json", content)
-    if success:
-        delete_template_from_github(f"data/{name}.json")
+    old_folder, old_tname = _split_template_path(name)
+    new_folder, new_tname = _split_template_path(new_name)
+    ok = rename_template_db(old_tname, old_folder, new_tname, new_folder,
+                            session["email"], session.get("role", "user"))
+    if ok:
         flash("Template renamed.", "success")
     else:
-        flash("Failed to update GitHub.", "danger")
-    load_templates_if_stale()
+        flash("Rename failed: template not found, name already taken, or access denied.", "danger")
     return redirect(url_for("templates_list"))
 
 
@@ -1220,33 +1100,35 @@ def rename_template(name):
 @login_required
 def move_template(name):
     target_folder = request.form.get("target_folder", "").strip()
-    new_folder = request.form.get("new_folder", "").strip()
-    destination = new_folder or target_folder
-    templates_dir = config.TEMPLATE_DATA_DIR
-    src_path = os.path.join(templates_dir, f"{name}.json")
-    if not os.path.exists(src_path):
-        flash("Template not found.", "danger")
-        return redirect(request.referrer or url_for("templates_list"))
-    base_name = os.path.basename(name)
-    dest_dir = os.path.join(templates_dir, destination) if destination else templates_dir
-    dest_path = os.path.join(dest_dir, f"{base_name}.json")
-    try:
-        os.makedirs(dest_dir, exist_ok=True)
-        with open(src_path) as f:
-            content = f.read()
-        os.rename(src_path, dest_path)
-    except Exception as e:
-        flash(f"Move failed: {e}", "danger")
-        return redirect(request.referrer or url_for("templates_list"))
-    new_rel_path = os.path.join(destination, base_name) if destination else base_name
-    success = save_template_to_github(f"data/{new_rel_path}.json", content)
-    if success:
-        delete_template_from_github(f"data/{name}.json")
+    new_folder    = request.form.get("new_folder", "").strip()
+    destination   = new_folder or target_folder
+    old_folder, tname = _split_template_path(name)
+    ok = rename_template_db(tname, old_folder, tname, destination,
+                            session["email"], session.get("role", "user"))
+    if ok:
         flash("Template moved.", "success")
     else:
-        flash("Failed to update GitHub.", "danger")
-    load_templates_if_stale()
+        flash("Move failed: template not found, destination exists, or access denied.", "danger")
     return redirect(url_for("templates_list"))
+
+
+@app.route("/api/template_versions/<path:name>")
+@login_required
+def api_template_versions(name):
+    folder, tname = _split_template_path(name)
+    versions = get_template_versions_db(tname, folder, session.get("email", ""), session.get("role", "user"))
+    return jsonify({"versions": versions})
+
+
+@app.route("/restore_template_version/<int:version_id>", methods=["POST"])
+@login_required
+def restore_template_version(version_id):
+    ok = restore_template_version_db(version_id, session["email"], session.get("role", "user"))
+    if ok:
+        flash("Template restored to selected version.", "success")
+    else:
+        flash("Restore failed: version not found or access denied.", "danger")
+    return redirect(request.referrer or url_for("templates_list"))
 
 
 # -------------------------------
@@ -1452,6 +1334,43 @@ def admin_set_role():
         return redirect(url_for("admin_users"))
     set_user_role(email, role)
     flash(f"{email} role set to {role}.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/migrate_templates", methods=["POST"])
+@admin_required
+def admin_migrate_templates():
+    """One-time import of local JSON template files into Turso."""
+    templates_dir = config.TEMPLATE_DATA_DIR
+    migrated = skipped = errors = 0
+    if os.path.isdir(templates_dir):
+        for root, _dirs, files in os.walk(templates_dir):
+            for fname in files:
+                if not fname.endswith(".json"):
+                    continue
+                path = os.path.join(root, fname)
+                rel_dir = os.path.relpath(root, templates_dir)
+                folder = "" if rel_dir == "." else rel_dir
+                tname  = os.path.splitext(fname)[0]
+                try:
+                    with open(path) as fh:
+                        data_json = fh.read()
+                    existing = get_template_db(tname, folder, session["email"], "admin")
+                    if existing:
+                        skipped += 1
+                        continue
+                    tid = save_template_db(tname, folder, session["email"], "admin", data_json)
+                    if tid:
+                        migrated += 1
+                    else:
+                        errors += 1
+                except Exception as e:
+                    app.logger.error(f"Migration error for {fname}: {e}")
+                    errors += 1
+    flash(
+        f"Migration complete: {migrated} imported, {skipped} already existed, {errors} error(s).",
+        "success" if errors == 0 else "warning",
+    )
     return redirect(url_for("admin_users"))
 
 

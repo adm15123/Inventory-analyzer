@@ -274,6 +274,31 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_login_history_email
             ON login_history (email);
+
+        CREATE TABLE IF NOT EXISTS templates (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            folder      TEXT NOT NULL DEFAULT '',
+            owner_email TEXT NOT NULL,
+            data        TEXT NOT NULL,
+            created_at  TEXT DEFAULT (datetime('now')),
+            updated_at  TEXT DEFAULT (datetime('now')),
+            updated_by  TEXT
+        );
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_templates_name_folder
+            ON templates (name, folder);
+
+        CREATE TABLE IF NOT EXISTS template_versions (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            template_id INTEGER NOT NULL REFERENCES templates(id) ON DELETE CASCADE,
+            data        TEXT NOT NULL,
+            saved_by    TEXT NOT NULL,
+            saved_at    TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_tver_tid
+            ON template_versions (template_id);
     """
 
     if USE_TURSO:
@@ -634,3 +659,240 @@ def get_login_history(email: str = None, limit: int = 200) -> list[dict]:
     else:
         with _local_conn() as conn:
             return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+# ── Template storage ───────────────────────────────────────────────────────────
+
+def _can_write_template(template: dict, actor_email: str, actor_role: str) -> bool:
+    return actor_role == "admin" or template["owner_email"] == actor_email
+
+
+def _can_read_template(template: dict, viewer_email: str, viewer_role: str) -> bool:
+    return viewer_role == "admin" or template["owner_email"] == viewer_email
+
+
+def save_template_db(
+    name: str, folder: str, actor_email: str, actor_role: str, data_json: str
+) -> int | None:
+    """
+    Insert or update a template, always snapshotting old data as a version first.
+    Returns the template id, or None if access is denied.
+    """
+    now      = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    find_sql = "SELECT id, owner_email, data FROM templates WHERE name=? AND folder=?"
+    ver_sql  = "INSERT INTO template_versions (template_id, data, saved_by, saved_at) VALUES (?,?,?,?)"
+    upd_sql  = "UPDATE templates SET data=?, updated_at=?, updated_by=? WHERE id=?"
+    ins_sql  = ("INSERT INTO templates (name, folder, owner_email, data, created_at, updated_at, updated_by)"
+                " VALUES (?,?,?,?,?,?,?)")
+
+    if USE_TURSO:
+        rows = _turso_execute(find_sql, [name, folder])
+        if rows:
+            t = rows[0]
+            if not _can_write_template(t, actor_email, actor_role):
+                return None
+            tid = t["id"]
+            _turso_execute(ver_sql, [tid, t["data"], actor_email, now])
+            _turso_execute(upd_sql, [data_json, now, actor_email, tid])
+            return tid
+        _turso_execute(ins_sql, [name, folder, actor_email, data_json, now, now, actor_email])
+        new = _turso_execute(
+            "SELECT id FROM templates WHERE name=? AND folder=? ORDER BY id DESC LIMIT 1",
+            [name, folder],
+        )
+        tid = new[0]["id"]
+        _turso_execute(ver_sql, [tid, data_json, actor_email, now])
+        return tid
+    else:
+        with _local_conn() as conn:
+            row = conn.execute(find_sql, (name, folder)).fetchone()
+            if row:
+                t = dict(row)
+                if not _can_write_template(t, actor_email, actor_role):
+                    return None
+                tid = t["id"]
+                conn.execute(ver_sql, (tid, t["data"], actor_email, now))
+                conn.execute(upd_sql, (data_json, now, actor_email, tid))
+                return tid
+            cur = conn.execute(ins_sql, (name, folder, actor_email, data_json, now, now, actor_email))
+            tid = cur.lastrowid
+            conn.execute(ver_sql, (tid, data_json, actor_email, now))
+            return tid
+
+
+def get_template_db(name: str, folder: str, viewer_email: str, viewer_role: str) -> dict | None:
+    sql = ("SELECT id, name, folder, owner_email, data, created_at, updated_at, updated_by"
+           " FROM templates WHERE name=? AND folder=?")
+    if USE_TURSO:
+        rows = _turso_execute(sql, [name, folder])
+    else:
+        with _local_conn() as conn:
+            rows = [dict(r) for r in conn.execute(sql, (name, folder)).fetchall()]
+    if not rows:
+        return None
+    t = rows[0]
+    return t if _can_read_template(t, viewer_email, viewer_role) else None
+
+
+def list_templates_db(viewer_email: str, viewer_role: str) -> list[dict]:
+    """Return all templates the viewer is allowed to see."""
+    if viewer_role == "admin":
+        sql    = ("SELECT id, name, folder, owner_email, data, created_at, updated_at, updated_by"
+                  " FROM templates ORDER BY updated_at DESC")
+        params: list = []
+    else:
+        sql    = ("SELECT id, name, folder, owner_email, data, created_at, updated_at, updated_by"
+                  " FROM templates WHERE owner_email=? ORDER BY updated_at DESC")
+        params = [viewer_email]
+
+    if USE_TURSO:
+        return _turso_execute(sql, params)
+    else:
+        with _local_conn() as conn:
+            return [dict(r) for r in conn.execute(sql, params).fetchall()]
+
+
+def delete_template_db(name: str, folder: str, actor_email: str, actor_role: str) -> bool:
+    find_sql = "SELECT id, owner_email FROM templates WHERE name=? AND folder=?"
+    del_sql  = "DELETE FROM templates WHERE id=?"
+    if USE_TURSO:
+        rows = _turso_execute(find_sql, [name, folder])
+        if not rows or not _can_write_template(rows[0], actor_email, actor_role):
+            return False
+        _turso_execute(del_sql, [rows[0]["id"]])
+    else:
+        with _local_conn() as conn:
+            row = conn.execute(find_sql, (name, folder)).fetchone()
+            if not row or not _can_write_template(dict(row), actor_email, actor_role):
+                return False
+            conn.execute(del_sql, (row["id"],))
+    return True
+
+
+def rename_template_db(
+    old_name: str, old_folder: str, new_name: str, new_folder: str,
+    actor_email: str, actor_role: str,
+) -> bool:
+    find_sql  = "SELECT id, owner_email, data FROM templates WHERE name=? AND folder=?"
+    check_sql = "SELECT id FROM templates WHERE name=? AND folder=?"
+    ver_sql   = "INSERT INTO template_versions (template_id, data, saved_by, saved_at) VALUES (?,?,?,?)"
+    upd_sql   = "UPDATE templates SET name=?, folder=?, updated_at=?, updated_by=? WHERE id=?"
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    if USE_TURSO:
+        rows = _turso_execute(find_sql, [old_name, old_folder])
+        if not rows or not _can_write_template(rows[0], actor_email, actor_role):
+            return False
+        if _turso_execute(check_sql, [new_name, new_folder]):
+            return False
+        t = rows[0]
+        _turso_execute(ver_sql, [t["id"], t["data"], actor_email, now])
+        _turso_execute(upd_sql, [new_name, new_folder, now, actor_email, t["id"]])
+    else:
+        with _local_conn() as conn:
+            row = conn.execute(find_sql, (old_name, old_folder)).fetchone()
+            if not row or not _can_write_template(dict(row), actor_email, actor_role):
+                return False
+            if conn.execute(check_sql, (new_name, new_folder)).fetchone():
+                return False
+            t = dict(row)
+            conn.execute(ver_sql, (t["id"], t["data"], actor_email, now))
+            conn.execute(upd_sql, (new_name, new_folder, now, actor_email, t["id"]))
+    return True
+
+
+def duplicate_template_db(
+    src_name: str, src_folder: str, dst_name: str, dst_folder: str,
+    actor_email: str, actor_role: str,
+) -> bool:
+    find_sql  = "SELECT id, owner_email, data FROM templates WHERE name=? AND folder=?"
+    check_sql = "SELECT id FROM templates WHERE name=? AND folder=?"
+    ins_sql   = ("INSERT INTO templates (name, folder, owner_email, data, created_at, updated_at, updated_by)"
+                 " VALUES (?,?,?,?,?,?,?)")
+    ver_sql   = "INSERT INTO template_versions (template_id, data, saved_by, saved_at) VALUES (?,?,?,?)"
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    if USE_TURSO:
+        src_rows = _turso_execute(find_sql, [src_name, src_folder])
+        if not src_rows or not _can_read_template(src_rows[0], actor_email, actor_role):
+            return False
+        if _turso_execute(check_sql, [dst_name, dst_folder]):
+            return False
+        src = src_rows[0]
+        _turso_execute(ins_sql, [dst_name, dst_folder, actor_email, src["data"], now, now, actor_email])
+        new = _turso_execute(
+            "SELECT id FROM templates WHERE name=? AND folder=? ORDER BY id DESC LIMIT 1",
+            [dst_name, dst_folder],
+        )
+        _turso_execute(ver_sql, [new[0]["id"], src["data"], actor_email, now])
+    else:
+        with _local_conn() as conn:
+            row = conn.execute(find_sql, (src_name, src_folder)).fetchone()
+            if not row or not _can_read_template(dict(row), actor_email, actor_role):
+                return False
+            if conn.execute(check_sql, (dst_name, dst_folder)).fetchone():
+                return False
+            cur = conn.execute(ins_sql, (
+                dst_name, dst_folder, actor_email, row["data"], now, now, actor_email,
+            ))
+            conn.execute(ver_sql, (cur.lastrowid, row["data"], actor_email, now))
+    return True
+
+
+def get_template_versions_db(name: str, folder: str, viewer_email: str, viewer_role: str) -> list[dict]:
+    find_sql = "SELECT id, owner_email FROM templates WHERE name=? AND folder=?"
+    ver_sql  = ("SELECT id, template_id, saved_by, saved_at"
+                " FROM template_versions WHERE template_id=? ORDER BY saved_at DESC")
+    if USE_TURSO:
+        rows = _turso_execute(find_sql, [name, folder])
+        if not rows or not _can_read_template(rows[0], viewer_email, viewer_role):
+            return []
+        return _turso_execute(ver_sql, [rows[0]["id"]])
+    else:
+        with _local_conn() as conn:
+            row = conn.execute(find_sql, (name, folder)).fetchone()
+            if not row or not _can_read_template(dict(row), viewer_email, viewer_role):
+                return []
+            return [dict(r) for r in conn.execute(ver_sql, (row["id"],)).fetchall()]
+
+
+def restore_template_version_db(version_id: int, actor_email: str, actor_role: str) -> bool:
+    find_ver  = "SELECT id, template_id, data FROM template_versions WHERE id=?"
+    find_tmpl = "SELECT id, owner_email, data FROM templates WHERE id=?"
+    ver_sql   = "INSERT INTO template_versions (template_id, data, saved_by, saved_at) VALUES (?,?,?,?)"
+    upd_sql   = "UPDATE templates SET data=?, updated_at=?, updated_by=? WHERE id=?"
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+
+    if USE_TURSO:
+        vr = _turso_execute(find_ver, [version_id])
+        if not vr:
+            return False
+        tr = _turso_execute(find_tmpl, [vr[0]["template_id"]])
+        if not tr or not _can_write_template(tr[0], actor_email, actor_role):
+            return False
+        _turso_execute(ver_sql, [tr[0]["id"], tr[0]["data"], actor_email, now])
+        _turso_execute(upd_sql, [vr[0]["data"], now, actor_email, tr[0]["id"]])
+    else:
+        with _local_conn() as conn:
+            vr = conn.execute(find_ver, (version_id,)).fetchone()
+            if not vr:
+                return False
+            tr = conn.execute(find_tmpl, (vr["template_id"],)).fetchone()
+            if not tr or not _can_write_template(dict(tr), actor_email, actor_role):
+                return False
+            conn.execute(ver_sql, (tr["id"], tr["data"], actor_email, now))
+            conn.execute(upd_sql, (vr["data"], now, actor_email, tr["id"]))
+    return True
+
+
+def count_templates_db(viewer_email: str, viewer_role: str) -> int:
+    if viewer_role == "admin":
+        sql, params = "SELECT COUNT(*) AS cnt FROM templates", []
+    else:
+        sql, params = "SELECT COUNT(*) AS cnt FROM templates WHERE owner_email=?", [viewer_email]
+    if USE_TURSO:
+        rows = _turso_execute(sql, params)
+    else:
+        with _local_conn() as conn:
+            rows = [dict(r) for r in conn.execute(sql, params).fetchall()]
+    return rows[0]["cnt"] if rows else 0
