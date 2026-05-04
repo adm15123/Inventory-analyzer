@@ -64,9 +64,18 @@ app.secret_key = config.SECRET_KEY
 
 
 def _seed_estimate_catalog():
-    """Populate the estimate catalog with all template rows on startup."""
+    """Seed the estimate catalog with template rows — runs only if catalog is empty."""
     try:
-        from db import upsert_estimate_catalog as _upsert
+        from db import _turso_execute, _local_conn, USE_TURSO, upsert_estimate_catalog as _upsert
+        check_sql = "SELECT COUNT(*) AS cnt FROM estimate_catalog"
+        if USE_TURSO:
+            rows = _turso_execute(check_sql)
+            count = rows[0]["cnt"] if rows else 0
+        else:
+            with _local_conn() as conn:
+                count = conn.execute(check_sql).fetchone()[0]
+        if count > 0:
+            return
         for section_name, _, rows in _TEMPLATE_SECTIONS:
             for row in rows:
                 desc = row.get("description", "").strip()
