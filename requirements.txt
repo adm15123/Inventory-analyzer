@@ -5,6 +5,7 @@ matplotlib
 tkcalendar
 openpyxl
 flask-mail
+flask-limiter
 itsdangerous
 pdfkit
 requests

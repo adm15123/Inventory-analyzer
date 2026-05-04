@@ -18,6 +18,7 @@ import pandas as pd
 import time
 import json
 import base64
+import random
 import requests
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import os
@@ -29,11 +30,15 @@ from pdf_parser import parse_pdf
 from db import (
     init_db, save_parsed_document, list_invoices, delete_invoice,
     load_catalog_to_memory, get_catalog_df, refresh_catalog,
+    get_user, list_users, add_user, set_user_active, set_user_role,
+    increment_failed_attempts, reset_failed_attempts,
 )
 import tempfile
 
 # Additional imports for login functionality
 from flask_mail import Mail, Message
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from itsdangerous import URLSafeTimedSerializer
 from functools import wraps
 
@@ -50,8 +55,17 @@ load_catalog_to_memory()
 app.secret_key = config.SECRET_KEY
 
 app.config["SESSION_PERMANENT"] = config.SESSION_PERMANENT
-app.config["PERMANENT_SESSION_LIFETIME"] = config.PERMANENT_SESSION_LIFETIME
+app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
 app.config["UPLOAD_FOLDER"] = config.UPLOAD_FOLDER
+app.config["SESSION_COOKIE_SECURE"] = True   # requires HTTPS in production
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+
+limiter = Limiter(
+    get_remote_address,
+    app=app,
+    storage_uri="memory://",
+    default_limits=[],
+)
 # -------------------------------
 # Flask-Mail and Login Configuration
 # -------------------------------
@@ -67,12 +81,12 @@ app.config["MAIL_DEFAULT_SENDER"] = "aliant.delgado07@gmail.com"
 
 mail = Mail(app)
 serializer = URLSafeTimedSerializer(app.secret_key)
-ALLOWED_EMAILS = [
-    "aliant.delgado@yahoo.com",
-    "aliant.delgado17@gmail.com",
-    "zamoraplumbing01@gmail.com",
-    "aliant.delgado01@yahoo.com"
-]
+
+
+@app.errorhandler(429)
+def ratelimit_handler(e):
+    flash("Too many login attempts. Please wait and try again.", "danger")
+    return redirect(url_for("login"))
 # Buffer to temporarily store generated order summary PDFs
 pdf_buffer: io.BytesIO | None = None
 # -------------------------------
@@ -89,17 +103,21 @@ def datetimeformat(value, fmt: str = "%Y-%m-%d %H:%M:%S"):
 
 @app.before_request
 def check_session_timeout():
-    # Skip timeout check for login, verification, and static assets.
-    if request.endpoint in ('login', 'verify_login', 'static'):
+    if request.endpoint in ('login', 'verify_code', 'verify_login', 'static'):
         return
 
     if "email" in session:
-        # Bypass inactivity timeout for the Zamora Plumbing account.
+        # Backfill role for sessions created before role tracking was added
+        if "role" not in session:
+            user = get_user(session["email"])
+            if user:
+                session["role"] = user["role"]
+
         if session.get("email") == "zamoraplumbing01@gmail.com":
             return
         last_activity = session.get("last_activity", time.time())
-        if time.time() - last_activity > 18000000:  # 30 minutes inactivity
-            session.pop("email", None)
+        if time.time() - last_activity > 18000000:
+            session.clear()
             flash("Session expired due to inactivity. Please log in again.", "warning")
             return redirect(url_for("login"))
         session["last_activity"] = time.time()
@@ -128,6 +146,19 @@ def login_required(f):
         if not is_logged_in():
             flash("Please log in to access this page.", "warning")
             return redirect(url_for("login"))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_logged_in():
+            flash("Please log in to access this page.", "warning")
+            return redirect(url_for("login"))
+        if session.get("role") != "admin":
+            flash("Access denied.", "danger")
+            return redirect(url_for("index"))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -1251,57 +1282,174 @@ def download_summary():
 # -------------------------------
 
 @app.route("/login", methods=["GET", "POST"])
+@limiter.limit("5 per minute;10 per hour", methods=["POST"])
 def login():
     if request.method == "POST":
-        email = request.form.get("email", "").strip()
-        code = request.form.get("code", "").strip()
+        email = request.form.get("email", "").strip().lower()
 
-        # Allow direct code-based login without requiring the email field.
-        if code:
-            if code == "7199":
-                session["email"] = "zamoraplumbing01@gmail.com"
-                session["last_activity"] = time.time()
-                flash("Login successful!", "success")
-                return redirect(url_for("index"))
-            flash("Invalid code.", "danger")
+        user = get_user(email)
+        if not user or not user["active"]:
+            flash("Unauthorized email.", "danger")
             return redirect(url_for("login"))
 
-        if email in ALLOWED_EMAILS:
-            token = serializer.dumps(email, salt="email-confirmation")
-            login_url = url_for("verify_login", token=token, _external=True)
-            msg = Message("Your Login Link", recipients=[email])
-            msg.body = f"Click the link to log in: {login_url}"
-            try:
-                mail.send(msg)
-            except Exception as e:
-                app.logger.error(f"Error sending email: {e}")
-                flash("Error sending email. Please try again later.", "danger")
+        code = str(random.randint(100000, 999999))
+        session["login_pending"] = {
+            "email": email,
+            "code": code,
+            "ts": time.time(),
+        }
+
+        msg = Message("Your Login Code", recipients=[email])
+        msg.body = (
+            f"Your Zamora Inventory login code is: {code}\n\n"
+            "This code expires in 10 minutes. Do not share it."
+        )
+        try:
+            mail.send(msg)
+        except Exception as e:
+            app.logger.error(f"Error sending login code: {e}")
+            flash("Error sending email. Please try again later.", "danger")
+            return redirect(url_for("login"))
+
+        flash("A 6-digit login code has been sent to your email.", "info")
+        return redirect(url_for("verify_code"))
+
+    return render_app("login", {"loginUrl": url_for("login")}, nav_links=[])
+
+
+@app.route("/verify_code", methods=["GET", "POST"])
+def verify_code():
+    pending = session.get("login_pending")
+    if not pending:
+        flash("No login in progress.", "warning")
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        entered = request.form.get("code", "").strip()
+        email = pending["email"]
+
+        if time.time() - pending["ts"] > 600:
+            session.pop("login_pending", None)
+            flash("Code expired, please request a new one.", "danger")
+            return redirect(url_for("login"))
+
+        if entered != pending["code"]:
+            new_count = increment_failed_attempts(email)
+            if new_count >= 5:
+                set_user_active(email, 0)
+                session.pop("login_pending", None)
+                flash(
+                    "Too many failed attempts. Your account has been deactivated. "
+                    "Please contact an admin.",
+                    "danger",
+                )
                 return redirect(url_for("login"))
-            flash("A login link has been sent to your email.", "info")
-            return redirect(url_for("index"))
-        else:
-            flash("Unauthorized email.", "danger")
-    initial = {"loginUrl": url_for("login")}
-    return render_app("login", initial, nav_links=[])
+            remaining = 5 - new_count
+            flash(f"Invalid code. {remaining} attempt(s) remaining.", "danger")
+            return redirect(url_for("verify_code"))
+
+        # Success — clear pending code and open session
+        session.pop("login_pending", None)
+        reset_failed_attempts(email)
+
+        user = get_user(email)
+        session["email"] = email
+        session["role"] = user["role"]
+        session.permanent = True
+        session["last_activity"] = time.time()
+
+        flash("Login successful!", "success")
+        return redirect(url_for("index"))
+
+    return render_template("verify_code.html", email=pending["email"])
+
 
 @app.route("/verify_login/<token>")
 def verify_login(token):
+    """Legacy magic-link route kept for backwards compatibility."""
     try:
         email = serializer.loads(token, salt="email-confirmation", max_age=600)
+        user = get_user(email)
+        if not user or not user["active"]:
+            flash("This account is not authorised.", "danger")
+            return redirect(url_for("login"))
         session["email"] = email
+        session["role"] = user["role"]
         session.permanent = True
         session["last_activity"] = time.time()
         flash("Login successful!", "success")
         return redirect(url_for("index"))
-    except Exception as e:
+    except Exception:
         flash("Invalid or expired login link.", "danger")
         return redirect(url_for("login"))
 
+
 @app.route("/logout")
 def logout():
-    session.pop("email", None)
+    session.clear()
     flash("Logged out successfully.", "info")
     return redirect(url_for("login"))
+
+
+# -------------------------------
+# Admin Routes
+# -------------------------------
+
+@app.route("/admin/users")
+@admin_required
+def admin_users():
+    users = list_users()
+    return render_template(
+        "admin_users.html",
+        users=users,
+        add_url=url_for("admin_add_user"),
+        toggle_url=url_for("admin_toggle_user"),
+        role_url=url_for("admin_set_role"),
+    )
+
+
+@app.route("/admin/users/add", methods=["POST"])
+@admin_required
+def admin_add_user():
+    email = request.form.get("email", "").strip().lower()
+    role = request.form.get("role", "user")
+    if not email:
+        flash("Email is required.", "danger")
+    elif role not in ("user", "admin"):
+        flash("Invalid role.", "danger")
+    elif not add_user(email, role):
+        flash(f"{email} is already in the whitelist.", "warning")
+    else:
+        flash(f"{email} added as {role}.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/toggle", methods=["POST"])
+@admin_required
+def admin_toggle_user():
+    email = request.form.get("email", "").strip().lower()
+    action = request.form.get("action", "")
+    if not email or action not in ("activate", "deactivate"):
+        flash("Invalid request.", "danger")
+        return redirect(url_for("admin_users"))
+    set_user_active(email, 1 if action == "activate" else 0)
+    if action == "activate":
+        reset_failed_attempts(email)
+    flash(f"{email} {action}d.", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/role", methods=["POST"])
+@admin_required
+def admin_set_role():
+    email = request.form.get("email", "").strip().lower()
+    role = request.form.get("role", "")
+    if not email or role not in ("user", "admin"):
+        flash("Invalid request.", "danger")
+        return redirect(url_for("admin_users"))
+    set_user_role(email, role)
+    flash(f"{email} role set to {role}.", "success")
+    return redirect(url_for("admin_users"))
 
 # -------------------------------
 # PDF Upload Routes

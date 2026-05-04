@@ -17,6 +17,7 @@ import json
 import os
 import sqlite3
 import time
+from datetime import datetime
 from typing import Optional
 
 import httpx
@@ -251,6 +252,18 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_items_supplier
             ON invoice_items (supplier);
+
+        CREATE TABLE IF NOT EXISTS users (
+            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            email            TEXT UNIQUE NOT NULL,
+            role             TEXT DEFAULT 'user',
+            active           INTEGER DEFAULT 1,
+            failed_attempts  INTEGER DEFAULT 0,
+            last_failed      TEXT
+        );
+
+        INSERT OR IGNORE INTO users (email, role, active)
+            VALUES ('zamoraplumbing01@gmail.com', 'admin', 1);
     """
 
     if USE_TURSO:
@@ -489,3 +502,85 @@ def delete_invoice(invoice_id: int):
             conn.execute(sql, (invoice_id,))
 
     cache_clear()
+
+
+# ── User whitelist helpers ─────────────────────────────────────────────────────
+
+_USER_COLS = "id, email, role, active, failed_attempts, last_failed"
+
+
+def get_user(email: str) -> dict | None:
+    sql = f"SELECT {_USER_COLS} FROM users WHERE email = ?"
+    if USE_TURSO:
+        rows = _turso_execute(sql, [email])
+    else:
+        with _local_conn() as conn:
+            rows = [dict(r) for r in conn.execute(sql, (email,)).fetchall()]
+    return rows[0] if rows else None
+
+
+def list_users() -> list[dict]:
+    sql = f"SELECT {_USER_COLS} FROM users ORDER BY email"
+    if USE_TURSO:
+        return _turso_execute(sql)
+    else:
+        with _local_conn() as conn:
+            return [dict(r) for r in conn.execute(sql).fetchall()]
+
+
+def add_user(email: str, role: str = "user") -> bool:
+    """Insert a new whitelisted user. Returns False if email already exists."""
+    check = "SELECT id FROM users WHERE email = ?"
+    insert = "INSERT INTO users (email, role, active) VALUES (?, ?, 1)"
+    if USE_TURSO:
+        if _turso_execute(check, [email]):
+            return False
+        _turso_execute(insert, [email, role])
+    else:
+        with _local_conn() as conn:
+            if conn.execute(check, (email,)).fetchone():
+                return False
+            conn.execute(insert, (email, role))
+    return True
+
+
+def set_user_active(email: str, active: int):
+    sql = "UPDATE users SET active = ? WHERE email = ?"
+    if USE_TURSO:
+        _turso_execute(sql, [active, email])
+    else:
+        with _local_conn() as conn:
+            conn.execute(sql, (active, email))
+
+
+def set_user_role(email: str, role: str):
+    sql = "UPDATE users SET role = ? WHERE email = ?"
+    if USE_TURSO:
+        _turso_execute(sql, [role, email])
+    else:
+        with _local_conn() as conn:
+            conn.execute(sql, (role, email))
+
+
+def increment_failed_attempts(email: str) -> int:
+    """Increments counter, records timestamp, returns new count."""
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    update = "UPDATE users SET failed_attempts = failed_attempts + 1, last_failed = ? WHERE email = ?"
+    select = "SELECT failed_attempts FROM users WHERE email = ?"
+    if USE_TURSO:
+        _turso_execute(update, [now, email])
+        rows = _turso_execute(select, [email])
+    else:
+        with _local_conn() as conn:
+            conn.execute(update, (now, email))
+            rows = [dict(r) for r in conn.execute(select, (email,)).fetchall()]
+    return rows[0]["failed_attempts"] if rows else 0
+
+
+def reset_failed_attempts(email: str):
+    sql = "UPDATE users SET failed_attempts = 0, last_failed = NULL WHERE email = ?"
+    if USE_TURSO:
+        _turso_execute(sql, [email])
+    else:
+        with _local_conn() as conn:
+            conn.execute(sql, (email,))
