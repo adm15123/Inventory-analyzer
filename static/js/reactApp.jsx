@@ -2700,7 +2700,7 @@ function EstimateBuilderPage({ data }) {
                             placeholder="Description…"
                           />
                           {catalogSuggestions.length > 0 && activeInput?.si === si && activeInput?.ri === ri && (
-                            <div className="absolute z-30 top-full left-0 mt-1 bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 max-h-80 overflow-y-auto" style={{ minWidth: "420px" }}>
+                            <div className="absolute z-30 top-full left-0 mt-1 bg-white rounded-xl shadow-2xl ring-1 ring-slate-200" style={{ minWidth: "420px" }}>
                               <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 bg-slate-50 rounded-t-xl sticky top-0">
                                 <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
                                   {catalogSuggestions.length} suggestion{catalogSuggestions.length !== 1 ? "s" : ""}
