@@ -1117,25 +1117,30 @@ def upsert_estimate_catalog(
     description: str, unit_cost: float, comments: str, add_comments: str,
     category: str, estimate_name: str = "",
 ) -> int:
+    """
+    Unique key is (description, unit_cost, comments, add_comments).
+    Same description with any different value creates a new catalog entry,
+    giving the user a variety of versions to choose from in autocomplete.
+    """
     now      = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
-    find_sql = "SELECT id FROM estimate_catalog WHERE description = ?"
-    upd_sql  = ("UPDATE estimate_catalog SET unit_cost=?, comments=?, add_comments=?, category=?,"
-                " use_count=use_count+1, last_used=? WHERE id=?")
+    find_sql = """SELECT id FROM estimate_catalog
+                  WHERE description=? AND unit_cost=? AND comments=? AND add_comments=?"""
+    bump_sql = "UPDATE estimate_catalog SET use_count=use_count+1, last_used=? WHERE id=?"
     ins_sql  = ("INSERT INTO estimate_catalog (description, unit_cost, comments, add_comments, category,"
                 " use_count, last_used) VALUES (?,?,?,?,?,1,?)")
     usage_sql = ("INSERT OR IGNORE INTO estimate_catalog_usage (catalog_id, estimate_name, used_at)"
                  " VALUES (?,?,?)")
 
     if USE_TURSO:
-        rows = _turso_execute(find_sql, [description])
+        rows = _turso_execute(find_sql, [description, unit_cost, comments, add_comments])
         if rows:
             eid = rows[0]["id"]
-            _turso_execute(upd_sql, [unit_cost, comments, add_comments, category, now, eid])
+            _turso_execute(bump_sql, [now, eid])
         else:
             _turso_execute(ins_sql, [description, unit_cost, comments, add_comments, category, now])
             new = _turso_execute(
-                "SELECT id FROM estimate_catalog WHERE description=? ORDER BY id DESC LIMIT 1",
-                [description],
+                "SELECT id FROM estimate_catalog WHERE description=? AND unit_cost=? AND comments=? AND add_comments=? ORDER BY id DESC LIMIT 1",
+                [description, unit_cost, comments, add_comments],
             )
             eid = new[0]["id"]
         if estimate_name:
@@ -1143,10 +1148,10 @@ def upsert_estimate_catalog(
         return eid
     else:
         with _local_conn() as conn:
-            row = conn.execute(find_sql, (description,)).fetchone()
+            row = conn.execute(find_sql, (description, unit_cost, comments, add_comments)).fetchone()
             if row:
                 eid = row["id"]
-                conn.execute(upd_sql, (unit_cost, comments, add_comments, category, now, eid))
+                conn.execute(bump_sql, (now, eid))
             else:
                 cur = conn.execute(ins_sql, (description, unit_cost, comments, add_comments, category, now))
                 eid = cur.lastrowid
