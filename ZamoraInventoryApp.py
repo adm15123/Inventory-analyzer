@@ -1292,7 +1292,7 @@ def _build_empty_estimate():
     sections = [
         {
             "id": str(uuid.uuid4()), "name": name, "is_gas": is_gas,
-            "rows": [r for r in rows if r.get("qty") not in (None, "")],
+            "rows": [{**r, "qty": "", "total": 0} for r in rows],
         }
         for name, is_gas, rows in _TEMPLATE_SECTIONS
     ]
