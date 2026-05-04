@@ -1290,7 +1290,10 @@ def _estimate_entry(e: dict) -> dict:
 
 def _build_empty_estimate():
     sections = [
-        {"id": str(uuid.uuid4()), "name": name, "is_gas": is_gas, "rows": rows}
+        {
+            "id": str(uuid.uuid4()), "name": name, "is_gas": is_gas,
+            "rows": [r for r in rows if r.get("qty") not in (None, "")],
+        }
         for name, is_gas, rows in _TEMPLATE_SECTIONS
     ]
     plumbing_total = sum(

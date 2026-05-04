@@ -2276,6 +2276,28 @@ function LoginPage({ data }) {
   );
 }
 
+// ── Auto-expanding textarea for long text fields ──────────────────
+function AutoTextarea({ value, onChange, className, placeholder, onBlur }) {
+  const ref = useRef(null);
+  useEffect(() => {
+    if (!ref.current) return;
+    ref.current.style.height = "auto";
+    ref.current.style.height = ref.current.scrollHeight + "px";
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      onChange={onChange}
+      onBlur={onBlur}
+      className={className}
+      placeholder={placeholder}
+      rows={1}
+      style={{ resize: "none", overflow: "hidden" }}
+    />
+  );
+}
+
 // ================================================================
 // EstimatesPage — list of saved estimates
 // ================================================================
@@ -2660,11 +2682,11 @@ function EstimateBuilderPage({ data }) {
                       {row.type === "material_list" ? (
                         <div className="flex items-center gap-1">
                           <span className="inline-block bg-sky-100 text-sky-700 text-xs font-semibold rounded px-1.5 py-0.5">ML</span>
-                          <span className="text-sm text-slate-700 truncate">{row.description}</span>
+                          <span className="text-sm text-slate-700">{row.description}</span>
                         </div>
                       ) : (
                         <>
-                          <input
+                          <AutoTextarea
                             value={row.description}
                             onChange={(e) => {
                               updateRow(si, ri, { description: e.target.value });
@@ -2714,7 +2736,7 @@ function EstimateBuilderPage({ data }) {
 
                     {/* COMMENTS */}
                     <td className="px-3 py-1.5">
-                      <input
+                      <AutoTextarea
                         value={row.comments}
                         onChange={(e) => updateRow(si, ri, { comments: e.target.value })}
                         className={inputClass}
@@ -2724,7 +2746,7 @@ function EstimateBuilderPage({ data }) {
 
                     {/* ADD. COMMENTS */}
                     <td className="px-3 py-1.5">
-                      <input
+                      <AutoTextarea
                         value={row.add_comments}
                         onChange={(e) => updateRow(si, ri, { add_comments: e.target.value })}
                         className={inputClass}
