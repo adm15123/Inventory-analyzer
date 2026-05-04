@@ -62,6 +62,27 @@ init_db()
 load_catalog_to_memory()
 app.secret_key = config.SECRET_KEY
 
+
+def _seed_estimate_catalog():
+    """Populate the estimate catalog with all template rows on startup."""
+    try:
+        from db import upsert_estimate_catalog as _upsert
+        for section_name, _, rows in _TEMPLATE_SECTIONS:
+            for row in rows:
+                desc = row.get("description", "").strip()
+                if not desc:
+                    continue
+                _upsert(
+                    description   = desc,
+                    unit_cost     = float(row.get("unit_cost") or 0),
+                    comments      = row.get("comments", ""),
+                    add_comments  = row.get("add_comments", ""),
+                    category      = section_name,
+                    estimate_name = "",
+                )
+    except Exception as e:
+        app.logger.warning(f"estimate catalog seed skipped: {e}")
+
 app.config["SESSION_PERMANENT"] = config.SESSION_PERMANENT
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
 app.config["UPLOAD_FOLDER"] = config.UPLOAD_FOLDER
@@ -1319,6 +1340,10 @@ def _build_blank_estimate():
         "gas_total":      0.0,
         "grand_total":    0.0,
     }
+
+
+# Seed catalog with template rows now that _TEMPLATE_SECTIONS is defined
+_seed_estimate_catalog()
 
 
 @app.route("/estimates")
