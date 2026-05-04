@@ -2695,7 +2695,14 @@ function EstimateBuilderPage({ data }) {
                           onChange={(e) => {
                             updateRow(si, ri, { description: e.target.value });
                             const rect = e.target.getBoundingClientRect();
-                            setPopupAnchor({ top: rect.bottom + 4, left: rect.left });
+                            const spaceBelow = window.innerHeight - rect.bottom;
+                            setPopupAnchor({
+                              top:    rect.bottom + 4,
+                              bottom: window.innerHeight - rect.top + 4,
+                              left:   rect.left,
+                              maxH:   spaceBelow > 220 ? spaceBelow - 12 : rect.top - 12,
+                              openUp: spaceBelow < 220,
+                            });
                             fetchCatalog(e.target.value, si, ri);
                           }}
                           onBlur={() => setTimeout(() => { setCatalogSuggestions([]); setPopupAnchor(null); }, 200)}
@@ -2803,7 +2810,15 @@ function EstimateBuilderPage({ data }) {
       {/* Catalog autocomplete popup — fixed so it escapes all overflow containers */}
       {catalogSuggestions.length > 0 && activeInput && popupAnchor && (
         <div
-          style={{ position: "fixed", top: popupAnchor.top, left: popupAnchor.left, minWidth: "420px", zIndex: 9999 }}
+          style={{
+            position: "fixed",
+            left: popupAnchor.left,
+            ...(popupAnchor.openUp ? { bottom: popupAnchor.bottom } : { top: popupAnchor.top }),
+            minWidth: "420px",
+            maxHeight: Math.max(popupAnchor.maxH, 150),
+            overflowY: "auto",
+            zIndex: 9999,
+          }}
           className="bg-white rounded-xl shadow-2xl ring-1 ring-slate-200"
         >
           <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 bg-slate-50 rounded-t-xl">
