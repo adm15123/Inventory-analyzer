@@ -1098,11 +1098,11 @@ def search_estimate_catalog(query: str, limit: int = 20) -> list[dict]:
         SELECT
             ec.id, ec.description, ec.unit_cost, ec.comments, ec.add_comments,
             ec.category, ec.use_count,
-            GROUP_CONCAT(ecu.estimate_name, ', ') AS used_in
+            (SELECT GROUP_CONCAT(estimate_name, ', ')
+             FROM estimate_catalog_usage
+             WHERE catalog_id = ec.id) AS used_in
         FROM estimate_catalog ec
-        LEFT JOIN estimate_catalog_usage ecu ON ecu.catalog_id = ec.id
         WHERE ec.description LIKE '%' || ? || '%'
-        GROUP BY ec.id
         ORDER BY ec.use_count DESC, ec.description
         LIMIT ?
     """

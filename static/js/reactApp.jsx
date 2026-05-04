@@ -2460,7 +2460,7 @@ function EstimateBuilderPage({ data }) {
           fetch(`${data.catalogUrl}?q=${encodeURIComponent(q)}`)
             .then((r) => r.json())
             .then((rows) => { setCatalogSuggestions(rows); setActiveInput({ si, ri }); })
-            .catch(() => {});
+            .catch((err) => console.error("catalog fetch error:", err));
         }, 250);
       };
     })(),
