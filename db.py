@@ -338,6 +338,19 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_ecat_desc
             ON estimate_catalog (description);
+
+        CREATE TABLE IF NOT EXISTS estimate_catalog_usage (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            catalog_id    INTEGER NOT NULL REFERENCES estimate_catalog(id) ON DELETE CASCADE,
+            estimate_name TEXT NOT NULL,
+            used_at       TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_ecu_cid
+            ON estimate_catalog_usage (catalog_id);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_ecu_cid_name
+            ON estimate_catalog_usage (catalog_id, estimate_name);
     """
 
     if USE_TURSO:
@@ -1082,10 +1095,15 @@ def duplicate_estimate_db(
 
 def search_estimate_catalog(query: str, limit: int = 20) -> list[dict]:
     sql = """
-        SELECT id, description, unit_cost, comments, add_comments, category, use_count
-        FROM estimate_catalog
-        WHERE description LIKE '%' || ? || '%'
-        ORDER BY use_count DESC, description
+        SELECT
+            ec.id, ec.description, ec.unit_cost, ec.comments, ec.add_comments,
+            ec.category, ec.use_count,
+            GROUP_CONCAT(ecu.estimate_name, ', ') AS used_in
+        FROM estimate_catalog ec
+        LEFT JOIN estimate_catalog_usage ecu ON ecu.catalog_id = ec.id
+        WHERE ec.description LIKE '%' || ? || '%'
+        GROUP BY ec.id
+        ORDER BY ec.use_count DESC, ec.description
         LIMIT ?
     """
     if USE_TURSO:
@@ -1096,35 +1114,45 @@ def search_estimate_catalog(query: str, limit: int = 20) -> list[dict]:
 
 
 def upsert_estimate_catalog(
-    description: str, unit_cost: float, comments: str, add_comments: str, category: str
+    description: str, unit_cost: float, comments: str, add_comments: str,
+    category: str, estimate_name: str = "",
 ) -> int:
-    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    now      = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     find_sql = "SELECT id FROM estimate_catalog WHERE description = ?"
     upd_sql  = ("UPDATE estimate_catalog SET unit_cost=?, comments=?, add_comments=?, category=?,"
                 " use_count=use_count+1, last_used=? WHERE id=?")
     ins_sql  = ("INSERT INTO estimate_catalog (description, unit_cost, comments, add_comments, category,"
                 " use_count, last_used) VALUES (?,?,?,?,?,1,?)")
+    usage_sql = ("INSERT OR IGNORE INTO estimate_catalog_usage (catalog_id, estimate_name, used_at)"
+                 " VALUES (?,?,?)")
 
     if USE_TURSO:
         rows = _turso_execute(find_sql, [description])
         if rows:
             eid = rows[0]["id"]
             _turso_execute(upd_sql, [unit_cost, comments, add_comments, category, now, eid])
-            return eid
-        _turso_execute(ins_sql, [description, unit_cost, comments, add_comments, category, now])
-        new = _turso_execute(
-            "SELECT id FROM estimate_catalog WHERE description=? ORDER BY id DESC LIMIT 1",
-            [description],
-        )
-        return new[0]["id"]
+        else:
+            _turso_execute(ins_sql, [description, unit_cost, comments, add_comments, category, now])
+            new = _turso_execute(
+                "SELECT id FROM estimate_catalog WHERE description=? ORDER BY id DESC LIMIT 1",
+                [description],
+            )
+            eid = new[0]["id"]
+        if estimate_name:
+            _turso_execute(usage_sql, [eid, estimate_name, now])
+        return eid
     else:
         with _local_conn() as conn:
             row = conn.execute(find_sql, (description,)).fetchone()
             if row:
-                conn.execute(upd_sql, (unit_cost, comments, add_comments, category, now, row["id"]))
-                return row["id"]
-            cur = conn.execute(ins_sql, (description, unit_cost, comments, add_comments, category, now))
-            return cur.lastrowid
+                eid = row["id"]
+                conn.execute(upd_sql, (unit_cost, comments, add_comments, category, now, eid))
+            else:
+                cur = conn.execute(ins_sql, (description, unit_cost, comments, add_comments, category, now))
+                eid = cur.lastrowid
+            if estimate_name:
+                conn.execute(usage_sql, (eid, estimate_name, now))
+            return eid
 
 
 def get_material_list_total(name: str, folder: str, viewer_email: str, viewer_role: str) -> float | None:

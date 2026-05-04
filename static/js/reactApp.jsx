@@ -2325,7 +2325,10 @@ function EstimatesPage({ data }) {
     <div className="space-y-6">
       <div className="flex items-center justify-between flex-wrap gap-3">
         <h1 className="text-2xl font-semibold text-slate-900">Estimates</h1>
-        <Button as="a" href={data.newUrl}>+ New Estimate</Button>
+        <div className="flex gap-2">
+          <Button as="a" href={data.newUrl}>+ New Estimate (Template)</Button>
+          <Button as="a" href={data.blankUrl} variant="secondary">+ Blank Estimate</Button>
+        </div>
       </div>
 
       {estimates.length === 0 ? (
@@ -2704,9 +2707,14 @@ function EstimateBuilderPage({ data }) {
                                   onMouseDown={() => applyCatalogItem(si, ri, item)}
                                   className="w-full text-left px-3 py-2 text-xs hover:bg-sky-50 border-b border-slate-100 last:border-0"
                                 >
-                                  <span className="font-medium text-slate-800">{item.description}</span>
-                                  <span className="ml-2 text-slate-400">${Number(item.unit_cost || 0).toLocaleString()}</span>
-                                  {item.category && <span className="ml-2 text-slate-400 italic">{item.category}</span>}
+                                  <div className="font-medium text-slate-800">{item.description}</div>
+                                  <div className="flex flex-wrap gap-x-3 mt-0.5">
+                                    <span className="text-slate-500">${Number(item.unit_cost || 0).toLocaleString()}</span>
+                                    {item.category && <span className="text-slate-400 italic">{item.category}</span>}
+                                    {item.used_in && (
+                                      <span className="text-sky-600">Used in: {item.used_in}</span>
+                                    )}
+                                  </div>
                                 </button>
                               ))}
                             </div>

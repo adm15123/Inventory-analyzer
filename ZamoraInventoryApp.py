@@ -1289,6 +1289,7 @@ def _estimate_entry(e: dict) -> dict:
 
 
 def _build_empty_estimate():
+    """Pre-populated template rows, all quantities cleared."""
     sections = [
         {
             "id": str(uuid.uuid4()), "name": name, "is_gas": is_gas,
@@ -1296,20 +1297,27 @@ def _build_empty_estimate():
         }
         for name, is_gas, rows in _TEMPLATE_SECTIONS
     ]
-    plumbing_total = sum(
-        sum(float(r.get("total") or 0) for r in s["rows"])
-        for s in sections if not s["is_gas"]
-    )
-    gas_total = sum(
-        sum(float(r.get("total") or 0) for r in s["rows"])
-        for s in sections if s["is_gas"]
-    )
     return {
         "project_info":   {"name": "", "address": "", "contractor": "", "date": ""},
         "sections":       sections,
-        "plumbing_total": plumbing_total,
-        "gas_total":      gas_total,
-        "grand_total":    plumbing_total + gas_total,
+        "plumbing_total": 0.0,
+        "gas_total":      0.0,
+        "grand_total":    0.0,
+    }
+
+
+def _build_blank_estimate():
+    """Completely blank estimate — sections exist but no rows."""
+    sections = [
+        {"id": str(uuid.uuid4()), "name": name, "is_gas": is_gas, "rows": []}
+        for name, is_gas, _ in _TEMPLATE_SECTIONS
+    ]
+    return {
+        "project_info":   {"name": "", "address": "", "contractor": "", "date": ""},
+        "sections":       sections,
+        "plumbing_total": 0.0,
+        "gas_total":      0.0,
+        "grand_total":    0.0,
     }
 
 
@@ -1319,9 +1327,10 @@ def estimates_list():
     raw = list_estimates_db(session.get("email", ""), session.get("role", "user"))
     entries = [_estimate_entry(e) for e in raw]
     return render_app("estimates", {
-        "estimates":  entries,
-        "newUrl":     url_for("estimate_builder"),
-        "deleteUrl":  "/delete_estimate/",
+        "estimates":    entries,
+        "newUrl":       url_for("estimate_builder"),
+        "blankUrl":     url_for("estimate_builder", blank=1),
+        "deleteUrl":    "/delete_estimate/",
         "duplicateUrl": url_for("api_duplicate_estimate"),
     })
 
@@ -1329,7 +1338,8 @@ def estimates_list():
 @app.route("/estimate")
 @login_required
 def estimate_builder():
-    name = request.args.get("name", "").strip()
+    name  = request.args.get("name", "").strip()
+    blank = request.args.get("blank", "")
     if name:
         folder, ename = _split_template_path(name)
         e = get_estimate_db(ename, folder, session.get("email", ""), session.get("role", "user"))
@@ -1338,6 +1348,8 @@ def estimate_builder():
         else:
             flash("Estimate not found.", "warning")
             content = _build_empty_estimate()
+    elif blank:
+        content = _build_blank_estimate()
     else:
         content = _build_empty_estimate()
 
@@ -1392,15 +1404,17 @@ def save_estimate():
 
     # Auto-save catalog entries for manual rows
     try:
+        display_name = f"{folder}/{ename}" if folder else ename
         for section in content.get("sections", []):
             for row in section.get("rows", []):
                 if row.get("type") == "manual" and row.get("description", "").strip():
                     upsert_estimate_catalog(
-                        description  = row["description"].strip(),
-                        unit_cost    = float(row.get("unit_cost") or 0),
-                        comments     = row.get("comments", ""),
-                        add_comments = row.get("add_comments", ""),
-                        category     = section.get("name", ""),
+                        description   = row["description"].strip(),
+                        unit_cost     = float(row.get("unit_cost") or 0),
+                        comments      = row.get("comments", ""),
+                        add_comments  = row.get("add_comments", ""),
+                        category      = section.get("name", ""),
+                        estimate_name = display_name,
                     )
     except Exception:
         pass
