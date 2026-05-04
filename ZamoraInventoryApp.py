@@ -1394,6 +1394,8 @@ def estimate_builder():
         for t in ml_raw
     ]
 
+    catalog_items = search_estimate_catalog("", limit=500)
+
     return render_app("estimate_builder", {
         "estimateName": name,
         "content":      content,
@@ -1403,6 +1405,7 @@ def estimate_builder():
         "catalogUrl":   url_for("api_estimate_catalog"),
         "mlTotalUrl":   url_for("api_material_list_total"),
         "mlNames":      ml_names,
+        "catalogItems": catalog_items,
     })
 
 
