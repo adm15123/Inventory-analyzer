@@ -2400,6 +2400,8 @@ function EstimateBuilderPage({ data }) {
   const [pdfLoading, setPdfLoading]       = useState(false);
   const [xlsLoading, setXlsLoading]       = useState(false);
   const [mlModal, setMlModal]             = useState(null);   // { sectionIdx, rowIdx }
+  const [catalogSuggestions, setCatalogSuggestions] = useState([]);
+  const [activeInput, setActiveInput]     = useState(null);   // { si, ri }
 
   const exportFormRef = useRef(null);
   const exportDataRef = useRef(null);
@@ -2447,14 +2449,34 @@ function EstimateBuilderPage({ data }) {
     }));
   };
 
-  // ── catalog lookup (pre-loaded on page open) ─────────────────────
-  const catalogLookup = useMemo(() => {
-    const map = {};
-    (data.catalogItems || []).forEach((item) => {
-      if (!map[item.description]) map[item.description] = item;
+  // ── catalog autocomplete (debounced fetch as user types) ─────────
+  const fetchCatalog = useCallback(
+    (() => {
+      let timer;
+      return (q, si, ri) => {
+        clearTimeout(timer);
+        if (!q || q.length < 2) { setCatalogSuggestions([]); return; }
+        timer = setTimeout(() => {
+          fetch(`${data.catalogUrl}?q=${encodeURIComponent(q)}`)
+            .then((r) => r.json())
+            .then((rows) => { setCatalogSuggestions(rows); setActiveInput({ si, ri }); })
+            .catch((err) => console.error("catalog fetch error:", err));
+        }, 250);
+      };
+    })(),
+    [data.catalogUrl]
+  );
+
+  const applyCatalogItem = (si, ri, item) => {
+    updateRow(si, ri, {
+      description:  item.description,
+      unit_cost:    item.unit_cost,
+      comments:     item.comments,
+      add_comments: item.add_comments,
     });
-    return map;
-  }, [data.catalogItems]);
+    setCatalogSuggestions([]);
+    setActiveInput(null);
+  };
 
   // ── link material list ────────────────────────────────────────────
   const linkMaterialList = (mlName) => {
@@ -2659,34 +2681,61 @@ function EstimateBuilderPage({ data }) {
                     </td>
 
                     {/* DESCRIPTION with autocomplete */}
-                    <td className="px-3 py-1.5">
+                    <td className="px-3 py-1.5 relative">
                       {row.type === "material_list" ? (
                         <div className="flex items-center gap-1">
                           <span className="inline-block bg-sky-100 text-sky-700 text-xs font-semibold rounded px-1.5 py-0.5">ML</span>
                           <span className="text-sm text-slate-700">{row.description}</span>
                         </div>
                       ) : (
-                        <input
-                          type="text"
-                          value={row.description}
-                          list="estimateCatalog"
-                          onChange={(e) => {
-                            const desc = e.target.value;
-                            const match = catalogLookup[desc];
-                            if (match) {
-                              updateRow(si, ri, {
-                                description:  desc,
-                                unit_cost:    match.unit_cost,
-                                comments:     match.comments,
-                                add_comments: match.add_comments,
-                              });
-                            } else {
-                              updateRow(si, ri, { description: desc });
-                            }
-                          }}
-                          className={inputClass}
-                          placeholder="Description…"
-                        />
+                        <>
+                          <AutoTextarea
+                            value={row.description}
+                            onChange={(e) => {
+                              updateRow(si, ri, { description: e.target.value });
+                              fetchCatalog(e.target.value, si, ri);
+                            }}
+                            onBlur={() => setTimeout(() => setCatalogSuggestions([]), 200)}
+                            className={inputClass}
+                            placeholder="Description…"
+                          />
+                          {catalogSuggestions.length > 0 && activeInput?.si === si && activeInput?.ri === ri && (
+                            <div className="absolute z-30 top-full left-0 mt-1 bg-white rounded-xl shadow-2xl ring-1 ring-slate-200 max-h-80 overflow-y-auto" style={{ minWidth: "420px" }}>
+                              <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 bg-slate-50 rounded-t-xl sticky top-0">
+                                <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">
+                                  {catalogSuggestions.length} suggestion{catalogSuggestions.length !== 1 ? "s" : ""}
+                                </span>
+                                <button onMouseDown={() => setCatalogSuggestions([])} className="text-slate-400 hover:text-slate-600 text-base leading-none">×</button>
+                              </div>
+                              {(() => {
+                                const groups = {};
+                                catalogSuggestions.forEach((item) => {
+                                  const cat = item.category || "Other";
+                                  if (!groups[cat]) groups[cat] = [];
+                                  groups[cat].push(item);
+                                });
+                                return Object.entries(groups).map(([cat, items]) => (
+                                  <div key={cat}>
+                                    <div className="px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-white bg-slate-700 sticky top-8">{cat}</div>
+                                    {items.map((item) => (
+                                      <button
+                                        key={item.id}
+                                        onMouseDown={() => applyCatalogItem(si, ri, item)}
+                                        className="w-full text-left px-3 py-2 text-xs hover:bg-sky-50 border-b border-slate-100 last:border-0 transition"
+                                      >
+                                        <div className="font-medium text-slate-800 leading-snug">{item.description}</div>
+                                        <div className="flex flex-wrap gap-x-3 mt-0.5">
+                                          <span className="text-emerald-600 font-semibold">${Number(item.unit_cost || 0).toLocaleString()}</span>
+                                          {item.used_in && <span className="text-sky-600">Used in: {item.used_in}</span>}
+                                        </div>
+                                      </button>
+                                    ))}
+                                  </div>
+                                ));
+                              })()}
+                            </div>
+                          )}
+                        </>
                       )}
                     </td>
 
@@ -2784,13 +2833,6 @@ function EstimateBuilderPage({ data }) {
           </div>
         )}
       </div>
-
-      {/* Catalog datalist for description autocomplete */}
-      <datalist id="estimateCatalog">
-        {(data.catalogItems || []).map((item) => (
-          <option key={item.id} value={item.description} />
-        ))}
-      </datalist>
 
       {/* Material List link modal */}
       {mlModal && (
