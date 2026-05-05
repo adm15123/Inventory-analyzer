@@ -1566,9 +1566,17 @@ def export_estimate_pdf():
         css_link        = f"file://{css_path}",
     )
 
+    _xdg = tempfile.mkdtemp(prefix="wkhtml_")
+    os.chmod(_xdg, stat.S_IRWXU)
+    os.environ["XDG_RUNTIME_DIR"] = _xdg
     try:
         pdf_bytes = pdfkit.from_string(rendered, False,
-                                       options={"enable-local-file-access": None},
+                                       options={
+                                           "enable-local-file-access": None,
+                                           "margin-top":    "28",
+                                           "margin-bottom": "22",
+                                           "quiet":         "",
+                                       },
                                        css=css_path)
     except Exception as e:
         app.logger.error(f"pdfkit error: {e}")
