@@ -925,22 +925,27 @@ useEffect(() => {
   });
 
   const [items, setItems] = useState(() => {
-  const fromServer = (data.products || []).map((product) => ({
-    quantity: Number(product.quantity ?? product.Quantity ?? 0) || 0,
-    description: product["Product Description"] || product.description || "",
-    supply: product.Supply || product.supply || supplyCodes[lookupSupply],
-    lookupSupply:
-      getSupplyKeyFromCode(product.Supply || product.supply) || lookupSupply,
-    unit: product.Unit || product.unit || "",
-    lastPrice:
-      Number(
-        product["Last Price"] ??
-          product.last_price ??
-          product["Price per Unit"] ??
-          0
-      ) || 0,
-    predetermined: true,
-  }));
+  const fromServer = (data.products || []).map((product) => {
+    if (product.type === "divider") {
+      return { type: "divider", label: product.label || "" };
+    }
+    return {
+      quantity: Number(product.quantity ?? product.Quantity ?? 0) || 0,
+      description: product["Product Description"] || product.description || "",
+      supply: product.Supply || product.supply || supplyCodes[lookupSupply],
+      lookupSupply:
+        getSupplyKeyFromCode(product.Supply || product.supply) || lookupSupply,
+      unit: product.Unit || product.unit || "",
+      lastPrice:
+        Number(
+          product["Last Price"] ??
+            product.last_price ??
+            product["Price per Unit"] ??
+            0
+        ) || 0,
+      predetermined: true,
+    };
+  });
 
   // Consume pending cart items added from Search Description
   const pending = getPendingItems();

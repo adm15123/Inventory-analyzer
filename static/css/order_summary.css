@@ -269,8 +269,8 @@ body {
 .cell-center { text-align: center; }
 .cell-right  { text-align: right;  }
 
-/* Section divider row */
-.row-divider td {
+/* Section divider row — selector must beat .items-table tbody td (0,1,2) */
+.items-table .row-divider td {
   background: #2d3748;
   color: #ffffff;
   font-size: 7.5pt;

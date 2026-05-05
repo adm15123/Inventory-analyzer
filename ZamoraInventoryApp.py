@@ -891,6 +891,9 @@ def material_list():
             raw_list = raw_template
         product_list = []
         for item in raw_list:
+            if item.get("type") == "divider":
+                product_list.append({"type": "divider", "label": item.get("label", "")})
+                continue
             desc = (
                 item.get("Product Description")
                 or item.get("description")
