@@ -1130,9 +1130,11 @@ useEffect(() => {
   const grandTotal = subtotal + tax;
 
   const serializeProducts = () =>
-    items
-      .filter((item) => item.type !== "divider")
-      .map((item) => ({
+    items.map((item) => {
+      if (item.type === "divider") {
+        return { type: "divider", label: item.label || "" };
+      }
+      return {
         description: item.description,
         supply: item.supply,
         unit: item.unit,
@@ -1141,7 +1143,8 @@ useEffect(() => {
         total: Number(
           ((Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)).toFixed(2)
         ),
-      }));
+      };
+    });
   const [pdfLoading, setPdfLoading] = useState(false);
   const handleExport = () => {
     const includePrice = window.confirm("Include prices in the PDF?");

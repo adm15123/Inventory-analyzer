@@ -84,7 +84,13 @@
     <tbody>
       {% set ns = namespace(row_num=0) %}
       {% for product in products %}
-        {% if product.quantity|float > 0 %}
+        {% if product.get('type') == 'divider' %}
+          <tr class="row-divider">
+            <td colspan="{{ 5 if include_price == 'yes' else 3 }}">
+              {{ product.get('label') or '' }}
+            </td>
+          </tr>
+        {% elif product.quantity|float > 0 %}
           {% set ns.row_num = ns.row_num + 1 %}
           <tr class="{{ 'row-even' if ns.row_num % 2 == 0 else 'row-odd' }}">
             <td class="col-qty cell-center">{{ product.quantity }}</td>

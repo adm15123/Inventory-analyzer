@@ -269,6 +269,19 @@ body {
 .cell-center { text-align: center; }
 .cell-right  { text-align: right;  }
 
+/* Section divider row */
+.row-divider td {
+  background: #2d3748;
+  color: #ffffff;
+  font-size: 7.5pt;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  padding: 5pt 9pt;
+  border-bottom: none;
+  border-top: none;
+}
+
 /* Description column — allow wrapping */
 .col-desc {
   word-break: break-word;
