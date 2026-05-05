@@ -820,7 +820,11 @@ def material_list():
         )
         import pdfkit
         try:
-            options = {"enable-local-file-access": None}
+            options = {
+                "enable-local-file-access": None,
+                "margin-top":    "1.1in",
+                "margin-bottom": "0.85in",
+            }
             pdf = pdfkit.from_string(rendered, False, options=options, css=css_path)
             global pdf_buffer
             pdf_buffer = io.BytesIO(pdf)

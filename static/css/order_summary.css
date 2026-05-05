@@ -243,9 +243,11 @@ body {
 .col-price { width: 16%; }
 .col-total { width: 16%; }
 
-/* Body rows */
+/* Body rows — multiple break properties for wkhtmltopdf (WebKit engine) */
 .items-table tbody tr {
   page-break-inside: avoid;
+  break-inside: avoid;
+  -webkit-column-break-inside: avoid;
   page-break-after: auto;
 }
 
