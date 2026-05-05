@@ -962,6 +962,7 @@ useEffect(() => {
 });
 
   const [draggingIndex, setDraggingIndex] = useState(null);
+  const draggingIndexRef = useRef(null);
   const productDataRef = useRef(null);
   const includePriceRef = useRef(null);
   const formRef = useRef(null);
@@ -1029,6 +1030,18 @@ useEffect(() => {
     setItems((c) => c.filter((_, i) => i !== index));
   };
 
+  const addDividerRow = () => {
+    setItems((c) => [...c, { type: "divider", label: "" }]);
+  };
+
+  const updateDividerLabel = (index, label) => {
+    setItems((c) => {
+      const next = [...c];
+      next[index] = { ...next[index], label };
+      return next;
+    });
+  };
+
   const moveItem = (index, direction) => {
     setItems((c) => {
       const next = [...c];
@@ -1043,23 +1056,26 @@ useEffect(() => {
   const handleDragStart = (e, index) => {
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", String(index));
+    draggingIndexRef.current = index;
     setDraggingIndex(index);
   };
 
   const handleDragOver = (e, index) => {
     e.preventDefault();
-    if (draggingIndex === null || draggingIndex === index) return;
+    const from = draggingIndexRef.current;
+    if (from === null || from === index) return;
+    draggingIndexRef.current = index;
+    setDraggingIndex(index);
     setItems((c) => {
       const next = [...c];
-      const [moved] = next.splice(draggingIndex, 1);
+      const [moved] = next.splice(from, 1);
       next.splice(index, 0, moved);
       return next;
     });
-    setDraggingIndex(index);
   };
 
-  const handleDrop = (e) => { e.preventDefault(); setDraggingIndex(null); };
-  const handleDragEnd = () => setDraggingIndex(null);
+  const handleDrop = (e) => { e.preventDefault(); draggingIndexRef.current = null; setDraggingIndex(null); };
+  const handleDragEnd = () => { draggingIndexRef.current = null; setDraggingIndex(null); };
 
   const handleSupplyChange = (index, supplyKey) => {
     updateItem(index, { supply: supplyCodes[supplyKey] || supplyKey, lookupSupply: supplyKey });
@@ -1072,10 +1088,9 @@ useEffect(() => {
     () =>
       items.reduce(
         (sum, item) =>
-          sum +
-          Number(
-            item.total || (Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)
-          ),
+          item.type === "divider"
+            ? sum
+            : sum + Number(item.total || (Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)),
         0
       ),
     [items]
@@ -1084,16 +1099,27 @@ useEffect(() => {
   const grandTotal = subtotal + tax;
 
   const serializeProducts = () =>
-    items.map((item) => ({
-      description: item.description,
-      supply: item.supply,
-      unit: item.unit,
-      last_price: Number(item.lastPrice || 0),
-      quantity: Number(item.quantity || 0),
-      total: Number(
-        ((Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)).toFixed(2)
-      ),
-    }));
+    items
+      .filter((item) => item.type !== "divider")
+      .map((item) => ({
+        description: item.description,
+        supply: item.supply,
+        unit: item.unit,
+        last_price: Number(item.lastPrice || 0),
+        quantity: Number(item.quantity || 0),
+        total: Number(
+          ((Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)).toFixed(2)
+        ),
+      }));
+  const [showQuickAdd, setShowQuickAdd] = useState(false);
+  const [quickForm, setQuickForm] = useState({
+    description: "",
+    quantity: 1,
+    unit: "",
+    lastPrice: "",
+    supply: supplyCodes[lookupSupply],
+    lookupSupply: lookupSupply,
+   });
   const [pdfLoading, setPdfLoading] = useState(false);
   const handleExport = () => {
     const includePrice = window.confirm("Include prices in the PDF?");
@@ -1243,7 +1269,7 @@ useEffect(() => {
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
               <span className="text-slate-400">Items</span>
-              <span className="font-medium">{items.length}</span>
+              <span className="font-medium">{items.filter(i => i.type !== "divider").length}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-slate-400">Subtotal</span>
@@ -1310,7 +1336,46 @@ useEffect(() => {
                   </td>
                 </tr>
               )}
-              {items.map((item, index) => (
+              {items.map((item, index) => {
+                if (item.type === "divider") {
+                  return (
+                    <tr
+                      key={index}
+                      draggable
+                      onDragStart={(e) => handleDragStart(e, index)}
+                      onDragOver={(e) => handleDragOver(e, index)}
+                      onDrop={handleDrop}
+                      onDragEnd={handleDragEnd}
+                      className={classNames(
+                        "bg-slate-100 transition",
+                        draggingIndex === index ? "opacity-40" : ""
+                      )}
+                      style={{ cursor: "grab" }}
+                    >
+                      <td colSpan={7} className="px-3 py-1.5">
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 border-t-2 border-slate-400" />
+                          <input
+                            type="text"
+                            value={item.label || ""}
+                            onChange={(e) => updateDividerLabel(index, e.target.value)}
+                            placeholder="Section name…"
+                            className="bg-transparent text-xs font-bold text-slate-600 text-center border-none outline-none w-40 placeholder-slate-400 uppercase tracking-wide"
+                          />
+                          <div className="flex-1 border-t-2 border-slate-400" />
+                        </div>
+                      </td>
+                      <td className="px-2 py-1">
+                        <button
+                          onClick={() => removeItem(index)}
+                          className="rounded bg-rose-100 px-1.5 py-0.5 text-[11px] font-bold text-rose-600 hover:bg-rose-200 transition"
+                          title="Remove divider"
+                        >✕</button>
+                      </td>
+                    </tr>
+                  );
+                }
+                return (
                 <tr
                   key={index}
                   draggable
@@ -1437,7 +1502,8 @@ useEffect(() => {
                     </div>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
 
             {/* Sticky footer totals row */}
@@ -1468,13 +1534,136 @@ useEffect(() => {
         </div>
       </div>
 
-      {/* Add Item button — appends an empty editable row to the table */}
+      {/* Quick Add Panel */}
+<div>
+  {showQuickAdd ? (
+    <div className="rounded-2xl border-2 border-dashed border-sky-300 bg-sky-50 p-5 space-y-4">
+      <h3 className="text-sm font-semibold text-sky-800">Add Custom Item</h3>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <div className="col-span-2 sm:col-span-3 space-y-1">
+          <label className="text-xs font-medium text-slate-500">Description *</label>
+          <input
+            autoFocus
+            type="text"
+            value={quickForm.description}
+            onChange={(e) => setQuickForm((f) => ({ ...f, description: e.target.value }))}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && quickForm.description.trim()) {
+                const qty = Math.max(0, Number(quickForm.quantity) || 0);
+                const price = parseFloat(quickForm.lastPrice) || 0;
+                setItems((c) => [...c, {
+                  quantity: qty,
+                  description: quickForm.description.trim(),
+                  supply: quickForm.supply,
+                  lookupSupply: quickForm.lookupSupply,
+                  unit: quickForm.unit.trim(),
+                  lastPrice: price,
+                  total: Number((qty * price).toFixed(2)),
+                  predetermined: false,
+                }]);
+                setQuickForm((f) => ({ description: "", quantity: 1, unit: "", lastPrice: "", supply: f.supply, lookupSupply: f.lookupSupply }));
+              }
+            }}
+            placeholder="e.g. 3/4 copper elbow 90°"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-slate-500">Quantity</label>
+          <input
+            type="number"
+            min="0"
+            step="1"
+            value={quickForm.quantity}
+            onChange={(e) => setQuickForm((f) => ({ ...f, quantity: e.target.value }))}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-slate-500">Unit</label>
+          <input
+            type="text"
+            value={quickForm.unit}
+            onChange={(e) => setQuickForm((f) => ({ ...f, unit: e.target.value }))}
+            placeholder="EA, FT, BOX…"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+          />
+        </div>
+        <div className="space-y-1">
+          <label className="text-xs font-medium text-slate-500">Unit Price ($)</label>
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={quickForm.lastPrice}
+            onChange={(e) => setQuickForm((f) => ({ ...f, lastPrice: e.target.value }))}
+            placeholder="0.00"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+          />
+        </div>
+        <div className="col-span-2 sm:col-span-3 space-y-1">
+          <label className="text-xs font-medium text-slate-500">Supplier</label>
+          <select
+            value={quickForm.lookupSupply}
+            onChange={(e) => setQuickForm((f) => ({ ...f, lookupSupply: e.target.value, supply: supplyCodes[e.target.value] }))}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+          >
+            <option value="supply1">Supply 1 (BPS)</option>
+            <option value="supply2">Supply 2</option>
+            <option value="supply3">Lion Plumbing Supply</option>
+            <option value="supply4">Bond Plumbing Supply</option>
+          </select>
+        </div>
+      </div>
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={() => {
+            if (!quickForm.description.trim()) return;
+            const qty = Math.max(0, Number(quickForm.quantity) || 0);
+            const price = parseFloat(quickForm.lastPrice) || 0;
+            setItems((c) => [...c, {
+              quantity: qty,
+              description: quickForm.description.trim(),
+              supply: quickForm.supply,
+              lookupSupply: quickForm.lookupSupply,
+              unit: quickForm.unit.trim(),
+              lastPrice: price,
+              total: Number((qty * price).toFixed(2)),
+              predetermined: false,
+            }]);
+            setQuickForm((f) => ({ description: "", quantity: 1, unit: "", lastPrice: "", supply: f.supply, lookupSupply: f.lookupSupply }));
+          }}
+          disabled={!quickForm.description.trim()}
+          className="rounded-lg bg-sky-600 px-5 py-2 text-sm font-semibold text-white hover:bg-sky-700 transition disabled:opacity-40"
+        >
+          + Add to List
+        </button>
+        <button
+          onClick={() => setShowQuickAdd(false)}
+          className="rounded-lg bg-slate-100 px-4 py-2 text-sm font-semibold text-slate-600 hover:bg-slate-200 transition"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  ) : (
+    <div className="flex gap-3">
       <button
-        onClick={addManualItem}
-        className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-6 py-3 text-sm font-semibold text-slate-500 hover:border-sky-400 hover:text-sky-600 transition w-full justify-center"
+        onClick={() => setShowQuickAdd(true)}
+        className="flex-1 inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-6 py-3 text-sm font-semibold text-slate-500 hover:border-sky-400 hover:text-sky-600 transition justify-center"
       >
         + Add Item
       </button>
+      <button
+        onClick={addDividerRow}
+        className="inline-flex items-center gap-2 rounded-xl border-2 border-dashed border-slate-300 px-5 py-3 text-sm font-semibold text-slate-500 hover:border-violet-400 hover:text-violet-600 transition justify-center"
+        title="Add a section divider to organize your list"
+      >
+        ── Section
+      </button>
+    </div>
+  )}
+</div>
 
       {/* Hidden form for PDF submit */}
       <form ref={formRef} method="POST" action={data.listUrl} className="hidden">
