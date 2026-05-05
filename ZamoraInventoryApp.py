@@ -804,7 +804,12 @@ def material_list():
         tax = subtotal * 0.07
         total_cost = subtotal + tax
 
-        os.environ.setdefault("XDG_RUNTIME_DIR", "/tmp")
+        # wkhtmltopdf/Qt requires XDG_RUNTIME_DIR to be owned by the current
+        # user. /tmp is owned by root so we use a per-process temp dir instead.
+        import tempfile, stat
+        _xdg = tempfile.mkdtemp(prefix="wkhtml_")
+        os.chmod(_xdg, stat.S_IRWXU)
+        os.environ["XDG_RUNTIME_DIR"] = _xdg
         css_path = os.path.join(app.root_path, "static", "css", "order_summary.css")
         rendered = render_template(
             "order_summary.html",
