@@ -23,6 +23,8 @@ import requests
 from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
 import os
 import uuid
+import tempfile
+import stat
 from werkzeug.utils import secure_filename
 
 from sku_matcher import judge_same_product
@@ -806,7 +808,6 @@ def material_list():
 
         # wkhtmltopdf/Qt requires XDG_RUNTIME_DIR to be owned by the current
         # user. /tmp is owned by root so we use a per-process temp dir instead.
-        import tempfile, stat
         _xdg = tempfile.mkdtemp(prefix="wkhtml_")
         os.chmod(_xdg, stat.S_IRWXU)
         os.environ["XDG_RUNTIME_DIR"] = _xdg
@@ -827,8 +828,9 @@ def material_list():
         try:
             options = {
                 "enable-local-file-access": None,
-                "margin-top":    "1.1in",
-                "margin-bottom": "0.85in",
+                "margin-top":    "28",
+                "margin-bottom": "22",
+                "quiet":         "",
             }
             pdf = pdfkit.from_string(rendered, False, options=options, css=css_path)
             global pdf_buffer
