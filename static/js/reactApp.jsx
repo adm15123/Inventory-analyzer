@@ -963,6 +963,7 @@ useEffect(() => {
 
   const [draggingIndex, setDraggingIndex] = useState(null);
   const draggingIndexRef = useRef(null);
+  const scrollRafRef = useRef(null);
   const productDataRef = useRef(null);
   const includePriceRef = useRef(null);
   const formRef = useRef(null);
@@ -1053,6 +1054,24 @@ useEffect(() => {
     });
   };
 
+  const SCROLL_ZONE = 80;
+
+  const stopAutoScroll = () => {
+    if (scrollRafRef.current) {
+      cancelAnimationFrame(scrollRafRef.current);
+      scrollRafRef.current = null;
+    }
+  };
+
+  const startAutoScroll = (speed) => {
+    stopAutoScroll();
+    const tick = () => {
+      window.scrollBy(0, speed);
+      scrollRafRef.current = requestAnimationFrame(tick);
+    };
+    scrollRafRef.current = requestAnimationFrame(tick);
+  };
+
   const handleDragStart = (e, index) => {
     e.dataTransfer.effectAllowed = "move";
     e.dataTransfer.setData("text/plain", String(index));
@@ -1062,6 +1081,18 @@ useEffect(() => {
 
   const handleDragOver = (e, index) => {
     e.preventDefault();
+
+    // Auto-scroll when near viewport edges
+    const { clientY } = e;
+    const { innerHeight } = window;
+    if (clientY < SCROLL_ZONE) {
+      startAutoScroll(-Math.round((SCROLL_ZONE - clientY) / 8));
+    } else if (clientY > innerHeight - SCROLL_ZONE) {
+      startAutoScroll(Math.round((clientY - (innerHeight - SCROLL_ZONE)) / 8));
+    } else {
+      stopAutoScroll();
+    }
+
     const from = draggingIndexRef.current;
     if (from === null || from === index) return;
     draggingIndexRef.current = index;
@@ -1074,8 +1105,8 @@ useEffect(() => {
     });
   };
 
-  const handleDrop = (e) => { e.preventDefault(); draggingIndexRef.current = null; setDraggingIndex(null); };
-  const handleDragEnd = () => { draggingIndexRef.current = null; setDraggingIndex(null); };
+  const handleDrop = (e) => { e.preventDefault(); stopAutoScroll(); draggingIndexRef.current = null; setDraggingIndex(null); };
+  const handleDragEnd = () => { stopAutoScroll(); draggingIndexRef.current = null; setDraggingIndex(null); };
 
   const handleSupplyChange = (index, supplyKey) => {
     updateItem(index, { supply: supplyCodes[supplyKey] || supplyKey, lookupSupply: supplyKey });
