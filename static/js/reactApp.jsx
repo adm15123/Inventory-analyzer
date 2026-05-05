@@ -2402,6 +2402,8 @@ function EstimateBuilderPage({ data }) {
   const [xlsLoading, setXlsLoading]       = useState(false);
   const [mlModal, setMlModal]             = useState(null);   // { sectionIdx, rowIdx }
   const [mlSearch, setMlSearch]           = useState("");
+  const [mlReloading, setMlReloading]     = useState(false);
+  const [mlReloadOk, setMlReloadOk]       = useState(false);
   const [catalogSuggestions, setCatalogSuggestions] = useState([]);
   const [activeInput, setActiveInput]     = useState(null);   // { si, ri }
   const [popupAnchor, setPopupAnchor]     = useState(null);   // { top, left }
@@ -2510,6 +2512,47 @@ function EstimateBuilderPage({ data }) {
       .catch(() => window.alert("Error fetching material list total."));
   };
 
+  // ── reload material list totals ───────────────────────────────────
+  const reloadMLTotals = async () => {
+    setMlReloading(true);
+    setMlReloadOk(false);
+    try {
+      const mlNames = new Set();
+      sections.forEach((s) => s.rows.forEach((r) => {
+        if (r.type === "material_list" && r.material_list_name) mlNames.add(r.material_list_name);
+      }));
+      if (mlNames.size === 0) { setMlReloading(false); return; }
+
+      const results = await Promise.all(
+        [...mlNames].map((name) =>
+          fetch(`${data.mlTotalUrl}?name=${encodeURIComponent(name)}`)
+            .then((r) => r.json())
+            .then((res) => ({ name, total: res.ok ? res.total : null }))
+            .catch(() => ({ name, total: null }))
+        )
+      );
+      const totalsMap = Object.fromEntries(results.map(({ name, total }) => [name, total]));
+
+      setSections((prev) =>
+        prev.map((s) => ({
+          ...s,
+          rows: s.rows.map((r) => {
+            if (r.type !== "material_list" || !r.material_list_name) return r;
+            const fresh = totalsMap[r.material_list_name];
+            if (fresh === null || fresh === undefined) return r;
+            return { ...r, unit_cost: fresh, total: fresh };
+          }),
+        }))
+      );
+      setMlReloadOk(true);
+      setTimeout(() => setMlReloadOk(false), 2500);
+    } catch (err) {
+      window.alert("Error reloading material list totals.");
+    } finally {
+      setMlReloading(false);
+    }
+  };
+
   // ── computed totals ──────────────────────────────────────────────
   const plumbingTotal = useMemo(
     () => sections.filter((s) => !s.is_gas).reduce((sum, s) => sum + s.rows.reduce((rs, r) => rs + (parseFloat(r.total) || 0), 0), 0),
@@ -2571,6 +2614,14 @@ function EstimateBuilderPage({ data }) {
           </h1>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            onClick={reloadMLTotals}
+            disabled={mlReloading}
+            title="Re-fetch totals for all linked material lists without losing any data"
+            className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-600 disabled:opacity-50 transition"
+          >
+            {mlReloading ? "Reloading…" : mlReloadOk ? "✓ Updated" : "↺ Reload ML"}
+          </button>
           <button
             onClick={handleSave}
             disabled={saving}
