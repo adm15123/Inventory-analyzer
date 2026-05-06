@@ -40,7 +40,7 @@ from db import (
     get_template_versions_db, restore_template_version_db, count_templates_db,
     save_estimate_db, get_estimate_db, list_estimates_db,
     delete_estimate_db, duplicate_estimate_db,
-    search_estimate_catalog, upsert_estimate_catalog,
+    search_estimate_catalog, upsert_estimate_catalog, clear_estimate_catalog_usage,
     get_material_list_total,
 )
 import tempfile
@@ -64,35 +64,6 @@ init_db()
 load_catalog_to_memory()
 app.secret_key = config.SECRET_KEY
 
-
-def _seed_estimate_catalog():
-    """Seed the estimate catalog with template rows — runs only if catalog is empty."""
-    try:
-        from db import _turso_execute, _local_conn, USE_TURSO, upsert_estimate_catalog as _upsert
-        check_sql = "SELECT COUNT(*) AS cnt FROM estimate_catalog"
-        if USE_TURSO:
-            rows = _turso_execute(check_sql)
-            count = rows[0]["cnt"] if rows else 0
-        else:
-            with _local_conn() as conn:
-                count = conn.execute(check_sql).fetchone()[0]
-        if count > 0:
-            return
-        for section_name, _, rows in _TEMPLATE_SECTIONS:
-            for row in rows:
-                desc = row.get("description", "").strip()
-                if not desc:
-                    continue
-                _upsert(
-                    description   = desc,
-                    unit_cost     = float(row.get("unit_cost") or 0),
-                    comments      = row.get("comments", ""),
-                    add_comments  = row.get("add_comments", ""),
-                    category      = section_name,
-                    estimate_name = "",
-                )
-    except Exception as e:
-        app.logger.warning(f"estimate catalog seed skipped: {e}")
 
 app.config["SESSION_PERMANENT"] = config.SESSION_PERMANENT
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(hours=8)
@@ -1365,10 +1336,6 @@ def _build_blank_estimate():
     }
 
 
-# Seed catalog with template rows now that _TEMPLATE_SECTIONS is defined
-_seed_estimate_catalog()
-
-
 @app.route("/estimates")
 @login_required
 def estimates_list():
@@ -1465,12 +1432,13 @@ def save_estimate():
     except Exception:
         pass
 
-    # Auto-save catalog entries for manual rows
+    # Sync catalog: wipe old usage for this estimate, then re-add all current rows
     try:
         display_name = f"{folder}/{ename}" if folder else ename
+        clear_estimate_catalog_usage(display_name)
         for section in content.get("sections", []):
             for row in section.get("rows", []):
-                if row.get("type") == "manual" and row.get("description", "").strip():
+                if row.get("description", "").strip():
                     upsert_estimate_catalog(
                         description   = row["description"].strip(),
                         unit_cost     = float(row.get("unit_cost") or 0),

@@ -1160,6 +1160,16 @@ def upsert_estimate_catalog(
             return eid
 
 
+def clear_estimate_catalog_usage(estimate_name: str) -> None:
+    """Remove all catalog usage entries for this estimate so re-save stays in sync."""
+    sql = "DELETE FROM estimate_catalog_usage WHERE estimate_name = ?"
+    if USE_TURSO:
+        _turso_execute(sql, [estimate_name])
+    else:
+        with _local_conn() as conn:
+            conn.execute(sql, (estimate_name,))
+
+
 def get_material_list_total(name: str, folder: str, viewer_email: str, viewer_role: str) -> float | None:
     """Return the grand total (with tax) of a saved material list template."""
     t = get_template_db(name, folder, viewer_email, viewer_role)
