@@ -1666,41 +1666,33 @@ useEffect(() => {
 // ================================================================
 function TemplatesPage({ data }) {
   const entries = data.entries || [];
-  const grouped = data.grouped || {};
 
-  const [filterQuery, setFilterQuery] = useState("");
-  const [expandedFolders, setExpandedFolders] = useState(() => {
-    const initial = {};
-    Object.keys(grouped).forEach((folder) => {
-      initial[folder || "__root__"] = true;
-    });
-    return initial;
-  });
-  const [previewEntry, setPreviewEntry] = useState(null); // which template is expanded
-  const [previewItems, setPreviewItems] = useState([]);
+  const [filterQuery, setFilterQuery]     = useState("");
+  const [selectedFolder, setSelectedFolder] = useState(null); // null = All
+  const [previewEntry, setPreviewEntry]   = useState(null);
+  const [previewItems, setPreviewItems]   = useState([]);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [duplicating, setDuplicating] = useState(null);
+  const [duplicating, setDuplicating]     = useState(null);
 
-  const filteredEntries = useMemo(() => {
-    if (!filterQuery.trim()) return entries;
-    const q = filterQuery.toLowerCase();
-    return entries.filter((e) => e.full_name?.toLowerCase().includes(q));
-  }, [entries, filterQuery]);
+  const sortedFolders = useMemo(() => {
+    const s = new Set(entries.map((e) => e.group).filter(Boolean));
+    return [...s].sort();
+  }, [entries]);
 
-  const filteredGrouped = useMemo(() => {
-    const result = {};
-    filteredEntries.forEach((e) => {
-      const key = e.group || "";
-      if (!result[key]) result[key] = [];
-      result[key].push(e);
-    });
-    return result;
-  }, [filteredEntries]);
+  const folderCounts = useMemo(() => {
+    const c = {};
+    entries.forEach((e) => { const k = e.group || ""; c[k] = (c[k] || 0) + 1; });
+    return c;
+  }, [entries]);
 
-  const toggleFolder = (folder) => {
-    const key = folder || "__root__";
-    setExpandedFolders((prev) => ({ ...prev, [key]: !prev[key] }));
-  };
+  const visibleEntries = useMemo(() => {
+    let list = selectedFolder === null ? entries : entries.filter((e) => e.group === selectedFolder);
+    if (filterQuery.trim()) {
+      const q = filterQuery.toLowerCase();
+      list = list.filter((e) => e.full_name?.toLowerCase().includes(q));
+    }
+    return list;
+  }, [entries, selectedFolder, filterQuery]);
 
   const handleAction = (url, body) => {
     fetch(url, {
@@ -1881,71 +1873,92 @@ function TemplatesPage({ data }) {
     ));
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="text-2xl font-semibold text-slate-900">Saved Templates</h1>
-          <p className="mt-1 text-sm text-slate-500">
-            {entries.length} template{entries.length !== 1 ? "s" : ""} saved
-          </p>
-        </div>
-        <div className="flex gap-2 flex-wrap">
-          <input
-            type="text"
-            value={filterQuery}
-            onChange={(e) => setFilterQuery(e.target.value)}
-            placeholder="Filter templates…"
-            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 w-52"
-          />
-          <a
-            href={data.materialListUrl || "/material_list"}
-            className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white hover:bg-sky-700 transition"
-          >
-            + New List
-          </a>
-        </div>
+    <div className="space-y-5">
+      <h1 className="text-2xl font-semibold text-slate-900">Material Lists</h1>
+
+      {/* Mobile folder picker */}
+      <div className="block md:hidden">
+        <select
+          value={selectedFolder === null ? "__all__" : selectedFolder}
+          onChange={(e) => setSelectedFolder(e.target.value === "__all__" ? null : e.target.value)}
+          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-500 focus:outline-none"
+        >
+          <option value="__all__">All Lists ({entries.length})</option>
+          {sortedFolders.map((f) => <option key={f} value={f}>{f} ({folderCounts[f] || 0})</option>)}
+          {(folderCounts[""] || 0) > 0 && <option value="">Unfiled ({folderCounts[""] || 0})</option>}
+        </select>
       </div>
 
-      {/* Folder groups */}
-      {Object.keys(filteredGrouped).length === 0 ? (
-        <div className="flex flex-col items-center justify-center rounded-2xl bg-white py-16 shadow-sm ring-1 ring-slate-200">
-          <p className="text-sm font-semibold text-slate-700">No templates found</p>
-          <p className="mt-1 text-xs text-slate-500">
-            {filterQuery ? "Try a different search term." : "Save a template from the Material List page."}
-          </p>
+      <div className="flex gap-5 items-start">
+        {/* Folder sidebar — desktop only */}
+        <div className="hidden md:block w-52 shrink-0 bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-3 space-y-1">
+          <button
+            onClick={() => setSelectedFolder(null)}
+            className={`w-full flex items-center justify-between rounded-xl px-3 py-2 text-sm transition ${selectedFolder === null ? "bg-sky-50 text-sky-700 font-semibold" : "text-slate-600 hover:bg-slate-50"}`}
+          >
+            <span>All Lists</span>
+            <span className="text-xs text-slate-400 shrink-0">{entries.length}</span>
+          </button>
+          {sortedFolders.map((folder) => (
+            <button
+              key={folder}
+              onClick={() => setSelectedFolder(folder)}
+              className={`w-full flex items-center justify-between rounded-xl px-3 py-2 text-sm transition ${selectedFolder === folder ? "bg-sky-50 text-sky-700 font-semibold" : "text-slate-600 hover:bg-slate-50"}`}
+            >
+              <span className="truncate text-left">{folder}</span>
+              <span className="text-xs text-slate-400 shrink-0 ml-1">{folderCounts[folder] || 0}</span>
+            </button>
+          ))}
+          {(folderCounts[""] || 0) > 0 && (
+            <button
+              onClick={() => setSelectedFolder("")}
+              className={`w-full flex items-center justify-between rounded-xl px-3 py-2 text-sm transition ${selectedFolder === "" ? "bg-sky-50 text-sky-700 font-semibold" : "text-slate-500 hover:bg-slate-50"}`}
+            >
+              <span className="italic">Unfiled</span>
+              <span className="text-xs text-slate-400 shrink-0">{folderCounts[""] || 0}</span>
+            </button>
+          )}
         </div>
-      ) : (
-        Object.entries(filteredGrouped).map(([folder, folderEntries]) => {
-          const key = folder || "__root__";
-          const isExpanded = expandedFolders[key] ?? true;
-          return (
-            <div key={key} className="space-y-2">
-              {/* Folder header */}
-              <button
-                onClick={() => toggleFolder(folder)}
-                className="flex w-full items-center justify-between rounded-xl bg-slate-100 px-4 py-2.5 text-left text-sm font-semibold text-slate-700 hover:bg-slate-200 transition"
-              >
-                <span className="flex items-center gap-2">
-                  <span>{folder || "📁 Ungrouped"}</span>
-                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-medium text-slate-500 ring-1 ring-slate-200">
-                    {folderEntries.length}
-                  </span>
-                </span>
-                <span className={classNames("text-slate-400 transition-transform text-xs", isExpanded ? "rotate-180" : "")}>
-                  ▲
-                </span>
-              </button>
 
-              {isExpanded && (
-                <div className="space-y-2 pl-2">
-                  {renderEntries(folderEntries)}
-                </div>
-              )}
+        {/* Main content */}
+        <div className="flex-1 min-w-0 space-y-4">
+          {/* Subheader */}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-base font-semibold text-slate-700">
+              {selectedFolder === null ? "All Lists" : selectedFolder || "Unfiled"}
+            </h2>
+            <div className="flex gap-2 flex-wrap">
+              <input
+                type="text"
+                value={filterQuery}
+                onChange={(e) => setFilterQuery(e.target.value)}
+                placeholder="Filter lists…"
+                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 w-44"
+              />
+              <a
+                href={data.materialListUrl || "/material_list"}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-sky-600 px-4 py-1.5 text-sm font-semibold text-white hover:bg-sky-700 transition"
+              >
+                + New List
+              </a>
             </div>
-          );
-        })
-      )}
+          </div>
+
+          {/* Cards */}
+          {visibleEntries.length === 0 ? (
+            <div className="flex flex-col items-center justify-center rounded-2xl bg-white py-16 shadow-sm ring-1 ring-slate-200">
+              <p className="text-sm font-semibold text-slate-700">No lists found</p>
+              <p className="mt-1 text-xs text-slate-500">
+                {filterQuery ? "Try a different search term." : "Save a list from the Material List editor."}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {renderEntries(visibleEntries)}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

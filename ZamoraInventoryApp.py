@@ -202,8 +202,7 @@ def default_nav_links() -> list[dict[str, str]]:
         {"label": "View All",      "href": url_for("view_all"),        "page": "view_all"},
         {"label": "Search",        "href": url_for("search"),          "page": "search"},
         {"label": "Analyze",       "href": url_for("analyze"),         "page": "analyze"},
-        {"label": "Material List", "href": url_for("material_list"),   "page": "material_list"},
-        {"label": "Templates",     "href": url_for("templates_list"),  "page": "templates"},
+        {"label": "Material List", "href": url_for("templates_list"),  "page": "templates"},
         {"label": "Estimates",     "href": url_for("estimates_list"),  "page": "estimates"},
         {"label": "Upload PDF",    "href": url_for("upload_pdf"),      "page": "upload_pdf"},
     ]
