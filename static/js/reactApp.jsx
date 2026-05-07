@@ -1122,7 +1122,7 @@ useEffect(() => {
   const handleTouchMove = (e) => {
     const touch = e.touches[0];
     const el = document.elementFromPoint(touch.clientX, touch.clientY);
-    const row = el && el.closest("tr[data-row-index]");
+    const row = el && el.closest("[data-row-index]");
     if (!row) return;
     const targetIndex = parseInt(row.dataset.rowIndex, 10);
     const from = draggingIndexRef.current;
@@ -1377,11 +1377,14 @@ useEffect(() => {
             return (
               <div key={index} className="flex items-center gap-2 px-3 py-2 bg-slate-100"
                 data-row-index={index}
-                onTouchStart={(e) => handleTouchStart(e, index)}
-                onTouchMove={handleTouchMove}
-                onTouchEnd={handleTouchEnd}
-                style={{ touchAction: "none" }}
               >
+                <div
+                  style={{ touchAction: "none" }}
+                  onTouchStart={(e) => handleTouchStart(e, index)}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                  className="w-6 h-6 flex items-center justify-center text-slate-400 cursor-grab text-base select-none"
+                >≡</div>
                 <div className="flex-1 border-t-2 border-slate-400" />
                 <input
                   type="text"
@@ -1398,10 +1401,6 @@ useEffect(() => {
           return (
             <div key={index} className="p-3 space-y-2"
               data-row-index={index}
-              onTouchStart={(e) => handleTouchStart(e, index)}
-              onTouchMove={handleTouchMove}
-              onTouchEnd={handleTouchEnd}
-              style={{ touchAction: "none" }}
             >
               <input
                 type="text"
@@ -1435,7 +1434,14 @@ useEffect(() => {
                   <p className="text-sm font-semibold text-slate-900 py-1.5">${((Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)).toFixed(2)}</p>
                 </div>
               </div>
-              <div className="flex gap-1 justify-end">
+              <div className="flex gap-1 justify-end items-center">
+                <div
+                  style={{ touchAction: "none" }}
+                  onTouchStart={(e) => handleTouchStart(e, index)}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                  className="mr-auto w-7 h-7 flex items-center justify-center text-slate-300 cursor-grab text-base select-none"
+                >≡</div>
                 <button onClick={() => moveItem(index, -1)} className="rounded bg-slate-100 px-2 py-1 text-xs font-bold text-slate-500">↑</button>
                 <button onClick={() => moveItem(index, 1)} className="rounded bg-slate-100 px-2 py-1 text-xs font-bold text-slate-500">↓</button>
                 <button onClick={() => duplicateItem(index)} className="rounded bg-sky-100 px-2 py-1 text-xs font-bold text-sky-600">⧉</button>
