@@ -366,19 +366,30 @@ def init_db():
 
 
 def deduplicate_catalog_usage() -> None:
-    """One-time cleanup: remove duplicate (catalog_id, estimate_name) rows, keeping the earliest."""
-    sql = """
-        DELETE FROM estimate_catalog_usage
-        WHERE id NOT IN (
-            SELECT MIN(id) FROM estimate_catalog_usage
-            GROUP BY catalog_id, estimate_name
-        )
-    """
+    """One-time migration: wipe both catalog tables so they rebuild cleanly from saved estimates."""
+    migration_id = "wipe_catalog_v1"
+    ensure_sql  = "CREATE TABLE IF NOT EXISTS _migrations (id TEXT PRIMARY KEY, run_at TEXT)"
+    check_sql   = "SELECT id FROM _migrations WHERE id = ?"
+    record_sql  = "INSERT OR IGNORE INTO _migrations (id, run_at) VALUES (?, datetime('now'))"
+    wipe1       = "DELETE FROM estimate_catalog_usage"
+    wipe2       = "DELETE FROM estimate_catalog"
+
     if USE_TURSO:
-        _turso_execute(sql, [])
+        _turso_execute(ensure_sql, [])
+        already = _turso_execute(check_sql, [migration_id])
+        if already:
+            return
+        _turso_execute(wipe1, [])
+        _turso_execute(wipe2, [])
+        _turso_execute(record_sql, [migration_id])
     else:
         with _local_conn() as conn:
-            conn.execute(sql)
+            conn.execute(ensure_sql)
+            if conn.execute(check_sql, (migration_id,)).fetchone():
+                return
+            conn.execute(wipe1)
+            conn.execute(wipe2)
+            conn.execute(record_sql, (migration_id,))
 
 
 def save_parsed_document(parsed: dict, filename: str = "") -> int:
