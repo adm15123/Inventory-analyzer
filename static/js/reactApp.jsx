@@ -1113,6 +1113,32 @@ useEffect(() => {
   const handleDrop = (e) => { e.preventDefault(); stopAutoScroll(); draggingIndexRef.current = null; setDraggingIndex(null); };
   const handleDragEnd = () => { stopAutoScroll(); draggingIndexRef.current = null; setDraggingIndex(null); };
 
+  // Touch drag (mobile) ─────────────────────────────────────────────
+  const handleTouchStart = (e, index) => {
+    draggingIndexRef.current = index;
+    setDraggingIndex(index);
+  };
+
+  const handleTouchMove = (e) => {
+    const touch = e.touches[0];
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const row = el && el.closest("tr[data-row-index]");
+    if (!row) return;
+    const targetIndex = parseInt(row.dataset.rowIndex, 10);
+    const from = draggingIndexRef.current;
+    if (from === null || isNaN(targetIndex) || from === targetIndex) return;
+    draggingIndexRef.current = targetIndex;
+    setDraggingIndex(targetIndex);
+    setItems((c) => {
+      const next = [...c];
+      const [moved] = next.splice(from, 1);
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+  };
+
+  const handleTouchEnd = () => { draggingIndexRef.current = null; setDraggingIndex(null); };
+
   const handleSupplyChange = (index, supplyKey) => {
     updateItem(index, { supply: supplyCodes[supplyKey] || supplyKey, lookupSupply: supplyKey });
   };
@@ -1380,16 +1406,20 @@ useEffect(() => {
                   return (
                     <tr
                       key={index}
+                      data-row-index={index}
                       draggable
                       onDragStart={(e) => handleDragStart(e, index)}
                       onDragOver={(e) => handleDragOver(e, index)}
                       onDrop={handleDrop}
                       onDragEnd={handleDragEnd}
+                      onTouchStart={(e) => handleTouchStart(e, index)}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
                       className={classNames(
                         "bg-slate-100 transition",
                         draggingIndex === index ? "opacity-40" : ""
                       )}
-                      style={{ cursor: "grab" }}
+                      style={{ cursor: "grab", touchAction: "none" }}
                     >
                       <td colSpan={8} className="px-3 py-1.5">
                         <div className="flex items-center gap-2">
@@ -1417,18 +1447,22 @@ useEffect(() => {
                 return (
                 <tr
                   key={index}
+                  data-row-index={index}
                   draggable
                   onDragStart={(e) => handleDragStart(e, index)}
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDrop={handleDrop}
                   onDragEnd={handleDragEnd}
+                  onTouchStart={(e) => handleTouchStart(e, index)}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
                   className={classNames(
                     "transition",
                     draggingIndex === index
                       ? "opacity-40 bg-sky-50"
                       : "hover:bg-slate-50"
                   )}
-                  style={{ cursor: "grab" }}
+                  style={{ cursor: "grab", touchAction: "none" }}
                 >
                   {/* Row number */}
                   <td className="hidden md:table-cell px-3 py-1 text-slate-400 select-none">{index + 1}</td>
@@ -1446,13 +1480,14 @@ useEffect(() => {
                   </td>
 
                   {/* Description — with autocomplete datalist */}
-                  <td className="px-2 py-1 min-w-[220px]">
+                  <td className="px-2 py-1 min-w-0 md:min-w-[220px]">
                     <input
                       type="text"
                       value={item.description}
                       onChange={(e) => handleDescriptionChange(index, e.target.value)}
                       list={supplyListId[item.lookupSupply || lookupSupply]}
                       placeholder="Type or pick description…"
+                      title={item.description}
                       className="w-full rounded border border-slate-300 px-1.5 py-0.5 text-sm focus:border-sky-500 focus:outline-none"
                     />
                   </td>
@@ -2960,13 +2995,13 @@ function EstimateBuilderPage({ data }) {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-20">QTY</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-64">DESCRIPTION</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-32">UNIT COST</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-32">TOTAL</th>
-                  <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-semibold text-slate-500 w-44">COMMENTS</th>
-                  <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-semibold text-slate-500 w-44">ADD. COMMENTS</th>
-                  <th className="px-3 py-2 w-20"></th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">QTY</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">DESCRIPTION</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">UNIT COST</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">TOTAL</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">COMMENTS</th>
+                  <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-semibold text-slate-500">ADD. COMMENTS</th>
+                  <th className="px-3 py-2"></th>
                 </tr>
               </thead>
               <tbody>
@@ -3045,7 +3080,7 @@ function EstimateBuilderPage({ data }) {
                     </td>
 
                     {/* COMMENTS */}
-                    <td className="hidden md:table-cell px-3 py-1.5">
+                    <td className="px-3 py-1.5">
                       <AutoTextarea
                         value={row.comments}
                         onChange={(e) => updateRow(si, ri, { comments: e.target.value })}
