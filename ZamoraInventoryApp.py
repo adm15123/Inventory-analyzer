@@ -1464,6 +1464,8 @@ def delete_estimate(name):
     folder, ename = _split_template_path(name)
     ok = delete_estimate_db(ename, folder, session["email"], session.get("role", "user"))
     if ok:
+        display_name = f"{folder}/{ename}" if folder else ename
+        clear_estimate_catalog_usage(display_name)
         flash("Estimate deleted.", "success")
     else:
         flash("Delete failed.", "danger")
