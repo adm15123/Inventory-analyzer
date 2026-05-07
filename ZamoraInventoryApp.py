@@ -41,7 +41,7 @@ from db import (
     save_estimate_db, get_estimate_db, list_estimates_db,
     delete_estimate_db, duplicate_estimate_db,
     search_estimate_catalog, upsert_estimate_catalog, clear_estimate_catalog_usage,
-    deduplicate_catalog_usage,
+    deduplicate_catalog_usage, move_estimate_db,
     get_material_list_total,
 )
 import tempfile
@@ -1349,14 +1349,16 @@ def estimates_list():
         "blankUrl":     url_for("estimate_builder", blank=1),
         "deleteUrl":    "/delete_estimate/",
         "duplicateUrl": url_for("api_duplicate_estimate"),
+        "moveUrl":      url_for("api_move_estimate"),
     })
 
 
 @app.route("/estimate")
 @login_required
 def estimate_builder():
-    name  = request.args.get("name", "").strip()
-    blank = request.args.get("blank", "")
+    name       = request.args.get("name", "").strip()
+    blank      = request.args.get("blank", "")
+    pre_folder = request.args.get("folder", "").strip()
     if name:
         folder, ename = _split_template_path(name)
         e = get_estimate_db(ename, folder, session.get("email", ""), session.get("role", "user"))
@@ -1392,15 +1394,16 @@ def estimate_builder():
                     row["total"]     = current_total
 
     return render_app("estimate_builder", {
-        "estimateName": name,
-        "content":      content,
-        "saveUrl":      url_for("save_estimate"),
-        "exportPdfUrl": url_for("export_estimate_pdf"),
-        "exportXlsUrl": url_for("export_estimate_excel"),
-        "catalogUrl":   url_for("api_estimate_catalog"),
-        "mlTotalUrl":   url_for("api_material_list_total"),
-        "mlNames":      ml_names,
-        "mlListUrl":    url_for("material_list"),
+        "estimateName":   name,
+        "estimateFolder": "" if name else pre_folder,
+        "content":        content,
+        "saveUrl":        url_for("save_estimate"),
+        "exportPdfUrl":   url_for("export_estimate_pdf"),
+        "exportXlsUrl":   url_for("export_estimate_excel"),
+        "catalogUrl":     url_for("api_estimate_catalog"),
+        "mlTotalUrl":     url_for("api_material_list_total"),
+        "mlNames":        ml_names,
+        "mlListUrl":      url_for("material_list"),
     })
 
 
@@ -1488,6 +1491,18 @@ def api_duplicate_estimate():
     else:
         flash("Duplicate failed: destination already exists or access denied.", "danger")
     return redirect(url_for("estimates_list"))
+
+
+@app.route("/api/move_estimate", methods=["POST"])
+@login_required
+def api_move_estimate():
+    full_name  = request.form.get("full_name", "").strip()
+    new_folder = request.form.get("new_folder", "").strip()
+    if not full_name:
+        return jsonify({"ok": False, "error": "Missing name"}), 400
+    folder, ename = _split_template_path(full_name)
+    ok = move_estimate_db(ename, folder, new_folder, session["email"], session.get("role", "user"))
+    return jsonify({"ok": ok})
 
 
 @app.route("/api/estimate_catalog")

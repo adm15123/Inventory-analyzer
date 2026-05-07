@@ -1118,6 +1118,37 @@ def duplicate_estimate_db(
     return True
 
 
+def move_estimate_db(
+    name: str, old_folder: str, new_folder: str,
+    actor_email: str, actor_role: str,
+) -> bool:
+    now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    old_display = f"{old_folder}/{name}" if old_folder else name
+    new_display = f"{new_folder}/{name}" if new_folder else name
+    usage_sql   = "UPDATE estimate_catalog_usage SET estimate_name=? WHERE estimate_name=?"
+
+    if actor_role == "admin":
+        upd_sql = "UPDATE estimates SET folder=?, updated_at=? WHERE name=? AND folder=?"
+        params  = [new_folder, now, name, old_folder]
+    else:
+        upd_sql = "UPDATE estimates SET folder=?, updated_at=? WHERE name=? AND folder=? AND owner_email=?"
+        params  = [new_folder, now, name, old_folder, actor_email]
+
+    if USE_TURSO:
+        _turso_execute(upd_sql, params)
+        if old_display != new_display:
+            _turso_execute(usage_sql, [new_display, old_display])
+        return True
+    else:
+        with _local_conn() as conn:
+            cur = conn.execute(upd_sql, params)
+            if cur.rowcount == 0:
+                return False
+            if old_display != new_display:
+                conn.execute(usage_sql, (new_display, old_display))
+            return True
+
+
 # ── Estimate catalog ───────────────────────────────────────────────────────────
 
 def search_estimate_catalog(query: str, limit: int = 20) -> list[dict]:

@@ -2406,9 +2406,33 @@ function AutoTextarea({ value, onChange, className, placeholder, onBlur }) {
 // EstimatesPage — list of saved estimates
 // ================================================================
 function EstimatesPage({ data }) {
-  const [estimates, setEstimates] = useState(data.estimates || []);
-  const [dupSrc, setDupSrc] = useState(null);
-  const [dupName, setDupName] = useState("");
+  const [estimates, setEstimates]     = useState(data.estimates || []);
+  const [selectedFolder, setSelectedFolder] = useState(null); // null = All
+  const [dupSrc, setDupSrc]           = useState(null);
+  const [dupName, setDupName]         = useState("");
+  const [moveTarget, setMoveTarget]   = useState(null);
+  const [moveFolderSel, setMoveFolderSel] = useState("");
+  const [moveFolderNew, setMoveFolderNew] = useState("");
+
+  const folders = useMemo(() => {
+    const s = new Set(estimates.map((e) => e.group).filter(Boolean));
+    return [...s].sort();
+  }, [estimates]);
+
+  const folderCounts = useMemo(() => {
+    const c = {};
+    estimates.forEach((e) => { const k = e.group || ""; c[k] = (c[k] || 0) + 1; });
+    return c;
+  }, [estimates]);
+
+  const filtered = useMemo(() => {
+    if (selectedFolder === null) return estimates;
+    return estimates.filter((e) => e.group === selectedFolder);
+  }, [estimates, selectedFolder]);
+
+  const folderParam = selectedFolder ? `folder=${encodeURIComponent(selectedFolder)}` : "";
+  const newUrl      = folderParam ? `${data.newUrl}?${folderParam}` : data.newUrl;
+  const blankUrl    = folderParam ? `${data.blankUrl}&${folderParam}` : data.blankUrl;
 
   const handleDelete = (fullName) => {
     if (!window.confirm(`Delete estimate "${fullName}"?`)) return;
@@ -2425,48 +2449,112 @@ function EstimatesPage({ data }) {
       .catch(() => window.alert("Duplicate failed."));
   };
 
+  const handleMove = () => {
+    const destFolder = moveFolderSel === "__new__" ? moveFolderNew.trim() : moveFolderSel;
+    const payload = new URLSearchParams({ full_name: moveTarget.full_name, new_folder: destFolder });
+    fetch(data.moveUrl, { method: "POST", body: payload })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.ok) {
+          const newFullName = destFolder ? `${destFolder}/${moveTarget.name}` : moveTarget.name;
+          setEstimates((prev) => prev.map((e) =>
+            e.full_name === moveTarget.full_name
+              ? { ...e, group: destFolder, full_name: newFullName }
+              : e
+          ));
+          setMoveTarget(null);
+        } else {
+          window.alert("Move failed.");
+        }
+      })
+      .catch(() => window.alert("Move failed."));
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <h1 className="text-2xl font-semibold text-slate-900">Estimates</h1>
-        <div className="flex gap-2">
-          <Button as="a" href={data.newUrl}>+ New Estimate (Template)</Button>
-          <Button as="a" href={data.blankUrl} variant="secondary">+ Blank Estimate</Button>
+    <div className="space-y-5">
+      <h1 className="text-2xl font-semibold text-slate-900">Estimates</h1>
+
+      <div className="flex gap-5 items-start">
+        {/* Folder sidebar */}
+        <div className="w-52 shrink-0 bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-3 space-y-1">
+          <button
+            onClick={() => setSelectedFolder(null)}
+            className={`w-full flex items-center justify-between rounded-xl px-3 py-2 text-sm transition ${selectedFolder === null ? "bg-sky-50 text-sky-700 font-semibold" : "text-slate-600 hover:bg-slate-50"}`}
+          >
+            <span>All Estimates</span>
+            <span className="text-xs text-slate-400 shrink-0">{estimates.length}</span>
+          </button>
+          {folders.map((folder) => (
+            <button
+              key={folder}
+              onClick={() => setSelectedFolder(folder)}
+              className={`w-full flex items-center justify-between rounded-xl px-3 py-2 text-sm transition ${selectedFolder === folder ? "bg-sky-50 text-sky-700 font-semibold" : "text-slate-600 hover:bg-slate-50"}`}
+            >
+              <span className="truncate text-left">{folder}</span>
+              <span className="text-xs text-slate-400 shrink-0 ml-1">{folderCounts[folder] || 0}</span>
+            </button>
+          ))}
+          {(folderCounts[""] || 0) > 0 && (
+            <button
+              onClick={() => setSelectedFolder("")}
+              className={`w-full flex items-center justify-between rounded-xl px-3 py-2 text-sm transition ${selectedFolder === "" ? "bg-sky-50 text-sky-700 font-semibold" : "text-slate-500 hover:bg-slate-50"}`}
+            >
+              <span className="italic">Unfiled</span>
+              <span className="text-xs text-slate-400 shrink-0">{folderCounts[""] || 0}</span>
+            </button>
+          )}
+        </div>
+
+        {/* Main content */}
+        <div className="flex-1 min-w-0 space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <h2 className="text-base font-semibold text-slate-700">
+              {selectedFolder === null ? "All Estimates" : selectedFolder || "Unfiled"}
+            </h2>
+            <div className="flex gap-2">
+              <Button as="a" href={newUrl}>+ New (Template)</Button>
+              <Button as="a" href={blankUrl} variant="secondary">+ Blank</Button>
+            </div>
+          </div>
+
+          {filtered.length === 0 ? (
+            <div className="rounded-2xl bg-white p-10 text-center shadow-sm ring-1 ring-slate-200">
+              <p className="text-slate-500">No estimates here yet.</p>
+              <Button as="a" href={newUrl} className="mt-4">Create first estimate</Button>
+            </div>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              {filtered.map((est) => (
+                <div key={est.id} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 space-y-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <p className="font-semibold text-slate-800 text-sm">{est.name}</p>
+                      {est.group && <p className="text-xs text-slate-400">{est.group}</p>}
+                    </div>
+                    <Badge tone="info">${Number(est.grand_total || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Badge>
+                  </div>
+                  <p className="text-xs text-slate-500">{est.row_count} line item{est.row_count !== 1 ? "s" : ""}</p>
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Button as="a" href={`/estimate?name=${encodeURIComponent(est.full_name)}`} variant="secondary" className="text-xs px-3 py-1.5">Edit</Button>
+                    <button
+                      onClick={() => { setDupSrc(est.full_name); setDupName(`${est.name} Copy`); }}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 transition"
+                    >Duplicate</button>
+                    <button
+                      onClick={() => { setMoveTarget(est); setMoveFolderSel(est.group || ""); setMoveFolderNew(""); }}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 transition"
+                    >Move</button>
+                    <button
+                      onClick={() => handleDelete(est.full_name)}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 transition"
+                    >Delete</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
-
-      {estimates.length === 0 ? (
-        <div className="rounded-2xl bg-white p-10 text-center shadow-sm ring-1 ring-slate-200">
-          <p className="text-slate-500">No estimates yet.</p>
-          <Button as="a" href={data.newUrl} className="mt-4">Create your first estimate</Button>
-        </div>
-      ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {estimates.map((est) => (
-            <div key={est.id} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 space-y-3">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <p className="font-semibold text-slate-800 text-sm">{est.name}</p>
-                  {est.group && <p className="text-xs text-slate-400">{est.group}</p>}
-                </div>
-                <Badge tone="info">${Number(est.grand_total || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</Badge>
-              </div>
-              <p className="text-xs text-slate-500">{est.row_count} line item{est.row_count !== 1 ? "s" : ""}</p>
-              <div className="flex flex-wrap gap-2 pt-1">
-                <Button as="a" href={`/estimate?name=${encodeURIComponent(est.full_name)}`} variant="secondary" className="text-xs px-3 py-1.5">Edit</Button>
-                <button
-                  onClick={() => { setDupSrc(est.full_name); setDupName(`${est.name} Copy`); }}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 transition"
-                >Duplicate</button>
-                <button
-                  onClick={() => handleDelete(est.full_name)}
-                  className="text-xs px-3 py-1.5 rounded-lg border border-rose-200 text-rose-600 hover:bg-rose-50 transition"
-                >Delete</button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
 
       {/* Duplicate modal */}
       {dupSrc && (
@@ -2487,6 +2575,38 @@ function EstimatesPage({ data }) {
           </div>
         </div>
       )}
+
+      {/* Move modal */}
+      {moveTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-sm space-y-4">
+            <h2 className="text-base font-semibold text-slate-800">Move Estimate</h2>
+            <p className="text-sm text-slate-500">Move <strong>{moveTarget.name}</strong> to folder:</p>
+            <select
+              value={moveFolderSel}
+              onChange={(e) => setMoveFolderSel(e.target.value)}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none"
+            >
+              <option value="">Unfiled</option>
+              {folders.map((f) => <option key={f} value={f}>{f}</option>)}
+              <option value="__new__">+ New folder…</option>
+            </select>
+            {moveFolderSel === "__new__" && (
+              <input
+                value={moveFolderNew}
+                onChange={(e) => setMoveFolderNew(e.target.value)}
+                placeholder="New folder name"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
+                autoFocus
+              />
+            )}
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setMoveTarget(null)} className="text-sm text-slate-500 hover:text-slate-700">Cancel</button>
+              <Button onClick={handleMove} className="text-sm">Move</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2496,7 +2616,7 @@ function EstimatesPage({ data }) {
 // ================================================================
 function EstimateBuilderPage({ data }) {
   const [estimateName, setEstimateName]   = useState(data.estimateName || "");
-  const [estimateFolder, setEstimateFolder] = useState("");
+  const [estimateFolder, setEstimateFolder] = useState(data.estimateFolder || "");
   const [projectInfo, setProjectInfo]     = useState(data.content?.project_info || { name: "", address: "", contractor: "", date: "" });
   const [sections, setSections]           = useState(data.content?.sections || []);
   const [bids, setBids]                   = useState(data.content?.bids || []);
