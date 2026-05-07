@@ -1348,12 +1348,21 @@ useEffect(() => {
             {/* STICKY header */}
             <thead className="bg-slate-50 sticky top-0 z-10 shadow-sm">
               <tr>
-                {["#", "Qty", "Description", "Supply", "Unit", "Price", "Total", "Actions"].map((h) => (
+                {[
+                  { label: "#",       hide: true  },
+                  { label: "Qty",     hide: false },
+                  { label: "Description", hide: false },
+                  { label: "Supply",  hide: true  },
+                  { label: "Unit",    hide: true  },
+                  { label: "Price",   hide: false },
+                  { label: "Total",   hide: false },
+                  { label: "Actions", hide: false },
+                ].map(({ label, hide }) => (
                   <th
-                    key={h}
-                    className="whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
+                    key={label}
+                    className={`${hide ? "hidden md:table-cell " : ""}whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-wide text-slate-500`}
                   >
-                    {h}
+                    {label}
                   </th>
                 ))}
               </tr>
@@ -1382,7 +1391,7 @@ useEffect(() => {
                       )}
                       style={{ cursor: "grab" }}
                     >
-                      <td colSpan={7} className="px-3 py-1.5">
+                      <td colSpan={8} className="px-3 py-1.5">
                         <div className="flex items-center gap-2">
                           <div className="flex-1 border-t-2 border-slate-400" />
                           <input
@@ -1422,7 +1431,7 @@ useEffect(() => {
                   style={{ cursor: "grab" }}
                 >
                   {/* Row number */}
-                  <td className="px-3 py-1 text-slate-400 select-none">{index + 1}</td>
+                  <td className="hidden md:table-cell px-3 py-1 text-slate-400 select-none">{index + 1}</td>
 
                   {/* Quantity */}
                   <td className="px-2 py-1">
@@ -1449,7 +1458,7 @@ useEffect(() => {
                   </td>
 
                   {/* Supply — badge for template rows, dropdown for manual rows */}
-                  <td className="px-2 py-1 whitespace-nowrap">
+                  <td className="hidden md:table-cell px-2 py-1 whitespace-nowrap">
                     {item.predetermined ? (
                       <span className="inline-flex rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
                         {item.supply}
@@ -1469,7 +1478,7 @@ useEffect(() => {
                   </td>
 
                   {/* Unit — read-only for template rows, editable for manual rows */}
-                  <td className="px-2 py-1 whitespace-nowrap text-slate-500">
+                  <td className="hidden md:table-cell px-2 py-1 whitespace-nowrap text-slate-500">
                     {item.predetermined ? (
                       item.unit || "—"
                     ) : (
@@ -2474,9 +2483,22 @@ function EstimatesPage({ data }) {
     <div className="space-y-5">
       <h1 className="text-2xl font-semibold text-slate-900">Estimates</h1>
 
+      {/* Mobile folder picker (phones only) */}
+      <div className="block md:hidden">
+        <select
+          value={selectedFolder === null ? "__all__" : selectedFolder}
+          onChange={(e) => setSelectedFolder(e.target.value === "__all__" ? null : e.target.value)}
+          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm focus:border-sky-500 focus:outline-none"
+        >
+          <option value="__all__">All Estimates ({estimates.length})</option>
+          {folders.map((f) => <option key={f} value={f}>{f} ({folderCounts[f] || 0})</option>)}
+          {(folderCounts[""] || 0) > 0 && <option value="">Unfiled ({folderCounts[""] || 0})</option>}
+        </select>
+      </div>
+
       <div className="flex gap-5 items-start">
-        {/* Folder sidebar */}
-        <div className="w-52 shrink-0 bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-3 space-y-1">
+        {/* Folder sidebar — desktop only */}
+        <div className="hidden md:block w-52 shrink-0 bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 p-3 space-y-1">
           <button
             onClick={() => setSelectedFolder(null)}
             className={`w-full flex items-center justify-between rounded-xl px-3 py-2 text-sm transition ${selectedFolder === null ? "bg-sky-50 text-sky-700 font-semibold" : "text-slate-600 hover:bg-slate-50"}`}
@@ -2942,8 +2964,8 @@ function EstimateBuilderPage({ data }) {
                   <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-64">DESCRIPTION</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-32">UNIT COST</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-32">TOTAL</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-44">COMMENTS</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500 w-44">ADD. COMMENTS</th>
+                  <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-semibold text-slate-500 w-44">COMMENTS</th>
+                  <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-semibold text-slate-500 w-44">ADD. COMMENTS</th>
                   <th className="px-3 py-2 w-20"></th>
                 </tr>
               </thead>
@@ -3023,7 +3045,7 @@ function EstimateBuilderPage({ data }) {
                     </td>
 
                     {/* COMMENTS */}
-                    <td className="px-3 py-1.5">
+                    <td className="hidden md:table-cell px-3 py-1.5">
                       <AutoTextarea
                         value={row.comments}
                         onChange={(e) => updateRow(si, ri, { comments: e.target.value })}
@@ -3033,7 +3055,7 @@ function EstimateBuilderPage({ data }) {
                     </td>
 
                     {/* ADD. COMMENTS */}
-                    <td className="px-3 py-1.5">
+                    <td className="hidden md:table-cell px-3 py-1.5">
                       <AutoTextarea
                         value={row.add_comments}
                         onChange={(e) => updateRow(si, ri, { add_comments: e.target.value })}
