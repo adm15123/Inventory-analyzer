@@ -1367,8 +1367,92 @@ useEffect(() => {
         </div>
       </div>
 
-      {/* ── Item table with sticky header ── */}
-      <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
+      {/* ── Mobile card list (phones only) ── */}
+      <div className="block md:hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 divide-y divide-slate-100 overflow-hidden">
+        {items.length === 0 && (
+          <p className="py-12 text-center text-sm text-slate-400">No items yet — add one below or load a template above.</p>
+        )}
+        {items.map((item, index) => {
+          if (item.type === "divider") {
+            return (
+              <div key={index} className="flex items-center gap-2 px-3 py-2 bg-slate-100"
+                data-row-index={index}
+                onTouchStart={(e) => handleTouchStart(e, index)}
+                onTouchMove={handleTouchMove}
+                onTouchEnd={handleTouchEnd}
+                style={{ touchAction: "none" }}
+              >
+                <div className="flex-1 border-t-2 border-slate-400" />
+                <input
+                  type="text"
+                  value={item.label || ""}
+                  onChange={(e) => updateDividerLabel(index, e.target.value)}
+                  placeholder="Section name…"
+                  className="bg-transparent text-xs font-bold text-slate-600 text-center border-none outline-none w-32 placeholder-slate-400 uppercase tracking-wide"
+                />
+                <div className="flex-1 border-t-2 border-slate-400" />
+                <button onClick={() => removeItem(index)} className="rounded bg-rose-100 px-2 py-1 text-xs font-bold text-rose-600">✕</button>
+              </div>
+            );
+          }
+          return (
+            <div key={index} className="p-3 space-y-2"
+              data-row-index={index}
+              onTouchStart={(e) => handleTouchStart(e, index)}
+              onTouchMove={handleTouchMove}
+              onTouchEnd={handleTouchEnd}
+              style={{ touchAction: "none" }}
+            >
+              <input
+                type="text"
+                value={item.description}
+                onChange={(e) => handleDescriptionChange(index, e.target.value)}
+                list={supplyListId[item.lookupSupply || lookupSupply]}
+                placeholder="Type or pick description…"
+                title={item.description}
+                className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
+              />
+              <div className="flex gap-2 items-end">
+                <div className="w-20">
+                  <p className="text-xs text-slate-400 mb-0.5">Qty</p>
+                  <input type="number" min="0" step="1"
+                    value={item.quantity === "" ? "" : item.quantity}
+                    onChange={(e) => handleQuantityChange(index, e.target.value)}
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm text-center focus:border-sky-500 focus:outline-none"
+                  />
+                </div>
+                <div className="flex-1">
+                  <p className="text-xs text-slate-400 mb-0.5">Price</p>
+                  <input type="number" min="0" step="0.01"
+                    value={item.lastPrice || ""}
+                    onChange={(e) => handlePriceChange(index, e.target.value)}
+                    placeholder="0.00"
+                    className="w-full rounded border border-slate-300 px-2 py-1.5 text-sm focus:border-sky-500 focus:outline-none"
+                  />
+                </div>
+                <div className="flex-1 text-right">
+                  <p className="text-xs text-slate-400 mb-0.5">Total</p>
+                  <p className="text-sm font-semibold text-slate-900 py-1.5">${((Number(item.quantity) || 0) * (Number(item.lastPrice) || 0)).toFixed(2)}</p>
+                </div>
+              </div>
+              <div className="flex gap-1 justify-end">
+                <button onClick={() => moveItem(index, -1)} className="rounded bg-slate-100 px-2 py-1 text-xs font-bold text-slate-500">↑</button>
+                <button onClick={() => moveItem(index, 1)} className="rounded bg-slate-100 px-2 py-1 text-xs font-bold text-slate-500">↓</button>
+                <button onClick={() => duplicateItem(index)} className="rounded bg-sky-100 px-2 py-1 text-xs font-bold text-sky-600">⧉</button>
+                <button onClick={() => removeItem(index)} className="rounded bg-rose-100 px-2 py-1 text-xs font-bold text-rose-600">✕</button>
+              </div>
+            </div>
+          );
+        })}
+        <div className="px-4 py-3 bg-slate-50 space-y-1 text-sm">
+          <div className="flex justify-between"><span className="text-slate-500">Subtotal</span><span className="font-semibold">${subtotal.toFixed(2)}</span></div>
+          <div className="flex justify-between"><span className="text-slate-500">Tax 7%</span><span>${tax.toFixed(2)}</span></div>
+          <div className="flex justify-between font-bold"><span>Grand Total</span><span className="text-sky-700">${grandTotal.toFixed(2)}</span></div>
+        </div>
+      </div>
+
+      {/* ── Item table with sticky header (desktop only) ── */}
+      <div className="hidden md:block rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
         <div className="overflow-auto">
           <table className="min-w-full divide-y divide-slate-200 text-xs">
             {/* STICKY header */}
@@ -3003,8 +3087,74 @@ function EstimateBuilderPage({ data }) {
             >×</button>
           </div>
 
-          {/* Rows table */}
-          <div className="overflow-x-auto">
+          {/* Rows — mobile cards */}
+          <div className="block md:hidden divide-y divide-slate-100">
+            {section.rows.map((row, ri) => (
+              <div key={row.id} className="p-3 space-y-2">
+                {/* Description */}
+                {row.type === "material_list" ? (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="inline-block bg-sky-100 text-sky-700 text-xs font-semibold rounded px-1.5 py-0.5">ML</span>
+                    <span className="text-sm text-slate-700">{row.description}</span>
+                    {row.material_list_name && (
+                      <a href={`${data.mlListUrl || "/material_list"}?list=${encodeURIComponent(row.material_list_name)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="text-sky-500 text-xs font-bold">↗</a>
+                    )}
+                  </div>
+                ) : (
+                  <AutoTextarea
+                    value={row.description}
+                    onChange={(e) => { updateRow(si, ri, { description: e.target.value }); fetchCatalog(e.target.value, si, ri); }}
+                    onBlur={() => setTimeout(() => { setCatalogSuggestions([]); setPopupAnchor(null); }, 200)}
+                    className={inputClass}
+                    placeholder="Description…"
+                  />
+                )}
+                {/* QTY + Unit Cost + Total */}
+                <div className="flex gap-2 items-end">
+                  <div className="w-20">
+                    <p className="text-xs text-slate-400 mb-0.5">QTY</p>
+                    {row.type === "material_list" ? (
+                      <span className="text-xs text-slate-400 py-1.5 block">1</span>
+                    ) : (
+                      <input type="number" min="0" step="1" value={row.qty}
+                        onChange={(e) => updateRow(si, ri, { qty: e.target.value })}
+                        className={inputClass} />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs text-slate-400 mb-0.5">Unit Cost</p>
+                    {row.type === "material_list" ? (
+                      <span className="text-sm text-slate-700">${Number(row.unit_cost || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    ) : (
+                      <input type="number" min="0" step="0.01" value={row.unit_cost}
+                        onChange={(e) => updateRow(si, ri, { unit_cost: e.target.value })}
+                        className={inputClass} />
+                    )}
+                  </div>
+                  <div className="flex-1 text-right">
+                    <p className="text-xs text-slate-400 mb-0.5">Total</p>
+                    <p className="text-sm font-medium text-slate-700 py-1.5">${Number(row.total || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </div>
+                </div>
+                {/* Comments */}
+                <AutoTextarea value={row.comments}
+                  onChange={(e) => updateRow(si, ri, { comments: e.target.value })}
+                  className={inputClass} placeholder="Comments…" />
+                {/* Actions */}
+                <div className="flex gap-2 justify-end">
+                  <button onClick={() => { setMlModal({ si, ri }); setMlSearch(""); }}
+                    className="text-xs font-semibold px-2 py-1 rounded bg-sky-50 text-sky-600">ML</button>
+                  <button onClick={() => removeRow(si, ri)}
+                    className="text-xs font-semibold px-2 py-1 rounded bg-rose-50 text-rose-500">Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Rows table — desktop only */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
