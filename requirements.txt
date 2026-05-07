@@ -11,3 +11,4 @@ pdfkit
 requests
 openai
 pdfplumber
+boto3

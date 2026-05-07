@@ -43,7 +43,9 @@ from db import (
     search_estimate_catalog, upsert_estimate_catalog, clear_estimate_catalog_usage,
     deduplicate_catalog_usage, move_estimate_db,
     get_material_list_total,
+    add_attachment, get_attachments, delete_attachment, delete_attachments_for_estimate,
 )
+import r2_utils
 import tempfile
 
 # Additional imports for login functionality
@@ -1403,6 +1405,10 @@ def estimate_builder():
         "mlTotalUrl":     url_for("api_material_list_total"),
         "mlNames":        ml_names,
         "mlListUrl":      url_for("material_list"),
+        "attachUploadUrl": "/api/estimates/attachments/upload",
+        "attachListUrl":   "/api/estimates/attachments",
+        "attachDeleteUrl": "/api/estimates/attachments/",
+        "r2Enabled":       r2_utils.ENABLED,
     })
 
 
@@ -1468,6 +1474,8 @@ def delete_estimate(name):
     if ok:
         display_name = f"{folder}/{ename}" if folder else ename
         clear_estimate_catalog_usage(display_name)
+        for key in delete_attachments_for_estimate(display_name):
+            r2_utils.delete_file(key)
         flash("Estimate deleted.", "success")
     else:
         flash("Delete failed.", "danger")
@@ -1502,6 +1510,68 @@ def api_move_estimate():
     folder, ename = _split_template_path(full_name)
     ok = move_estimate_db(ename, folder, new_folder, session["email"], session.get("role", "user"))
     return jsonify({"ok": ok})
+
+
+# ── Estimate attachments ──────────────────────────────────────────────────────
+
+ALLOWED_ATTACHMENT_TYPES = {
+    "image/jpeg", "image/png", "image/gif", "image/webp", "application/pdf",
+}
+MAX_ATTACHMENT_MB = 20
+
+
+@app.route("/api/estimates/attachments/upload", methods=["POST"])
+@login_required
+def api_attachment_upload():
+    if not r2_utils.ENABLED:
+        return jsonify({"ok": False, "error": "R2 not configured"}), 503
+    estimate_name = request.form.get("estimate_name", "").strip()
+    if not estimate_name:
+        return jsonify({"ok": False, "error": "Missing estimate_name"}), 400
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"ok": False, "error": "No file"}), 400
+    if f.content_type not in ALLOWED_ATTACHMENT_TYPES:
+        return jsonify({"ok": False, "error": "File type not allowed"}), 400
+    f.seek(0, 2)
+    size_mb = f.tell() / (1024 * 1024)
+    f.seek(0)
+    if size_mb > MAX_ATTACHMENT_MB:
+        return jsonify({"ok": False, "error": f"File exceeds {MAX_ATTACHMENT_MB} MB limit"}), 400
+
+    safe_name  = secure_filename(f.filename)
+    key        = f"estimates/{estimate_name}/{uuid.uuid4().hex}_{safe_name}"
+    r2_utils.upload_file(f.stream, key, f.content_type)
+    att_id = add_attachment(estimate_name, safe_name, f.content_type, key)
+    url    = r2_utils.presigned_url(key)
+    return jsonify({"ok": True, "id": att_id, "file_name": safe_name, "file_type": f.content_type, "url": url})
+
+
+@app.route("/api/estimates/attachments")
+@login_required
+def api_attachment_list():
+    estimate_name = request.args.get("name", "").strip()
+    if not estimate_name:
+        return jsonify({"ok": False, "error": "Missing name"}), 400
+    rows = get_attachments(estimate_name)
+    if r2_utils.ENABLED:
+        for row in rows:
+            row["url"] = r2_utils.presigned_url(row["r2_key"])
+            del row["r2_key"]
+    else:
+        for row in rows:
+            row["url"] = ""
+            del row["r2_key"]
+    return jsonify({"ok": True, "attachments": rows})
+
+
+@app.route("/api/estimates/attachments/<int:attachment_id>", methods=["DELETE"])
+@login_required
+def api_attachment_delete(attachment_id):
+    key = delete_attachment(attachment_id)
+    if key and r2_utils.ENABLED:
+        r2_utils.delete_file(key)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/estimate_catalog")

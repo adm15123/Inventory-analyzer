@@ -2791,6 +2791,10 @@ function EstimateBuilderPage({ data }) {
   const [catalogSuggestions, setCatalogSuggestions] = useState([]);
   const [activeInput, setActiveInput]     = useState(null);   // { si, ri }
   const [popupAnchor, setPopupAnchor]     = useState(null);   // { top, left }
+  const [attachments, setAttachments]     = useState([]);
+  const [attachUploading, setAttachUploading] = useState(false);
+  const [attachError, setAttachError]     = useState("");
+  const attachInputRef = useRef(null);
 
   const exportFormRef = useRef(null);
   const exportDataRef = useRef(null);
@@ -2842,6 +2846,48 @@ function EstimateBuilderPage({ data }) {
   const addBid    = () => setBids((b) => [...b, { id: crypto.randomUUID(), bid_num: "", amount: "", comments: "" }]);
   const removeBid = (i) => setBids((b) => b.filter((_, j) => j !== i));
   const updateBid = (i, patch) => setBids((b) => b.map((bid, j) => j === i ? { ...bid, ...patch } : bid));
+
+  // ── attachment helpers ────────────────────────────────────────────
+  const fetchAttachments = (name) => {
+    if (!name || !data.r2Enabled) return;
+    fetch(`${data.attachListUrl}?name=${encodeURIComponent(name)}`)
+      .then((r) => r.json())
+      .then((res) => { if (res.ok) setAttachments(res.attachments); })
+      .catch(() => {});
+  };
+
+  React.useEffect(() => { fetchAttachments(estimateName); }, []);
+
+  const handleUploadAttachment = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    e.target.value = "";
+    const fullName = estimateFolder.trim()
+      ? `${estimateFolder.trim()}/${estimateName.trim()}`
+      : estimateName.trim();
+    if (!fullName) { window.alert("Save the estimate first before attaching files."); return; }
+    setAttachError("");
+    setAttachUploading(true);
+    const form = new FormData();
+    form.append("estimate_name", fullName);
+    form.append("file", file);
+    fetch(data.attachUploadUrl, { method: "POST", body: form })
+      .then((r) => r.json())
+      .then((res) => {
+        if (res.ok) setAttachments((a) => [...a, { id: res.id, file_name: res.file_name, file_type: res.file_type, url: res.url }]);
+        else setAttachError(res.error || "Upload failed.");
+      })
+      .catch(() => setAttachError("Upload failed."))
+      .finally(() => setAttachUploading(false));
+  };
+
+  const handleDeleteAttachment = (id) => {
+    if (!window.confirm("Remove this attachment?")) return;
+    fetch(`${data.attachDeleteUrl}${id}`, { method: "DELETE" })
+      .then((r) => r.json())
+      .then((res) => { if (res.ok) setAttachments((a) => a.filter((x) => x.id !== id)); })
+      .catch(() => {});
+  };
 
   // ── catalog autocomplete (debounced fetch as user types) ─────────
   const fetchCatalog = useCallback(
@@ -2964,7 +3010,7 @@ function EstimateBuilderPage({ data }) {
     const payload = new URLSearchParams({ estimate_name: fullName, estimate_data: buildPayload() });
     fetch(data.saveUrl, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: payload.toString() })
       .then((r) => r.json())
-      .then((res) => { if (res.ok) { setSaveOk(true); setEstimateName(fullName); } else window.alert(res.error || "Save failed."); })
+      .then((res) => { if (res.ok) { setSaveOk(true); setEstimateName(fullName); fetchAttachments(fullName); } else window.alert(res.error || "Save failed."); })
       .catch(() => window.alert("Save failed."))
       .finally(() => setSaving(false));
   };
@@ -3387,6 +3433,62 @@ function EstimateBuilderPage({ data }) {
           <button onClick={addBid} className="text-sm text-sky-600 font-semibold hover:text-sky-800 transition">+ Add Bid</button>
         </div>
       </div>
+
+      {/* Attachments panel */}
+      {data.r2Enabled && (
+        <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
+          <div className="flex items-center justify-between px-5 py-3 bg-violet-700">
+            <span className="text-white font-semibold text-sm uppercase tracking-wide">Attachments</span>
+            <div className="flex items-center gap-3">
+              {attachError && <span className="text-red-200 text-xs">{attachError}</span>}
+              <label className={`cursor-pointer rounded-lg px-3 py-1.5 text-xs font-semibold transition ${attachUploading ? "bg-violet-500 text-white opacity-60 cursor-wait" : "bg-white text-violet-700 hover:bg-violet-50"}`}>
+                {attachUploading ? "Uploading…" : "+ Add File"}
+                <input
+                  ref={attachInputRef}
+                  type="file"
+                  accept="image/*,application/pdf"
+                  className="hidden"
+                  onChange={handleUploadAttachment}
+                  disabled={attachUploading}
+                />
+              </label>
+            </div>
+          </div>
+          {attachments.length === 0 ? (
+            <p className="px-5 py-6 text-sm text-slate-400 text-center">No attachments yet — click + Add File to upload an image or PDF.</p>
+          ) : (
+            <div className="p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-3">
+              {attachments.map((att) => {
+                const isImage = att.file_type && att.file_type.startsWith("image/");
+                return (
+                  <div key={att.id} className="relative group rounded-xl overflow-hidden ring-1 ring-slate-200 bg-slate-50">
+                    {isImage ? (
+                      <a href={att.url} target="_blank" rel="noopener noreferrer">
+                        <img src={att.url} alt={att.file_name} className="w-full h-28 object-cover" />
+                      </a>
+                    ) : (
+                      <a href={att.url} target="_blank" rel="noopener noreferrer" className="flex flex-col items-center justify-center h-28 gap-2 text-slate-500 hover:text-violet-700 transition">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                        </svg>
+                        <span className="text-xs font-medium">PDF</span>
+                      </a>
+                    )}
+                    <div className="px-2 py-1.5 border-t border-slate-100 bg-white">
+                      <p className="text-xs text-slate-600 truncate" title={att.file_name}>{att.file_name}</p>
+                    </div>
+                    <button
+                      onClick={() => handleDeleteAttachment(att.id)}
+                      className="absolute top-1.5 right-1.5 w-6 h-6 rounded-full bg-black/50 text-white text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                      title="Remove"
+                    >✕</button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Catalog autocomplete popup — fixed so it escapes all overflow containers */}
       {catalogSuggestions.length > 0 && activeInput && popupAnchor && (

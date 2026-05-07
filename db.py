@@ -351,6 +351,18 @@ def init_db():
 
         CREATE UNIQUE INDEX IF NOT EXISTS idx_ecu_cid_name
             ON estimate_catalog_usage (catalog_id, estimate_name);
+
+        CREATE TABLE IF NOT EXISTS estimate_attachments (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            estimate_name TEXT NOT NULL,
+            file_name     TEXT NOT NULL,
+            file_type     TEXT NOT NULL,
+            r2_key        TEXT NOT NULL,
+            uploaded_at   TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_eat_estimate
+            ON estimate_attachments (estimate_name);
     """
 
     if USE_TURSO:
@@ -1244,3 +1256,81 @@ def get_material_list_total(name: str, folder: str, viewer_email: str, viewer_ro
         return None
     from config import TAX_RATE
     return round(subtotal * (1 + TAX_RATE), 2)
+
+
+# ── Estimate attachments ──────────────────────────────────────────────────────
+
+def add_attachment(estimate_name: str, file_name: str, file_type: str, r2_key: str) -> int:
+    """Insert an attachment record and return its new id."""
+    sql = (
+        "INSERT INTO estimate_attachments (estimate_name, file_name, file_type, r2_key) "
+        "VALUES (?, ?, ?, ?)"
+    )
+    if USE_TURSO:
+        rows = _turso_execute(sql, [estimate_name, file_name, file_type, r2_key])
+        return rows[0][0] if rows else -1
+    else:
+        with _local_conn() as conn:
+            cur = conn.execute(sql, (estimate_name, file_name, file_type, r2_key))
+            return cur.lastrowid
+
+
+def get_attachments(estimate_name: str) -> list:
+    """Return all attachment records for an estimate (without the r2_key)."""
+    sql = (
+        "SELECT id, file_name, file_type, r2_key, uploaded_at "
+        "FROM estimate_attachments WHERE estimate_name = ? ORDER BY uploaded_at ASC"
+    )
+    if USE_TURSO:
+        rows = _turso_execute(sql, [estimate_name])
+        return [
+            {"id": r[0], "file_name": r[1], "file_type": r[2], "r2_key": r[3], "uploaded_at": r[4]}
+            for r in rows
+        ]
+    else:
+        with _local_conn() as conn:
+            cur = conn.execute(sql, (estimate_name,))
+            return [
+                {"id": r[0], "file_name": r[1], "file_type": r[2], "r2_key": r[3], "uploaded_at": r[4]}
+                for r in cur.fetchall()
+            ]
+
+
+def delete_attachment(attachment_id: int) -> str | None:
+    """Delete attachment record by id. Returns the r2_key so caller can remove from R2."""
+    sel = "SELECT r2_key FROM estimate_attachments WHERE id = ?"
+    delete = "DELETE FROM estimate_attachments WHERE id = ?"
+    if USE_TURSO:
+        rows = _turso_execute(sel, [attachment_id])
+        if not rows:
+            return None
+        key = rows[0][0]
+        _turso_execute(delete, [attachment_id])
+        return key
+    else:
+        with _local_conn() as conn:
+            cur = conn.execute(sel, (attachment_id,))
+            row = cur.fetchone()
+            if not row:
+                return None
+            key = row[0]
+            conn.execute(delete, (attachment_id,))
+            return key
+
+
+def delete_attachments_for_estimate(estimate_name: str) -> list:
+    """Delete all attachment records for an estimate. Returns list of r2_keys."""
+    sel = "SELECT r2_key FROM estimate_attachments WHERE estimate_name = ?"
+    delete = "DELETE FROM estimate_attachments WHERE estimate_name = ?"
+    if USE_TURSO:
+        rows = _turso_execute(sel, [estimate_name])
+        keys = [r[0] for r in rows]
+        if keys:
+            _turso_execute(delete, [estimate_name])
+        return keys
+    else:
+        with _local_conn() as conn:
+            cur = conn.execute(sel, (estimate_name,))
+            keys = [r[0] for r in cur.fetchall()]
+            conn.execute(delete, (estimate_name,))
+            return keys
