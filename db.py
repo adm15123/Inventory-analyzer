@@ -365,6 +365,22 @@ def init_db():
             conn.executescript(ddl)
 
 
+def deduplicate_catalog_usage() -> None:
+    """One-time cleanup: remove duplicate (catalog_id, estimate_name) rows, keeping the earliest."""
+    sql = """
+        DELETE FROM estimate_catalog_usage
+        WHERE id NOT IN (
+            SELECT MIN(id) FROM estimate_catalog_usage
+            GROUP BY catalog_id, estimate_name
+        )
+    """
+    if USE_TURSO:
+        _turso_execute(sql, [])
+    else:
+        with _local_conn() as conn:
+            conn.execute(sql)
+
+
 def save_parsed_document(parsed: dict, filename: str = "") -> int:
     """
     Insert a parsed PDF result into the DB.
