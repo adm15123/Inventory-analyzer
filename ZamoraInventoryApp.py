@@ -406,6 +406,14 @@ du.load_final_list()
 # Routes for Main Functionality (Protected by login_required)
 # -------------------------------
 
+@app.route("/favicon.ico")
+def favicon():
+    return send_file(
+        os.path.join(app.root_path, "static", "icons", "icon-192.png"),
+        mimetype="image/png",
+    )
+
+
 # Main Menu – note: the file upload functionality has been removed.
 @app.route("/")
 @login_required

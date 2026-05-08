@@ -1137,7 +1137,8 @@ def move_estimate_db(
     now = datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
     old_display = f"{old_folder}/{name}" if old_folder else name
     new_display = f"{new_folder}/{name}" if new_folder else name
-    usage_sql   = "UPDATE estimate_catalog_usage SET estimate_name=? WHERE estimate_name=?"
+    usage_sql  = "UPDATE estimate_catalog_usage SET estimate_name=? WHERE estimate_name=?"
+    attach_sql = "UPDATE estimate_attachments SET estimate_name=? WHERE estimate_name=?"
 
     if actor_role == "admin":
         upd_sql = "UPDATE estimates SET folder=?, updated_at=? WHERE name=? AND folder=?"
@@ -1150,6 +1151,7 @@ def move_estimate_db(
         _turso_execute(upd_sql, params)
         if old_display != new_display:
             _turso_execute(usage_sql, [new_display, old_display])
+            _turso_execute(attach_sql, [new_display, old_display])
         return True
     else:
         with _local_conn() as conn:
@@ -1158,6 +1160,7 @@ def move_estimate_db(
                 return False
             if old_display != new_display:
                 conn.execute(usage_sql, (new_display, old_display))
+                conn.execute(attach_sql, (new_display, old_display))
             return True
 
 
