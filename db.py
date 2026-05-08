@@ -1267,8 +1267,9 @@ def add_attachment(estimate_name: str, file_name: str, file_type: str, r2_key: s
         "VALUES (?, ?, ?, ?)"
     )
     if USE_TURSO:
-        rows = _turso_execute(sql, [estimate_name, file_name, file_type, r2_key])
-        return rows[0][0] if rows else -1
+        _turso_execute(sql, [estimate_name, file_name, file_type, r2_key])
+        rows = _turso_execute("SELECT last_insert_rowid()", [])
+        return int(rows[0]["last_insert_rowid()"] if rows else -1)
     else:
         with _local_conn() as conn:
             cur = conn.execute(sql, (estimate_name, file_name, file_type, r2_key))
@@ -1276,7 +1277,7 @@ def add_attachment(estimate_name: str, file_name: str, file_type: str, r2_key: s
 
 
 def get_attachments(estimate_name: str) -> list:
-    """Return all attachment records for an estimate (without the r2_key)."""
+    """Return all attachment records for an estimate."""
     sql = (
         "SELECT id, file_name, file_type, r2_key, uploaded_at "
         "FROM estimate_attachments WHERE estimate_name = ? ORDER BY uploaded_at ASC"
@@ -1284,7 +1285,8 @@ def get_attachments(estimate_name: str) -> list:
     if USE_TURSO:
         rows = _turso_execute(sql, [estimate_name])
         return [
-            {"id": r[0], "file_name": r[1], "file_type": r[2], "r2_key": r[3], "uploaded_at": r[4]}
+            {"id": r["id"], "file_name": r["file_name"], "file_type": r["file_type"],
+             "r2_key": r["r2_key"], "uploaded_at": r["uploaded_at"]}
             for r in rows
         ]
     else:
@@ -1304,7 +1306,7 @@ def delete_attachment(attachment_id: int) -> str | None:
         rows = _turso_execute(sel, [attachment_id])
         if not rows:
             return None
-        key = rows[0][0]
+        key = rows[0]["r2_key"]
         _turso_execute(delete, [attachment_id])
         return key
     else:
@@ -1324,7 +1326,7 @@ def delete_attachments_for_estimate(estimate_name: str) -> list:
     delete = "DELETE FROM estimate_attachments WHERE estimate_name = ?"
     if USE_TURSO:
         rows = _turso_execute(sel, [estimate_name])
-        keys = [r[0] for r in rows]
+        keys = [r["r2_key"] for r in rows]
         if keys:
             _turso_execute(delete, [estimate_name])
         return keys
