@@ -2774,6 +2774,8 @@ function EstimatesPage({ data }) {
 // ================================================================
 // EstimateBuilderPage — create / edit a sectioned estimate
 // ================================================================
+const isBelowLine = (s) => s.is_gas || !!s.below_line;
+
 function EstimateBuilderPage({ data }) {
   const [estimateName, setEstimateName]   = useState(data.estimateName || "");
   const [estimateFolder, setEstimateFolder] = useState(data.estimateFolder || "");
@@ -2791,6 +2793,7 @@ function EstimateBuilderPage({ data }) {
   const [catalogSuggestions, setCatalogSuggestions] = useState([]);
   const [activeInput, setActiveInput]     = useState(null);   // { si, ri }
   const [popupAnchor, setPopupAnchor]     = useState(null);   // { top, left }
+  const [notes, setNotes]                 = useState(data.content?.notes || "");
   const [attachments, setAttachments]     = useState([]);
   const [attachUploading, setAttachUploading] = useState(false);
   const [attachError, setAttachError]     = useState("");
@@ -2817,7 +2820,7 @@ function EstimateBuilderPage({ data }) {
   const addRow = (si) => {
     setSections((c) => c.map((s, i) => i !== si ? s : {
       ...s,
-      rows: [...s.rows, { id: crypto.randomUUID(), type: "manual", qty: "", description: "", unit_cost: "", total: "", comments: "", add_comments: "" }],
+      rows: [...s.rows, { id: crypto.randomUUID(), type: "manual", qty: "", description: "", unit_cost: "", total: "", comments: "", add_comments: "", is_alternative: false }],
     }));
   };
 
@@ -2839,6 +2842,17 @@ function EstimateBuilderPage({ data }) {
         return next;
       });
       return { ...s, rows };
+    }));
+  };
+
+  const toggleBelowLine = (si) => {
+    setSections((c) => c.map((s, i) => i !== si ? s : { ...s, below_line: !s.below_line }));
+  };
+
+  const toggleAlternative = (si, ri) => {
+    setSections((c) => c.map((s, i) => i !== si ? s : {
+      ...s,
+      rows: s.rows.map((r, j) => j !== ri ? r : { ...r, is_alternative: !r.is_alternative }),
     }));
   };
 
@@ -2985,7 +2999,7 @@ function EstimateBuilderPage({ data }) {
 
   // ── computed totals ──────────────────────────────────────────────
   const plumbingTotal = useMemo(
-    () => sections.filter((s) => !s.is_gas).reduce((sum, s) => sum + s.rows.reduce((rs, r) => rs + (parseFloat(r.total) || 0), 0), 0),
+    () => sections.filter((s) => !isBelowLine(s)).reduce((sum, s) => sum + s.rows.reduce((rs, r) => rs + (parseFloat(r.total) || 0), 0), 0),
     [sections]
   );
   const gasTotal = useMemo(
@@ -2994,8 +3008,18 @@ function EstimateBuilderPage({ data }) {
   );
   const grandTotal = plumbingTotal + gasTotal;
 
+  const alternateRows = useMemo(() => {
+    const result = [];
+    sections.forEach((s) => {
+      s.rows.forEach((r) => {
+        if (r.is_alternative) result.push({ ...r, sectionName: s.name });
+      });
+    });
+    return result;
+  }, [sections]);
+
   const buildPayload = () => JSON.stringify({
-    project_info: projectInfo, sections, bids,
+    project_info: projectInfo, sections, bids, notes,
     plumbing_total: parseFloat(plumbingTotal.toFixed(2)),
     gas_total:      parseFloat(gasTotal.toFixed(2)),
     grand_total:    parseFloat(grandTotal.toFixed(2)),
@@ -3118,11 +3142,11 @@ function EstimateBuilderPage({ data }) {
         </div>
       </div>
 
-      {/* Sections */}
-      {sections.map((section, si) => (
+      {/* Plumbing sections */}
+      {sections.map((section, si) => !isBelowLine(section) && (
         <div key={section.id} className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
           {/* Section header */}
-          <div className={classNames("flex items-center gap-3 px-5 py-3 rounded-t-2xl", section.is_gas ? "bg-emerald-900" : "bg-slate-800")}>
+          <div className="flex items-center gap-3 px-5 py-3 rounded-t-2xl bg-slate-800">
             <input
               value={section.name}
               onChange={(e) => updateSectionName(si, e.target.value)}
@@ -3132,6 +3156,11 @@ function EstimateBuilderPage({ data }) {
             <span className="text-slate-300 text-sm font-medium">
               ${sectionSubtotal(section).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </span>
+            <button
+              onClick={() => toggleBelowLine(si)}
+              title="Move below Plumbing Total"
+              className="text-xs px-2 py-0.5 rounded font-semibold bg-white/10 text-slate-300 hover:bg-white/20 transition"
+            >↓ Below</button>
             <button
               onClick={() => removeSection(si)}
               className="text-slate-400 hover:text-rose-400 text-lg leading-none transition"
@@ -3198,6 +3227,11 @@ function EstimateBuilderPage({ data }) {
                 <div className="flex gap-2 justify-end">
                   <button onClick={() => { setMlModal({ si, ri }); setMlSearch(""); }}
                     className="text-xs font-semibold px-2 py-1 rounded bg-sky-50 text-sky-600">ML</button>
+                  <button
+                    onClick={() => toggleAlternative(si, ri)}
+                    className={`text-xs font-semibold px-2 py-1 rounded transition ${row.is_alternative ? "bg-amber-100 text-amber-700" : "bg-slate-50 text-slate-400"}`}
+                    title={row.is_alternative ? "Remove from Alternates" : "Mark as Alternate"}
+                  >Alt</button>
                   <button onClick={() => removeRow(si, ri)}
                     className="text-xs font-semibold px-2 py-1 rounded bg-rose-50 text-rose-500">Remove</button>
                 </div>
@@ -3323,6 +3357,11 @@ function EstimateBuilderPage({ data }) {
                           className="text-sky-500 hover:text-sky-700 text-xs font-semibold px-1.5 py-1 rounded hover:bg-sky-50 transition"
                         >ML</button>
                         <button
+                          onClick={() => toggleAlternative(si, ri)}
+                          title={row.is_alternative ? "Remove from Alternates" : "Mark as Alternate"}
+                          className={`text-xs font-semibold px-1.5 py-1 rounded transition ${row.is_alternative ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "text-slate-400 hover:text-amber-600 hover:bg-amber-50"}`}
+                        >Alt</button>
+                        <button
                           onClick={() => removeRow(si, ri)}
                           className="text-slate-400 hover:text-rose-500 text-lg leading-none transition"
                           title="Remove row"
@@ -3348,26 +3387,237 @@ function EstimateBuilderPage({ data }) {
         </div>
       ))}
 
-      {/* Plumbing Project Total banner (after last non-gas section) */}
-      {sections.some((s) => !s.is_gas) && (
+      {/* Plumbing Project Total */}
+      {sections.some((s) => !isBelowLine(s)) && (
         <div className="rounded-2xl bg-slate-800 px-6 py-4 text-white shadow flex items-center justify-between">
           <p className="text-sm font-semibold uppercase tracking-wide text-slate-300">Plumbing Project Total</p>
           <p className="text-2xl font-bold">${plumbingTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
         </div>
       )}
 
-      {/* Add section + Gas Total */}
-      <div className="flex items-center justify-between flex-wrap gap-4">
+      {/* Below-line sections (gas + custom) */}
+      {sections.map((section, si) => isBelowLine(section) && (
+        <div key={section.id} className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+          {/* Section header */}
+          <div className={classNames("flex items-center gap-3 px-5 py-3 rounded-t-2xl", section.is_gas ? "bg-emerald-900" : "bg-indigo-700")}>
+            <input
+              value={section.name}
+              onChange={(e) => updateSectionName(si, e.target.value)}
+              className="flex-1 bg-transparent text-white font-semibold text-sm focus:outline-none placeholder-slate-400"
+              placeholder="Section name"
+            />
+            <span className="text-slate-300 text-sm font-medium">
+              ${sectionSubtotal(section).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </span>
+            {!section.is_gas && (
+              <button
+                onClick={() => toggleBelowLine(si)}
+                title="Move above Plumbing Total"
+                className="text-xs px-2 py-0.5 rounded font-semibold bg-white/10 text-slate-300 hover:bg-white/20 transition"
+              >↑ Above</button>
+            )}
+            <button
+              onClick={() => removeSection(si)}
+              className="text-slate-400 hover:text-rose-400 text-lg leading-none transition"
+              title="Remove section"
+            >×</button>
+          </div>
+
+          {/* Rows — mobile cards */}
+          <div className="block md:hidden divide-y divide-slate-100">
+            {section.rows.map((row, ri) => (
+              <div key={row.id} className="p-3 space-y-2">
+                {row.type === "material_list" ? (
+                  <div className="flex items-center gap-1 flex-wrap">
+                    <span className="inline-block bg-sky-100 text-sky-700 text-xs font-semibold rounded px-1.5 py-0.5">ML</span>
+                    <span className="text-sm text-slate-700">{row.description}</span>
+                    {row.material_list_name && (
+                      <a href={`${data.mlListUrl || "/material_list"}?list=${encodeURIComponent(row.material_list_name)}`}
+                        target="_blank" rel="noopener noreferrer"
+                        className="text-sky-500 text-xs font-bold">↗</a>
+                    )}
+                  </div>
+                ) : (
+                  <AutoTextarea
+                    value={row.description}
+                    onChange={(e) => { updateRow(si, ri, { description: e.target.value }); fetchCatalog(e.target.value, si, ri); }}
+                    onBlur={() => setTimeout(() => { setCatalogSuggestions([]); setPopupAnchor(null); }, 200)}
+                    className={inputClass}
+                    placeholder="Description…"
+                  />
+                )}
+                <div className="flex gap-2 items-end">
+                  <div className="w-20">
+                    <p className="text-xs text-slate-400 mb-0.5">QTY</p>
+                    {row.type === "material_list" ? (
+                      <span className="text-xs text-slate-400 py-1.5 block">1</span>
+                    ) : (
+                      <input type="number" min="0" step="1" value={row.qty}
+                        onChange={(e) => updateRow(si, ri, { qty: e.target.value })}
+                        className={inputClass} />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-xs text-slate-400 mb-0.5">Unit Cost</p>
+                    {row.type === "material_list" ? (
+                      <span className="text-sm text-slate-700">${Number(row.unit_cost || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                    ) : (
+                      <input type="number" min="0" step="0.01" value={row.unit_cost}
+                        onChange={(e) => updateRow(si, ri, { unit_cost: e.target.value })}
+                        className={inputClass} />
+                    )}
+                  </div>
+                  <div className="flex-1 text-right">
+                    <p className="text-xs text-slate-400 mb-0.5">Total</p>
+                    <p className="text-sm font-medium text-slate-700 py-1.5">${Number(row.total || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+                  </div>
+                </div>
+                <AutoTextarea value={row.comments}
+                  onChange={(e) => updateRow(si, ri, { comments: e.target.value })}
+                  className={inputClass} placeholder="Comments…" />
+                <div className="flex gap-2 justify-end">
+                  <button onClick={() => { setMlModal({ si, ri }); setMlSearch(""); }}
+                    className="text-xs font-semibold px-2 py-1 rounded bg-sky-50 text-sky-600">ML</button>
+                  <button
+                    onClick={() => toggleAlternative(si, ri)}
+                    className={`text-xs font-semibold px-2 py-1 rounded transition ${row.is_alternative ? "bg-amber-100 text-amber-700" : "bg-slate-50 text-slate-400"}`}
+                    title={row.is_alternative ? "Remove from Alternates" : "Mark as Alternate"}
+                  >Alt</button>
+                  <button onClick={() => removeRow(si, ri)}
+                    className="text-xs font-semibold px-2 py-1 rounded bg-rose-50 text-rose-500">Remove</button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Rows table — desktop only */}
+          <div className="hidden md:block overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-slate-50 border-b border-slate-200">
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">QTY</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">DESCRIPTION</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">UNIT COST</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">TOTAL</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-slate-500">COMMENTS</th>
+                  <th className="hidden md:table-cell px-3 py-2 text-left text-xs font-semibold text-slate-500">ADD. COMMENTS</th>
+                  <th className="px-3 py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {section.rows.map((row, ri) => (
+                  <tr key={row.id} className={ri % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                    <td className="px-3 py-1.5">
+                      {row.type === "material_list" ? (
+                        <span className="text-xs text-slate-400">1</span>
+                      ) : (
+                        <input type="number" min="0" step="1" value={row.qty}
+                          onChange={(e) => updateRow(si, ri, { qty: e.target.value })}
+                          className={inputClass} />
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      {row.type === "material_list" ? (
+                        <div className="flex items-center gap-1 flex-wrap">
+                          <span className="inline-block bg-sky-100 text-sky-700 text-xs font-semibold rounded px-1.5 py-0.5">ML</span>
+                          <span className="text-sm text-slate-700">{row.description}</span>
+                          {row.material_list_name && (
+                            <a href={`${data.mlListUrl || "/material_list"}?list=${encodeURIComponent(row.material_list_name)}`}
+                              target="_blank" rel="noopener noreferrer"
+                              className="text-sky-500 hover:text-sky-700 text-xs font-bold transition"
+                              title="Open material list in new tab">↗</a>
+                          )}
+                        </div>
+                      ) : (
+                        <AutoTextarea
+                          value={row.description}
+                          onChange={(e) => {
+                            updateRow(si, ri, { description: e.target.value });
+                            const rect = e.target.getBoundingClientRect();
+                            const spaceBelow = window.innerHeight - rect.bottom;
+                            setPopupAnchor({
+                              top:    rect.bottom + 4,
+                              bottom: window.innerHeight - rect.top + 4,
+                              left:   rect.left,
+                              maxH:   spaceBelow > 220 ? spaceBelow - 12 : rect.top - 12,
+                              openUp: spaceBelow < 220,
+                            });
+                            fetchCatalog(e.target.value, si, ri);
+                          }}
+                          onBlur={() => setTimeout(() => { setCatalogSuggestions([]); setPopupAnchor(null); }, 200)}
+                          className={inputClass}
+                          placeholder="Description…"
+                        />
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      {row.type === "material_list" ? (
+                        <span className="text-sm text-slate-700">${Number(row.unit_cost || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                      ) : (
+                        <input type="number" min="0" step="0.01" value={row.unit_cost}
+                          onChange={(e) => updateRow(si, ri, { unit_cost: e.target.value })}
+                          className={inputClass} />
+                      )}
+                    </td>
+                    <td className="px-3 py-1.5 text-sm font-medium text-slate-700">
+                      ${Number(row.total || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <AutoTextarea value={row.comments}
+                        onChange={(e) => updateRow(si, ri, { comments: e.target.value })}
+                        className={inputClass} placeholder="Comments…" />
+                    </td>
+                    <td className="hidden md:table-cell px-3 py-1.5">
+                      <AutoTextarea value={row.add_comments}
+                        onChange={(e) => updateRow(si, ri, { add_comments: e.target.value })}
+                        className={inputClass} placeholder="Additional…" />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <div className="flex items-center gap-1">
+                        <button onClick={() => { setMlModal({ si, ri }); setMlSearch(""); }}
+                          title="Link Material List"
+                          className="text-sky-500 hover:text-sky-700 text-xs font-semibold px-1.5 py-1 rounded hover:bg-sky-50 transition">ML</button>
+                        <button
+                          onClick={() => toggleAlternative(si, ri)}
+                          title={row.is_alternative ? "Remove from Alternates" : "Mark as Alternate"}
+                          className={`text-xs font-semibold px-1.5 py-1 rounded transition ${row.is_alternative ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "text-slate-400 hover:text-amber-600 hover:bg-amber-50"}`}
+                        >Alt</button>
+                        <button onClick={() => removeRow(si, ri)}
+                          className="text-slate-400 hover:text-rose-500 text-lg leading-none transition"
+                          title="Remove row">×</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Section footer */}
+          <div className="flex items-center justify-between px-5 py-3 border-t border-slate-100">
+            <button onClick={() => addRow(si)}
+              className="text-sm text-sky-600 font-semibold hover:text-sky-800 transition">+ Add Row</button>
+            <span className="text-xs text-slate-400">
+              Subtotal: <span className="font-semibold text-slate-700">${sectionSubtotal(section).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </span>
+          </div>
+        </div>
+      ))}
+
+      {/* Gas Total */}
+      {sections.some((s) => s.is_gas) && (
+        <div className="rounded-2xl bg-emerald-900 px-6 py-4 text-white shadow flex items-center justify-between">
+          <p className="text-sm font-semibold uppercase tracking-wide text-emerald-300">Gas System Total</p>
+          <p className="text-2xl font-bold">${gasTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+        </div>
+      )}
+
+      {/* Add Section */}
+      <div>
         <button
           onClick={addSection}
           className="inline-flex items-center gap-1.5 rounded-lg border-2 border-dashed border-slate-300 px-5 py-3 text-sm font-semibold text-slate-500 hover:border-sky-400 hover:text-sky-600 transition"
         >+ Add Section</button>
-        {sections.some((s) => s.is_gas) && (
-          <div className="rounded-2xl bg-emerald-900 px-6 py-4 text-white shadow">
-            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-300">Gas System Total</p>
-            <p className="text-2xl font-bold">${gasTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-          </div>
-        )}
       </div>
 
       {/* Bids table */}
@@ -3433,6 +3683,63 @@ function EstimateBuilderPage({ data }) {
           <button onClick={addBid} className="text-sm text-sky-600 font-semibold hover:text-sky-800 transition">+ Add Bid</button>
         </div>
       </div>
+
+      {/* Notes */}
+      <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div className="px-5 py-3 bg-slate-700 rounded-t-2xl">
+          <span className="text-white font-semibold text-sm uppercase tracking-wide">Notes</span>
+        </div>
+        <div className="p-4">
+          <textarea
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={5}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200 resize-y"
+            placeholder="Add important notes about this project…"
+          />
+        </div>
+      </div>
+
+      {/* Alternates */}
+      {alternateRows.length > 0 && (
+        <div className="rounded-2xl bg-white shadow-sm ring-1 ring-amber-200">
+          <div className="px-5 py-3 bg-amber-600 rounded-t-2xl">
+            <span className="text-white font-semibold text-sm uppercase tracking-wide">Alternates</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-amber-50 border-b border-amber-100">
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">SECTION</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">DESCRIPTION</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">QTY</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">UNIT COST</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">TOTAL</th>
+                </tr>
+              </thead>
+              <tbody>
+                {alternateRows.map((row, i) => (
+                  <tr key={row.id} className={i % 2 === 0 ? "bg-white" : "bg-amber-50/40"}>
+                    <td className="px-3 py-2 text-xs text-slate-500">{row.sectionName}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700">{row.description}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700">{row.qty}</td>
+                    <td className="px-3 py-2 text-sm text-slate-700">${Number(row.unit_cost || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-3 py-2 text-sm font-medium text-slate-700">${Number(row.total || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr className="border-t border-amber-200 bg-amber-50">
+                  <td colSpan="4" className="px-3 py-2 text-right text-xs font-semibold text-amber-700">Alternates Total</td>
+                  <td className="px-3 py-2 text-sm font-bold text-amber-700">
+                    ${alternateRows.reduce((s, r) => s + (parseFloat(r.total) || 0), 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Attachments panel */}
       {data.r2Enabled && (
