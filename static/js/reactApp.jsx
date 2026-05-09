@@ -2831,6 +2831,18 @@ function EstimateBuilderPage({ data }) {
     setSections((c) => c.map((s, i) => i !== si ? s : { ...s, rows: s.rows.filter((_, j) => j !== ri) }));
   };
 
+  const moveRow = (si, ri, direction) => {
+    setSections((c) => c.map((s, i) => {
+      if (i !== si) return s;
+      const next = [...s.rows];
+      const target = ri + direction;
+      if (target < 0 || target >= next.length) return s;
+      const [row] = next.splice(ri, 1);
+      next.splice(target, 0, row);
+      return { ...s, rows: next };
+    }));
+  };
+
   const updateRow = (si, ri, patch) => {
     setSections((c) => c.map((s, i) => {
       if (i !== si) return s;
@@ -3254,6 +3266,8 @@ function EstimateBuilderPage({ data }) {
                     className={`text-xs font-semibold px-2 py-1 rounded transition ${row.is_alternative ? "bg-amber-100 text-amber-700" : "bg-slate-50 text-slate-400"}`}
                     title={row.is_alternative ? "Remove from Alternates" : "Mark as Alternate"}
                   >Alt</button>
+                  <button onClick={() => moveRow(si, ri, -1)} className="text-xs font-semibold px-2 py-1 rounded bg-slate-50 text-slate-500">↑</button>
+                  <button onClick={() => moveRow(si, ri, 1)} className="text-xs font-semibold px-2 py-1 rounded bg-slate-50 text-slate-500">↓</button>
                   <button onClick={() => removeRow(si, ri)}
                     className="text-xs font-semibold px-2 py-1 rounded bg-rose-50 text-rose-500">Remove</button>
                 </div>
@@ -3383,6 +3397,8 @@ function EstimateBuilderPage({ data }) {
                           title={row.is_alternative ? "Remove from Alternates" : "Mark as Alternate"}
                           className={`text-xs font-semibold px-1.5 py-1 rounded transition ${row.is_alternative ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "text-slate-400 hover:text-amber-600 hover:bg-amber-50"}`}
                         >Alt</button>
+                        <button onClick={() => moveRow(si, ri, -1)} title="Move up" className="text-slate-400 hover:text-slate-600 text-xs font-bold px-1 py-1 rounded hover:bg-slate-100 transition">↑</button>
+                        <button onClick={() => moveRow(si, ri, 1)} title="Move down" className="text-slate-400 hover:text-slate-600 text-xs font-bold px-1 py-1 rounded hover:bg-slate-100 transition">↓</button>
                         <button
                           onClick={() => removeRow(si, ri)}
                           className="text-slate-400 hover:text-rose-500 text-lg leading-none transition"
@@ -3521,6 +3537,8 @@ function EstimateBuilderPage({ data }) {
                     className={`text-xs font-semibold px-2 py-1 rounded transition ${row.is_alternative ? "bg-amber-100 text-amber-700" : "bg-slate-50 text-slate-400"}`}
                     title={row.is_alternative ? "Remove from Alternates" : "Mark as Alternate"}
                   >Alt</button>
+                  <button onClick={() => moveRow(si, ri, -1)} className="text-xs font-semibold px-2 py-1 rounded bg-slate-50 text-slate-500">↑</button>
+                  <button onClick={() => moveRow(si, ri, 1)} className="text-xs font-semibold px-2 py-1 rounded bg-slate-50 text-slate-500">↓</button>
                   <button onClick={() => removeRow(si, ri)}
                     className="text-xs font-semibold px-2 py-1 rounded bg-rose-50 text-rose-500">Remove</button>
                 </div>
@@ -3620,6 +3638,8 @@ function EstimateBuilderPage({ data }) {
                           title={row.is_alternative ? "Remove from Alternates" : "Mark as Alternate"}
                           className={`text-xs font-semibold px-1.5 py-1 rounded transition ${row.is_alternative ? "bg-amber-100 text-amber-700 hover:bg-amber-200" : "text-slate-400 hover:text-amber-600 hover:bg-amber-50"}`}
                         >Alt</button>
+                        <button onClick={() => moveRow(si, ri, -1)} title="Move up" className="text-slate-400 hover:text-slate-600 text-xs font-bold px-1 py-1 rounded hover:bg-slate-100 transition">↑</button>
+                        <button onClick={() => moveRow(si, ri, 1)} title="Move down" className="text-slate-400 hover:text-slate-600 text-xs font-bold px-1 py-1 rounded hover:bg-slate-100 transition">↓</button>
                         <button onClick={() => removeRow(si, ri)}
                           className="text-slate-400 hover:text-rose-500 text-lg leading-none transition"
                           title="Remove row">×</button>
