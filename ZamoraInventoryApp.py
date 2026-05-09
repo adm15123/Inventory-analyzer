@@ -1617,6 +1617,20 @@ def export_estimate_pdf():
     all_sections   = content.get("sections", [])
     plumb_sections = [s for s in all_sections if not s.get("is_gas")]
     gas_sections   = [s for s in all_sections if s.get("is_gas")]
+
+    alternate_rows = []
+    for sec in all_sections:
+        for row in sec.get("rows", []):
+            if row.get("is_alternative"):
+                alternate_rows.append({
+                    "section_name": sec.get("name", ""),
+                    "description":  row.get("description", ""),
+                    "qty":          row.get("qty", ""),
+                    "unit_cost":    row.get("unit_cost", 0),
+                    "total":        row.get("total", 0),
+                    "alt_comment":  row.get("alt_comment", ""),
+                })
+
     css_path = os.path.join(app.root_path, "static", "css", "order_summary.css")
     rendered = render_template(
         "estimate_summary.html",
@@ -1627,6 +1641,9 @@ def export_estimate_pdf():
         gas_total       = content.get("gas_total", 0.0),
         grand_total     = content.get("grand_total", 0.0),
         bids            = content.get("bids", []),
+        notes           = content.get("notes", ""),
+        alternate_rows  = alternate_rows,
+        alt_rows        = content.get("alt_rows", []),
         css_link        = f"file://{css_path}",
     )
 
@@ -1832,6 +1849,109 @@ def export_estimate_excel():
         c = ws.cell(r, 3, bid.get("comments", ""))
         c.fill = fill; c.border = border; c.alignment = Alignment(wrap_text=True)
         r += 1
+
+    # Notes section
+    notes = content.get("notes", "")
+    if notes:
+        r += 2
+        notes_hdr_fill = PatternFill("solid", fgColor="374151")
+        ws.merge_cells(f"A{r}:F{r}")
+        c = ws.cell(r, 1, "NOTES")
+        c.font = Font(bold=True, size=12, color="FFFFFF")
+        c.fill = notes_hdr_fill
+        c.alignment = Alignment(horizontal="center")
+        r += 1
+        ws.merge_cells(f"A{r}:F{r}")
+        c = ws.cell(r, 1, notes)
+        c.alignment = Alignment(wrap_text=True, vertical="top")
+        c.border = border
+        ws.row_dimensions[r].height = max(20, (len(notes) // 90 + 1) * 15)
+
+    # Alternates section
+    alt_mirrored = []
+    for sec in sections:
+        for row in sec.get("rows", []):
+            if row.get("is_alternative"):
+                alt_mirrored.append({
+                    "section_name": sec.get("name", ""),
+                    "description":  row.get("description", ""),
+                    "qty":          row.get("qty", ""),
+                    "unit_cost":    row.get("unit_cost", 0),
+                    "total":        row.get("total", 0),
+                    "alt_comment":  row.get("alt_comment", ""),
+                })
+    alt_manual = content.get("alt_rows", [])
+
+    if alt_mirrored or alt_manual:
+        amber_hdr  = PatternFill("solid", fgColor="B45309")
+        amber_col  = PatternFill("solid", fgColor="D97706")
+        amber_row  = PatternFill("solid", fgColor="FFFBEB")
+        amber_sub  = PatternFill("solid", fgColor="FEF3C7")
+        amber_font = Font(bold=True, color="FFFFFF")
+
+        r += 2
+        ws.merge_cells(f"A{r}:F{r}")
+        c = ws.cell(r, 1, "ALTERNATES")
+        c.font = Font(bold=True, size=12, color="FFFFFF")
+        c.fill = amber_hdr
+        c.alignment = Alignment(horizontal="center")
+        r += 1
+
+        if alt_mirrored:
+            for col, label in [(1,"SECTION"),(2,"DESCRIPTION"),(3,"QTY"),(4,"UNIT COST"),(5,"TOTAL"),(6,"COMMENT")]:
+                c = ws.cell(r, col, label)
+                c.font = amber_font; c.fill = amber_col
+                c.alignment = Alignment(horizontal="center"); c.border = border
+            r += 1
+            for i, row in enumerate(alt_mirrored):
+                fill = amber_row if i % 2 == 0 else PatternFill()
+                for col, val in [(1, row["section_name"]), (2, row["description"]), (3, str(row["qty"])), (6, row["alt_comment"])]:
+                    c = ws.cell(r, col, val); c.fill = fill; c.border = border
+                c = ws.cell(r, 4, float(row["unit_cost"] or 0))
+                c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
+                c = ws.cell(r, 5, float(row["total"] or 0))
+                c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
+                ws.cell(r, 3).alignment = Alignment(horizontal="center")
+                r += 1
+
+        if alt_manual:
+            if alt_mirrored:
+                ws.merge_cells(f"A{r}:F{r}")
+                c = ws.cell(r, 1, "MANUAL")
+                c.font = Font(bold=True, color="B45309"); c.fill = amber_sub
+                c.alignment = Alignment(horizontal="left"); r += 1
+            for col, label in [(1,"DESCRIPTION"),(2,"QTY"),(3,"UNIT COST"),(4,"TOTAL"),(5,"COMMENT")]:
+                c = ws.cell(r, col, label)
+                c.font = amber_font; c.fill = amber_col
+                c.alignment = Alignment(horizontal="center"); c.border = border
+            ws.merge_cells(f"F{r}:F{r}")
+            r += 1
+            for i, row in enumerate(alt_manual):
+                fill = amber_row if i % 2 == 0 else PatternFill()
+                c = ws.cell(r, 1, row.get("description", ""))
+                c.fill = fill; c.border = border
+                c = ws.cell(r, 2, str(row.get("qty", "")))
+                c.fill = fill; c.border = border; c.alignment = Alignment(horizontal="center")
+                c = ws.cell(r, 3, float(row.get("unit_cost") or 0))
+                c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
+                c = ws.cell(r, 4, float(row.get("total") or 0))
+                c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
+                c = ws.cell(r, 5, row.get("comments", ""))
+                c.fill = fill; c.border = border; c.alignment = Alignment(wrap_text=True)
+                ws.merge_cells(f"F{r}:F{r}")
+                r += 1
+
+        alt_total = (sum(float(x.get("total") or 0) for x in alt_mirrored) +
+                     sum(float(x.get("total") or 0) for x in alt_manual))
+        ws.merge_cells(f"A{r}:D{r}")
+        c = ws.cell(r, 1, "ALTERNATES TOTAL")
+        c.font = Font(bold=True, color="B45309"); c.fill = amber_sub
+        c.alignment = Alignment(horizontal="right")
+        c = ws.cell(r, 5, alt_total)
+        c.font = Font(bold=True, color="B45309"); c.fill = amber_sub
+        c.number_format = '"$"#,##0.00'
+        ws.merge_cells(f"F{r}:F{r}")
+        ws.cell(r, 6).fill = amber_sub
 
     buf = io.BytesIO()
     wb.save(buf)

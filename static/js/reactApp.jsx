@@ -2857,7 +2857,7 @@ function EstimateBuilderPage({ data }) {
     }));
   };
 
-  const addAltRow    = () => setAltRows((r) => [...r, { id: crypto.randomUUID(), description: "", qty: "", unit_cost: "", total: "" }]);
+  const addAltRow    = () => setAltRows((r) => [...r, { id: crypto.randomUUID(), description: "", qty: "", unit_cost: "", total: "", comments: "" }]);
   const removeAltRow = (i) => setAltRows((r) => r.filter((_, j) => j !== i));
   const updateAltRow = (i, patch) => setAltRows((r) => r.map((row, j) => {
     if (j !== i) return row;
@@ -3777,6 +3777,7 @@ function EstimateBuilderPage({ data }) {
                   <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">QTY</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">UNIT COST</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">TOTAL</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">COMMENT</th>
                   <th className="px-3 py-2 w-8"></th>
                 </tr>
               </thead>
@@ -3803,6 +3804,14 @@ function EstimateBuilderPage({ data }) {
                     </td>
                     <td className="px-3 py-1.5 text-sm font-medium text-slate-700">
                       ${Number(row.total || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input
+                        value={row.comments || ""}
+                        onChange={(e) => updateAltRow(i, { comments: e.target.value })}
+                        className={inputClass}
+                        placeholder="Comment…"
+                      />
                     </td>
                     <td className="px-3 py-1.5 text-center">
                       <button onClick={() => removeAltRow(i)}

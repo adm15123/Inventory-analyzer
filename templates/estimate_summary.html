@@ -241,6 +241,92 @@
   </div>
   {% endif %}
 
+  {# ── Notes ── #}
+  {% if notes %}
+  <div style="margin-top:18px;">
+    <table class="items-table" style="table-layout:fixed; width:100%;">
+      <thead>
+        <tr>
+          <td colspan="6" style="background:#374151; color:#fff; font-weight:700; font-size:11px; letter-spacing:0.08em; padding:5px 8px;">NOTES</td>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td colspan="6" style="padding:6px 8px; font-size:10px; white-space:pre-wrap;">{{ notes }}</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
+  {# ── Alternates ── #}
+  {% if alternate_rows or alt_rows %}
+  <div style="margin-top:18px;">
+    <table class="items-table" style="table-layout:fixed; width:100%;">
+      <thead>
+        <tr>
+          <td colspan="6" style="background:#92400E; color:#fff; font-weight:700; font-size:11px; letter-spacing:0.08em; padding:5px 8px; text-align:center;">ALTERNATES</td>
+        </tr>
+      </thead>
+      <tbody>
+        {% if alternate_rows %}
+        <tr>
+          <th style="width:14%; text-align:left; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">SECTION</th>
+          <th style="width:24%; text-align:left; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">DESCRIPTION</th>
+          <th style="width:7%; text-align:center; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">QTY</th>
+          <th style="width:12%; text-align:right; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">UNIT COST</th>
+          <th style="width:12%; text-align:right; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">TOTAL</th>
+          <th style="width:31%; text-align:left; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">COMMENT</th>
+        </tr>
+        {% for row in alternate_rows %}
+        <tr class="{{ 'row-even' if loop.index % 2 == 0 else 'row-odd' }}">
+          <td style="padding:4px 8px; font-size:10px;">{{ row.section_name }}</td>
+          <td style="padding:4px 8px; font-size:10px;">{{ row.description }}</td>
+          <td style="padding:4px 8px; font-size:10px; text-align:center;">{{ row.qty }}</td>
+          <td style="padding:4px 8px; font-size:10px; text-align:right;">${{ "%.2f"|format(row.unit_cost|float) }}</td>
+          <td style="padding:4px 8px; font-size:10px; text-align:right;">${{ "%.2f"|format(row.total|float) }}</td>
+          <td style="padding:4px 8px; font-size:10px;">{{ row.alt_comment or '' }}</td>
+        </tr>
+        {% endfor %}
+        {% endif %}
+
+        {% if alt_rows %}
+        {% if alternate_rows %}
+        <tr>
+          <td colspan="6" style="padding:3px 8px; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; background:#FEF3C7; color:#92400E;">Manual</td>
+        </tr>
+        {% endif %}
+        <tr>
+          <th colspan="2" style="text-align:left; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">DESCRIPTION</th>
+          <th style="text-align:center; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">QTY</th>
+          <th style="text-align:right; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">UNIT COST</th>
+          <th style="text-align:right; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">TOTAL</th>
+          <th style="text-align:left; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">COMMENT</th>
+        </tr>
+        {% for row in alt_rows %}
+        <tr class="{{ 'row-even' if loop.index % 2 == 0 else 'row-odd' }}">
+          <td colspan="2" style="padding:4px 8px; font-size:10px;">{{ row.description }}</td>
+          <td style="padding:4px 8px; font-size:10px; text-align:center;">{{ row.qty }}</td>
+          <td style="padding:4px 8px; font-size:10px; text-align:right;">${{ "%.2f"|format(row.unit_cost|float) }}</td>
+          <td style="padding:4px 8px; font-size:10px; text-align:right;">${{ "%.2f"|format(row.total|float) }}</td>
+          <td style="padding:4px 8px; font-size:10px;">{{ row.comments or '' }}</td>
+        </tr>
+        {% endfor %}
+        {% endif %}
+
+        {% set alt_total = namespace(v=0) %}
+        {% for row in alternate_rows %}{% set alt_total.v = alt_total.v + (row.total|float) %}{% endfor %}
+        {% for row in alt_rows %}{% set alt_total.v = alt_total.v + (row.total|float) %}{% endfor %}
+        <tr>
+          <td colspan="4" style="text-align:right; font-weight:700; font-size:10px; padding:4px 8px; background:#FEF3C7; color:#92400E;">ALTERNATES TOTAL</td>
+          <td style="text-align:right; font-weight:700; font-size:10px; padding:4px 8px; background:#FEF3C7; color:#92400E;">${{ "%.2f"|format(alt_total.v) }}</td>
+          <td style="background:#FEF3C7;"></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+
   <div class="doc-footer-note">
     <p>This estimate was generated by Zamora Plumbing Corp's estimating system.</p>
     <p>All figures are estimates and subject to final engineering review.</p>
