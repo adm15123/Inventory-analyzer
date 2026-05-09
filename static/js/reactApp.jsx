@@ -2790,6 +2790,8 @@ function EstimateBuilderPage({ data }) {
   const [mlSearch, setMlSearch]           = useState("");
   const [mlReloading, setMlReloading]     = useState(false);
   const [mlReloadOk, setMlReloadOk]       = useState(false);
+  const [mlNamesLive, setMlNamesLive]     = useState(data.mlNames || []);
+  const [mlNamesLoading, setMlNamesLoading] = useState(false);
   const [catalogSuggestions, setCatalogSuggestions] = useState([]);
   const [activeInput, setActiveInput]     = useState(null);   // { si, ri }
   const [popupAnchor, setPopupAnchor]     = useState(null);   // { top, left }
@@ -2881,6 +2883,16 @@ function EstimateBuilderPage({ data }) {
   };
 
   React.useEffect(() => { fetchAttachments(estimateName); }, []);
+
+  React.useEffect(() => {
+    if (!mlModal || !data.mlNamesUrl) return;
+    setMlNamesLoading(true);
+    fetch(data.mlNamesUrl)
+      .then((r) => r.json())
+      .then((res) => { if (res.ok) setMlNamesLive(res.names); })
+      .catch(() => {})
+      .finally(() => setMlNamesLoading(false));
+  }, [mlModal]);
 
   const handleUploadAttachment = (e) => {
     const file = e.target.files?.[0];
@@ -3945,13 +3957,16 @@ function EstimateBuilderPage({ data }) {
 
       {/* Material List link modal */}
       {mlModal && (() => {
-        const filtered = (data.mlNames || []).filter((n) =>
+        const filtered = mlNamesLive.filter((n) =>
           n.toLowerCase().includes(mlSearch.toLowerCase())
         );
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
             <div className="bg-white rounded-2xl shadow-xl p-6 w-full max-w-md space-y-4">
-              <h2 className="text-base font-semibold text-slate-800">Link a Material List</h2>
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-semibold text-slate-800">Link a Material List</h2>
+                {mlNamesLoading && <span className="text-xs text-slate-400">Loading…</span>}
+              </div>
               <input
                 type="text"
                 value={mlSearch}
@@ -3963,7 +3978,7 @@ function EstimateBuilderPage({ data }) {
               <div className="max-h-64 overflow-y-auto space-y-1 rounded-lg border border-slate-200 p-2">
                 {filtered.length === 0 ? (
                   <p className="text-sm text-slate-400 text-center py-4">
-                    {(data.mlNames || []).length === 0 ? "No material lists saved yet." : "No matches."}
+                    {mlNamesLoading ? "Loading…" : mlNamesLive.length === 0 ? "No material lists saved yet." : "No matches."}
                   </p>
                 ) : (
                   filtered.map((name) => (

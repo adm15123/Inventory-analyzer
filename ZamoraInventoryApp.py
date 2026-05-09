@@ -1411,6 +1411,7 @@ def estimate_builder():
         "exportXlsUrl":   url_for("export_estimate_excel"),
         "catalogUrl":     url_for("api_estimate_catalog"),
         "mlTotalUrl":     url_for("api_material_list_total"),
+        "mlNamesUrl":     url_for("api_material_list_names"),
         "mlNames":        ml_names,
         "mlListUrl":      url_for("material_list"),
         "attachUploadUrl": "/api/estimates/attachments/upload",
@@ -1588,6 +1589,17 @@ def api_estimate_catalog():
     q = request.args.get("q", "").strip()
     results = search_estimate_catalog(q, limit=20) if q else []
     return jsonify(results)
+
+
+@app.route("/api/material_list_names")
+@login_required
+def api_material_list_names():
+    ml_raw = list_templates_db(session.get("email", ""), session.get("role", "user"))
+    names  = [
+        (f"{t['folder']}/{t['name']}" if t.get("folder") else t["name"])
+        for t in ml_raw
+    ]
+    return jsonify({"ok": True, "names": names})
 
 
 @app.route("/api/material_list_total")
