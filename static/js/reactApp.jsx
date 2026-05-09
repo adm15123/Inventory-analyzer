@@ -3429,12 +3429,6 @@ function EstimateBuilderPage({ data }) {
             <input
               value={section.name}
               onChange={(e) => updateSectionName(si, e.target.value)}
-        <div key={section.id} className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-          {/* Section header */}
-          <div className={classNames("flex items-center gap-3 px-5 py-3 rounded-t-2xl", section.is_gas ? "bg-emerald-900" : "bg-indigo-700")}>
-            <input
-              value={section.name}
-              onChange={(e) => updateSectionName(si, e.target.value)}
               className="flex-1 bg-transparent text-white font-semibold text-sm focus:outline-none placeholder-slate-400"
               placeholder="Section name"
             />
