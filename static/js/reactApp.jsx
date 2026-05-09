@@ -2794,6 +2794,7 @@ function EstimateBuilderPage({ data }) {
   const [activeInput, setActiveInput]     = useState(null);   // { si, ri }
   const [popupAnchor, setPopupAnchor]     = useState(null);   // { top, left }
   const [notes, setNotes]                 = useState(data.content?.notes || "");
+  const [altRows, setAltRows]             = useState(data.content?.alt_rows || []);
   const [attachments, setAttachments]     = useState([]);
   const [attachUploading, setAttachUploading] = useState(false);
   const [attachError, setAttachError]     = useState("");
@@ -2855,6 +2856,15 @@ function EstimateBuilderPage({ data }) {
       rows: s.rows.map((r, j) => j !== ri ? r : { ...r, is_alternative: !r.is_alternative }),
     }));
   };
+
+  const addAltRow    = () => setAltRows((r) => [...r, { id: crypto.randomUUID(), description: "", qty: "", unit_cost: "", total: "" }]);
+  const removeAltRow = (i) => setAltRows((r) => r.filter((_, j) => j !== i));
+  const updateAltRow = (i, patch) => setAltRows((r) => r.map((row, j) => {
+    if (j !== i) return row;
+    const next = { ...row, ...patch };
+    next.total = parseFloat(((parseFloat(next.qty) || 0) * (parseFloat(next.unit_cost) || 0)).toFixed(2));
+    return next;
+  }));
 
   // ── bid helpers ──────────────────────────────────────────────────
   const addBid    = () => setBids((b) => [...b, { id: crypto.randomUUID(), bid_num: "", amount: "", comments: "" }]);
@@ -3010,16 +3020,16 @@ function EstimateBuilderPage({ data }) {
 
   const alternateRows = useMemo(() => {
     const result = [];
-    sections.forEach((s) => {
-      s.rows.forEach((r) => {
-        if (r.is_alternative) result.push({ ...r, sectionName: s.name });
+    sections.forEach((s, si) => {
+      s.rows.forEach((r, ri) => {
+        if (r.is_alternative) result.push({ ...r, sectionName: s.name, si, ri });
       });
     });
     return result;
   }, [sections]);
 
   const buildPayload = () => JSON.stringify({
-    project_info: projectInfo, sections, bids, notes,
+    project_info: projectInfo, sections, bids, notes, alt_rows: altRows,
     plumbing_total: parseFloat(plumbingTotal.toFixed(2)),
     gas_total:      parseFloat(gasTotal.toFixed(2)),
     grand_total:    parseFloat(grandTotal.toFixed(2)),
@@ -3389,14 +3399,36 @@ function EstimateBuilderPage({ data }) {
 
       {/* Plumbing Project Total */}
       {sections.some((s) => !isBelowLine(s)) && (
-        <div className="rounded-2xl bg-slate-800 px-6 py-4 text-white shadow flex items-center justify-between">
-          <p className="text-sm font-semibold uppercase tracking-wide text-slate-300">Plumbing Project Total</p>
-          <p className="text-2xl font-bold">${plumbingTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
+        <div className="flex justify-end">
+          <div className="rounded-xl bg-slate-800 px-5 py-3 text-white shadow inline-flex items-center gap-5">
+            <span className="text-sm font-semibold uppercase tracking-wide text-slate-300">Plumbing Project Total</span>
+            <span className="text-xl font-bold">${plumbingTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+          </div>
         </div>
       )}
 
-      {/* Below-line sections (gas + custom) */}
-      {sections.map((section, si) => isBelowLine(section) && (
+      {/* Below-line sections: gas first → Gas Total → custom */}
+      {[
+        ...sections.map((s, si) => s.is_gas ? { kind: "section", section: s, si } : null).filter(Boolean),
+        sections.some((s) => s.is_gas) ? { kind: "gas-total" } : null,
+        ...sections.map((s, si) => (s.below_line && !s.is_gas) ? { kind: "section", section: s, si } : null).filter(Boolean),
+      ].filter(Boolean).map((item) => {
+        if (item.kind === "gas-total") return (
+          <div key="__gas_total__" className="flex justify-end">
+            <div className="rounded-xl bg-emerald-900 px-5 py-3 text-white shadow inline-flex items-center gap-5">
+              <span className="text-sm font-semibold uppercase tracking-wide text-emerald-300">Gas System Total</span>
+              <span className="text-xl font-bold">${gasTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+            </div>
+          </div>
+        );
+        const { section, si } = item;
+        return (
+        <div key={section.id} className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+          {/* Section header */}
+          <div className={classNames("flex items-center gap-3 px-5 py-3 rounded-t-2xl", section.is_gas ? "bg-emerald-900" : "bg-indigo-700")}>
+            <input
+              value={section.name}
+              onChange={(e) => updateSectionName(si, e.target.value)}
         <div key={section.id} className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
           {/* Section header */}
           <div className={classNames("flex items-center gap-3 px-5 py-3 rounded-t-2xl", section.is_gas ? "bg-emerald-900" : "bg-indigo-700")}>
@@ -3602,15 +3634,8 @@ function EstimateBuilderPage({ data }) {
             </span>
           </div>
         </div>
-      ))}
-
-      {/* Gas Total */}
-      {sections.some((s) => s.is_gas) && (
-        <div className="rounded-2xl bg-emerald-900 px-6 py-4 text-white shadow flex items-center justify-between">
-          <p className="text-sm font-semibold uppercase tracking-wide text-emerald-300">Gas System Total</p>
-          <p className="text-2xl font-bold">${gasTotal.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</p>
-        </div>
-      )}
+        );
+      })}
 
       {/* Add Section */}
       <div>
@@ -3701,11 +3726,13 @@ function EstimateBuilderPage({ data }) {
       </div>
 
       {/* Alternates */}
-      {alternateRows.length > 0 && (
-        <div className="rounded-2xl bg-white shadow-sm ring-1 ring-amber-200">
-          <div className="px-5 py-3 bg-amber-600 rounded-t-2xl">
-            <span className="text-white font-semibold text-sm uppercase tracking-wide">Alternates</span>
-          </div>
+      <div className="rounded-2xl bg-white shadow-sm ring-1 ring-amber-200">
+        <div className="px-5 py-3 bg-amber-600 rounded-t-2xl">
+          <span className="text-white font-semibold text-sm uppercase tracking-wide">Alternates</span>
+        </div>
+
+        {/* Auto-mirrored rows from estimate (with comment field) */}
+        {alternateRows.length > 0 && (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
@@ -3715,6 +3742,7 @@ function EstimateBuilderPage({ data }) {
                   <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">QTY</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">UNIT COST</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">TOTAL</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">COMMENT</th>
                 </tr>
               </thead>
               <tbody>
@@ -3725,21 +3753,87 @@ function EstimateBuilderPage({ data }) {
                     <td className="px-3 py-2 text-sm text-slate-700">{row.qty}</td>
                     <td className="px-3 py-2 text-sm text-slate-700">${Number(row.unit_cost || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
                     <td className="px-3 py-2 text-sm font-medium text-slate-700">${Number(row.total || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                    <td className="px-3 py-1.5">
+                      <input
+                        value={row.alt_comment || ""}
+                        onChange={(e) => updateRow(row.si, row.ri, { alt_comment: e.target.value })}
+                        className={inputClass}
+                        placeholder="Comment…"
+                      />
+                    </td>
                   </tr>
                 ))}
               </tbody>
-              <tfoot>
-                <tr className="border-t border-amber-200 bg-amber-50">
-                  <td colSpan="4" className="px-3 py-2 text-right text-xs font-semibold text-amber-700">Alternates Total</td>
-                  <td className="px-3 py-2 text-sm font-bold text-amber-700">
-                    ${alternateRows.reduce((s, r) => s + (parseFloat(r.total) || 0), 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </td>
-                </tr>
-              </tfoot>
             </table>
           </div>
+        )}
+
+        {/* Manual alternate rows */}
+        {altRows.length > 0 && (
+          <div className={`overflow-x-auto ${alternateRows.length > 0 ? "border-t border-amber-100" : ""}`}>
+            {alternateRows.length > 0 && (
+              <div className="px-4 py-1.5 bg-amber-50">
+                <span className="text-xs font-semibold uppercase tracking-wide text-amber-600">Manual</span>
+              </div>
+            )}
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-amber-50 border-b border-amber-100">
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">DESCRIPTION</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">QTY</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">UNIT COST</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-amber-700">TOTAL</th>
+                  <th className="px-3 py-2 w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {altRows.map((row, i) => (
+                  <tr key={row.id} className={i % 2 === 0 ? "bg-white" : "bg-amber-50/40"}>
+                    <td className="px-3 py-1.5">
+                      <AutoTextarea
+                        value={row.description}
+                        onChange={(e) => updateAltRow(i, { description: e.target.value })}
+                        className={inputClass}
+                        placeholder="Description…"
+                      />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input type="number" min="0" step="1" value={row.qty}
+                        onChange={(e) => updateAltRow(i, { qty: e.target.value })}
+                        className={inputClass} />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input type="number" min="0" step="0.01" value={row.unit_cost}
+                        onChange={(e) => updateAltRow(i, { unit_cost: e.target.value })}
+                        className={inputClass} />
+                    </td>
+                    <td className="px-3 py-1.5 text-sm font-medium text-slate-700">
+                      ${Number(row.total || 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </td>
+                    <td className="px-3 py-1.5 text-center">
+                      <button onClick={() => removeAltRow(i)}
+                        className="text-slate-400 hover:text-rose-500 text-lg leading-none transition">×</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Footer: add row + running total */}
+        <div className="flex items-center justify-between px-5 py-3 border-t border-amber-100">
+          <button onClick={addAltRow}
+            className="text-sm text-amber-600 font-semibold hover:text-amber-800 transition">+ Add Row</button>
+          {(alternateRows.length > 0 || altRows.length > 0) && (
+            <span className="text-xs text-amber-700">
+              Total: <span className="font-bold">
+                ${[...alternateRows, ...altRows].reduce((s, r) => s + (parseFloat(r.total) || 0), 0).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </span>
+          )}
         </div>
-      )}
+      </div>
 
       {/* Attachments panel */}
       {data.r2Enabled && (
