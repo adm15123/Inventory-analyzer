@@ -61,9 +61,17 @@
       margin-right: 3px;
       font-weight: 600;
     }
-    .gas-separator {
-      height: 12px;
+    .gas-separator { height: 12px; }
+    .scenario-banner {
+      background: #1e3a5f;
+      color: #fff;
+      font-weight: 700;
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      padding: 8px 12px;
+      margin-bottom: 10px;
     }
+    .scenario-break { page-break-before: always; }
   </style>
 </head>
 <body>
@@ -114,6 +122,17 @@
     </div>
   </div>
 
+  {% for scenario in scenarios %}
+
+  {# ── Page break + scenario banner (from the second scenario on) ── #}
+  {% if not loop.first %}
+  <div class="scenario-break"></div>
+  {% endif %}
+
+  {% if scenarios|length > 1 %}
+  <div class="scenario-banner">SCENARIO: {{ scenario.name|upper }}</div>
+  {% endif %}
+
   <table class="items-table" style="table-layout:fixed; width:100%;">
     <thead>
       <tr>
@@ -129,7 +148,7 @@
       {% set ns = namespace(row_num=0) %}
 
       {# ── Plumbing sections ── #}
-      {% for section in plumb_sections %}
+      {% for section in scenario.plumb_sections %}
         <tr><td colspan="6" class="section-header">{{ section.name }}</td></tr>
         {% set sec_ns = namespace(subtotal=0) %}
         {% for row in section.rows %}
@@ -163,14 +182,14 @@
       {# ── Plumbing Project Total ── #}
       <tr class="plumbing-total-row">
         <td colspan="3" style="text-align:right;">PLUMBING PROJECT TOTAL</td>
-        <td colspan="3">${{ "%.2f"|format(plumbing_total|float) }}</td>
+        <td colspan="3">${{ "%.2f"|format(scenario.plumbing_total|float) }}</td>
       </tr>
 
       {# ── Gas separator ── #}
       <tr class="gas-separator"><td colspan="6"></td></tr>
 
       {# ── Gas sections ── #}
-      {% for section in gas_sections %}
+      {% for section in scenario.gas_sections %}
         <tr><td colspan="6" class="section-header-gas">{{ section.name }}</td></tr>
         {% set gas_ns = namespace(subtotal=0) %}
         {% for row in section.rows %}
@@ -206,14 +225,47 @@
       {# ── Gas Total ── #}
       <tr class="gas-total-row">
         <td colspan="3" style="text-align:right;">GAS SYSTEM TOTAL</td>
-        <td colspan="3">${{ "%.2f"|format(gas_total|float) }}</td>
+        <td colspan="3">${{ "%.2f"|format(scenario.gas_total|float) }}</td>
       </tr>
+
+      {# ── Below-line custom sections ── #}
+      {% for section in scenario.below_sections %}
+        <tr class="gas-separator"><td colspan="6"></td></tr>
+        <tr><td colspan="6" class="section-header">{{ section.name }}</td></tr>
+        {% set bl_ns = namespace(subtotal=0) %}
+        {% for row in section.rows %}
+          {% set ns.row_num = ns.row_num + 1 %}
+          {% set row_total = (row.total or 0)|float %}
+          {% set bl_ns.subtotal = bl_ns.subtotal + row_total %}
+          <tr class="{{ 'row-even' if ns.row_num % 2 == 0 else 'row-odd' }}">
+            <td class="col-qty cell-center">{{ row.qty if row.qty != '' and row.qty is not none else '—' }}</td>
+            <td class="col-desc">
+              {% if row.type == 'material_list' %}<span class="ml-badge">ML</span>{% endif %}
+              {{ row.description or '—' }}
+            </td>
+            <td class="col-cost cell-right">
+              {% if row.unit_cost %}${{ "%.2f"|format(row.unit_cost|float) }}{% else %}—{% endif %}
+            </td>
+            <td class="col-total cell-right">
+              {% if row_total > 0 %}${{ "%.2f"|format(row_total) }}{% else %}—{% endif %}
+            </td>
+            <td class="col-cmt">{{ row.comments or '' }}</td>
+            <td class="col-add">{{ row.add_comments or '' }}</td>
+          </tr>
+        {% endfor %}
+        <tr>
+          <td colspan="3" style="text-align:right; font-weight:600; font-size:10px; padding:4px 8px; background:#ebf4ff;">
+            {{ section.name }} Subtotal
+          </td>
+          <td colspan="3" class="section-subtotal">${{ "%.2f"|format(bl_ns.subtotal) }}</td>
+        </tr>
+      {% endfor %}
 
     </tbody>
   </table>
 
   {# ── Bids ── #}
-  {% if bids %}
+  {% if scenario.bids %}
   <div style="margin-top:18px;">
     <table class="items-table" style="table-layout:fixed; width:100%;">
       <thead>
@@ -227,7 +279,7 @@
         </tr>
       </thead>
       <tbody>
-        {% for bid in bids %}
+        {% for bid in scenario.bids %}
         <tr class="{{ 'row-even' if loop.index % 2 == 0 else 'row-odd' }}">
           <td style="padding:4px 8px; font-size:10px;">{{ bid.bid_num or '—' }}</td>
           <td style="padding:4px 8px; font-size:10px; text-align:right;">
@@ -242,7 +294,7 @@
   {% endif %}
 
   {# ── Notes ── #}
-  {% if notes %}
+  {% if scenario.notes %}
   <div style="margin-top:18px;">
     <table class="items-table" style="table-layout:fixed; width:100%;">
       <thead>
@@ -252,7 +304,7 @@
       </thead>
       <tbody>
         <tr>
-          <td colspan="6" style="padding:6px 8px; font-size:10px; white-space:pre-wrap;">{{ notes }}</td>
+          <td colspan="6" style="padding:6px 8px; font-size:10px; white-space:pre-wrap;">{{ scenario.notes }}</td>
         </tr>
       </tbody>
     </table>
@@ -260,7 +312,7 @@
   {% endif %}
 
   {# ── Alternates ── #}
-  {% if alternate_rows or alt_rows %}
+  {% if scenario.alternate_rows or scenario.alt_rows %}
   <div style="margin-top:18px;">
     <table class="items-table" style="table-layout:fixed; width:100%;">
       <thead>
@@ -269,7 +321,7 @@
         </tr>
       </thead>
       <tbody>
-        {% if alternate_rows %}
+        {% if scenario.alternate_rows %}
         <tr>
           <th style="width:14%; text-align:left; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">SECTION</th>
           <th style="width:24%; text-align:left; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">DESCRIPTION</th>
@@ -278,7 +330,7 @@
           <th style="width:12%; text-align:right; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">TOTAL</th>
           <th style="width:31%; text-align:left; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">COMMENT</th>
         </tr>
-        {% for row in alternate_rows %}
+        {% for row in scenario.alternate_rows %}
         <tr class="{{ 'row-even' if loop.index % 2 == 0 else 'row-odd' }}">
           <td style="padding:4px 8px; font-size:10px;">{{ row.section_name }}</td>
           <td style="padding:4px 8px; font-size:10px;">{{ row.description }}</td>
@@ -290,8 +342,8 @@
         {% endfor %}
         {% endif %}
 
-        {% if alt_rows %}
-        {% if alternate_rows %}
+        {% if scenario.alt_rows %}
+        {% if scenario.alternate_rows %}
         <tr>
           <td colspan="6" style="padding:3px 8px; font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; background:#FEF3C7; color:#92400E;">Manual</td>
         </tr>
@@ -303,7 +355,7 @@
           <th style="text-align:right; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">TOTAL</th>
           <th style="text-align:left; padding:4px 8px; font-size:10px; background:#D97706; color:#fff;">COMMENT</th>
         </tr>
-        {% for row in alt_rows %}
+        {% for row in scenario.alt_rows %}
         <tr class="{{ 'row-even' if loop.index % 2 == 0 else 'row-odd' }}">
           <td colspan="2" style="padding:4px 8px; font-size:10px;">{{ row.description }}</td>
           <td style="padding:4px 8px; font-size:10px; text-align:center;">{{ row.qty }}</td>
@@ -315,8 +367,8 @@
         {% endif %}
 
         {% set alt_total = namespace(v=0) %}
-        {% for row in alternate_rows %}{% set alt_total.v = alt_total.v + (row.total|float) %}{% endfor %}
-        {% for row in alt_rows %}{% set alt_total.v = alt_total.v + (row.total|float) %}{% endfor %}
+        {% for row in scenario.alternate_rows %}{% set alt_total.v = alt_total.v + (row.total|float) %}{% endfor %}
+        {% for row in scenario.alt_rows %}{% set alt_total.v = alt_total.v + (row.total|float) %}{% endfor %}
         <tr>
           <td colspan="4" style="text-align:right; font-weight:700; font-size:10px; padding:4px 8px; background:#FEF3C7; color:#92400E;">ALTERNATES TOTAL</td>
           <td style="text-align:right; font-weight:700; font-size:10px; padding:4px 8px; background:#FEF3C7; color:#92400E;">${{ "%.2f"|format(alt_total.v) }}</td>
@@ -326,6 +378,8 @@
     </table>
   </div>
   {% endif %}
+
+  {% endfor %}{# end scenarios loop #}
 
   <div class="doc-footer-note">
     <p>This estimate was generated by Zamora Plumbing Corp's estimating system.</p>

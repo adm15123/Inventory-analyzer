@@ -2776,12 +2776,27 @@ function EstimatesPage({ data }) {
 // ================================================================
 const isBelowLine = (s) => s.is_gas || !!s.below_line;
 
+function _buildInitialScenarios(content) {
+  if (content?.scenarios?.length) return content.scenarios;
+  return [{
+    id:       crypto.randomUUID(),
+    name:     "Default",
+    sections: content?.sections  || [],
+    bids:     content?.bids      || [],
+    notes:    content?.notes     || "",
+    alt_rows: content?.alt_rows  || [],
+  }];
+}
+
 function EstimateBuilderPage({ data }) {
   const [estimateName, setEstimateName]   = useState(data.estimateName || "");
   const [estimateFolder, setEstimateFolder] = useState(data.estimateFolder || "");
   const [projectInfo, setProjectInfo]     = useState(data.content?.project_info || { name: "", address: "", contractor: "", date: "" });
-  const [sections, setSections]           = useState(data.content?.sections || []);
-  const [bids, setBids]                   = useState(data.content?.bids || []);
+  const [scenarios, setScenarios]         = useState(() => _buildInitialScenarios(data.content));
+  const [activeScenarioIdx, setActiveScenarioIdx] = useState(0);
+  const [renamingIdx, setRenamingIdx]     = useState(null);
+  const [sections, setSections]           = useState(data.content?.scenarios?.[0]?.sections ?? data.content?.sections ?? []);
+  const [bids, setBids]                   = useState(data.content?.scenarios?.[0]?.bids     ?? data.content?.bids     ?? []);
   const [saving, setSaving]               = useState(false);
   const [saveOk, setSaveOk]               = useState(false);
   const [pdfLoading, setPdfLoading]       = useState(false);
@@ -2795,8 +2810,8 @@ function EstimateBuilderPage({ data }) {
   const [catalogSuggestions, setCatalogSuggestions] = useState([]);
   const [activeInput, setActiveInput]     = useState(null);   // { si, ri }
   const [popupAnchor, setPopupAnchor]     = useState(null);   // { top, left }
-  const [notes, setNotes]                 = useState(data.content?.notes || "");
-  const [altRows, setAltRows]             = useState(data.content?.alt_rows || []);
+  const [notes, setNotes]                 = useState(data.content?.scenarios?.[0]?.notes    ?? data.content?.notes    ?? "");
+  const [altRows, setAltRows]             = useState(data.content?.scenarios?.[0]?.alt_rows ?? data.content?.alt_rows ?? []);
   const [attachments, setAttachments]     = useState([]);
   const [attachUploading, setAttachUploading] = useState(false);
   const [attachError, setAttachError]     = useState("");
@@ -2879,6 +2894,59 @@ function EstimateBuilderPage({ data }) {
     next.total = parseFloat(((parseFloat(next.qty) || 0) * (parseFloat(next.unit_cost) || 0)).toFixed(2));
     return next;
   }));
+
+  // ── scenario helpers ─────────────────────────────────────────────
+  const _saveCurrentScenario = (prevScenarios) =>
+    prevScenarios.map((s, i) =>
+      i !== activeScenarioIdx ? s : { ...s, sections, bids, notes, alt_rows: altRows }
+    );
+
+  const switchScenario = (newIdx) => {
+    if (newIdx === activeScenarioIdx) return;
+    const saved = _saveCurrentScenario(scenarios);
+    const next  = saved[newIdx];
+    setScenarios(saved);
+    setSections(next.sections || []);
+    setBids(next.bids || []);
+    setNotes(next.notes || "");
+    setAltRows(next.alt_rows || []);
+    setActiveScenarioIdx(newIdx);
+  };
+
+  const addScenario = () => {
+    const saved  = _saveCurrentScenario(scenarios);
+    const blank  = { id: crypto.randomUUID(), name: `Scenario ${saved.length + 1}`, sections: [], bids: [], notes: "", alt_rows: [] };
+    setScenarios([...saved, blank]);
+    setSections([]); setBids([]); setNotes(""); setAltRows([]);
+    setActiveScenarioIdx(saved.length);
+  };
+
+  const duplicateScenario = (idx) => {
+    const saved = _saveCurrentScenario(scenarios);
+    const src   = saved[idx];
+    const copy  = { ...JSON.parse(JSON.stringify(src)), id: crypto.randomUUID(), name: `${src.name} (Copy)` };
+    const updated = [...saved.slice(0, idx + 1), copy, ...saved.slice(idx + 1)];
+    setScenarios(updated);
+    setSections(copy.sections || []); setBids(copy.bids || []);
+    setNotes(copy.notes || ""); setAltRows(copy.alt_rows || []);
+    setActiveScenarioIdx(idx + 1);
+  };
+
+  const deleteScenario = (idx) => {
+    if (scenarios.length <= 1) return;
+    if (!window.confirm(`Delete scenario "${scenarios[idx].name}"?`)) return;
+    const saved   = _saveCurrentScenario(scenarios);
+    const updated = saved.filter((_, i) => i !== idx);
+    const newIdx  = Math.min(activeScenarioIdx, updated.length - 1);
+    const next    = updated[newIdx];
+    setScenarios(updated);
+    setSections(next.sections || []); setBids(next.bids || []);
+    setNotes(next.notes || ""); setAltRows(next.alt_rows || []);
+    setActiveScenarioIdx(newIdx);
+  };
+
+  const renameScenario = (idx, name) =>
+    setScenarios((prev) => prev.map((s, i) => i === idx ? { ...s, name } : s));
 
   // ── bid helpers ──────────────────────────────────────────────────
   const addBid    = () => setBids((b) => [...b, { id: crypto.randomUUID(), bid_num: "", amount: "", comments: "" }]);
@@ -3052,12 +3120,20 @@ function EstimateBuilderPage({ data }) {
     return result;
   }, [sections]);
 
-  const buildPayload = () => JSON.stringify({
-    project_info: projectInfo, sections, bids, notes, alt_rows: altRows,
-    plumbing_total: parseFloat(plumbingTotal.toFixed(2)),
-    gas_total:      parseFloat(gasTotal.toFixed(2)),
-    grand_total:    parseFloat(grandTotal.toFixed(2)),
-  });
+  const buildPayload = () => {
+    const currentScenario = {
+      ...scenarios[activeScenarioIdx],
+      sections,
+      bids,
+      notes,
+      alt_rows:       altRows,
+      plumbing_total: parseFloat(plumbingTotal.toFixed(2)),
+      gas_total:      parseFloat(gasTotal.toFixed(2)),
+      grand_total:    parseFloat(grandTotal.toFixed(2)),
+    };
+    const allScenarios = scenarios.map((s, i) => i === activeScenarioIdx ? currentScenario : s);
+    return JSON.stringify({ project_info: projectInfo, scenarios: allScenarios });
+  };
 
   // ── save ─────────────────────────────────────────────────────────
   const handleSave = () => {
@@ -3174,6 +3250,61 @@ function EstimateBuilderPage({ data }) {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Scenario Tabs */}
+      <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+        <div className="flex items-end gap-0 overflow-x-auto px-3 pt-2 border-b border-slate-200">
+          {scenarios.map((scenario, idx) => (
+            <div
+              key={scenario.id}
+              className={`group relative flex items-center min-w-0 rounded-t-lg border-b-2 mr-1 transition-all ${
+                idx === activeScenarioIdx
+                  ? "border-sky-500 bg-sky-50"
+                  : "border-transparent hover:bg-slate-50"
+              }`}
+            >
+              {renamingIdx === idx ? (
+                <input
+                  autoFocus
+                  value={scenario.name}
+                  onChange={(e) => renameScenario(idx, e.target.value)}
+                  onBlur={() => setRenamingIdx(null)}
+                  onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setRenamingIdx(null); }}
+                  className="mx-2 my-2 w-32 rounded border border-sky-300 px-2 py-0.5 text-sm text-slate-800 outline-none"
+                />
+              ) : (
+                <span
+                  onClick={() => switchScenario(idx)}
+                  onDoubleClick={() => setRenamingIdx(idx)}
+                  className={`px-4 py-2.5 text-sm font-medium cursor-pointer truncate max-w-[200px] select-none ${
+                    idx === activeScenarioIdx ? "text-sky-700" : "text-slate-500"
+                  }`}
+                >{scenario.name}</span>
+              )}
+              <div className="flex items-center pr-1.5 gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                <button
+                  onClick={(e) => { e.stopPropagation(); duplicateScenario(idx); }}
+                  title="Duplicate scenario"
+                  className="text-slate-400 hover:text-sky-600 text-xs px-1.5 py-1 rounded hover:bg-sky-50 transition"
+                >⧉</button>
+                {scenarios.length > 1 && (
+                  <button
+                    onClick={(e) => { e.stopPropagation(); deleteScenario(idx); }}
+                    title="Delete scenario"
+                    className="text-slate-400 hover:text-rose-500 text-xs px-1.5 py-1 rounded hover:bg-rose-50 transition"
+                  >×</button>
+                )}
+              </div>
+            </div>
+          ))}
+          <button
+            onClick={addScenario}
+            title="Add new scenario"
+            className="mb-0 px-3 py-2.5 text-sm text-slate-400 hover:text-sky-600 hover:bg-slate-50 rounded-t transition self-end whitespace-nowrap"
+          >＋ Add</button>
+        </div>
+        <p className="px-4 py-1.5 text-xs text-slate-400">Click to switch · Double-click to rename · ⧉ to duplicate</p>
       </div>
 
       {/* Plumbing sections */}

@@ -1347,6 +1347,24 @@ def _build_blank_estimate():
     }
 
 
+def _normalize_estimate_content(content):
+    """Migrate old flat-format estimates to the scenarios array format."""
+    if content.get("scenarios"):
+        return content
+    scenario = {
+        "id":             str(uuid.uuid4()),
+        "name":           "Default",
+        "sections":       content.get("sections", []),
+        "bids":           content.get("bids", []),
+        "notes":          content.get("notes", ""),
+        "alt_rows":       content.get("alt_rows", []),
+        "plumbing_total": content.get("plumbing_total", 0),
+        "gas_total":      content.get("gas_total", 0),
+        "grand_total":    content.get("grand_total", 0),
+    }
+    return {"project_info": content.get("project_info", {}), "scenarios": [scenario]}
+
+
 @app.route("/estimates")
 @login_required
 def estimates_list():
@@ -1381,6 +1399,8 @@ def estimate_builder():
     else:
         content = _build_empty_estimate()
 
+    content = _normalize_estimate_content(content)
+
     # Attach available material list names for the link-ML modal
     ml_raw = list_templates_db(session.get("email", ""), session.get("role", "user"))
     ml_names = [
@@ -1388,19 +1408,20 @@ def estimate_builder():
         for t in ml_raw
     ]
 
-    # Refresh ML totals for any linked rows so edits to a ML propagate automatically
-    for section in content.get("sections", []):
-        for row in section.get("rows", []):
-            if row.get("type") == "material_list" and row.get("material_list_name"):
-                ml_name = row["material_list_name"]
-                ml_folder, ml_tname = _split_template_path(ml_name)
-                current_total = get_material_list_total(
-                    ml_tname, ml_folder,
-                    session.get("email", ""), session.get("role", "user")
-                )
-                if current_total is not None:
-                    row["unit_cost"] = current_total
-                    row["total"]     = current_total
+    # Refresh ML totals for any linked rows across all scenarios
+    for scenario in content.get("scenarios", []):
+        for section in scenario.get("sections", []):
+            for row in section.get("rows", []):
+                if row.get("type") == "material_list" and row.get("material_list_name"):
+                    ml_name = row["material_list_name"]
+                    ml_folder, ml_tname = _split_template_path(ml_name)
+                    current_total = get_material_list_total(
+                        ml_tname, ml_folder,
+                        session.get("email", ""), session.get("role", "user")
+                    )
+                    if current_total is not None:
+                        row["unit_cost"] = current_total
+                        row["total"]     = current_total
 
     return render_app("estimate_builder", {
         "estimateName":   name,
@@ -1434,19 +1455,22 @@ def save_estimate():
     # Keep totals up to date
     try:
         content = json.loads(data_json)
-        plumbing_total = sum(
-            float(r.get("total") or 0)
-            for s in content.get("sections", []) if not s.get("is_gas")
-            for r in s.get("rows", [])
-        )
-        gas_total = sum(
-            float(r.get("total") or 0)
-            for s in content.get("sections", []) if s.get("is_gas")
-            for r in s.get("rows", [])
-        )
-        content["plumbing_total"] = round(plumbing_total, 2)
-        content["gas_total"]      = round(gas_total, 2)
-        content["grand_total"]    = round(plumbing_total + gas_total, 2)
+        content = _normalize_estimate_content(content)
+        for scenario in content.get("scenarios", []):
+            secs = scenario.get("sections", [])
+            plumbing_total = sum(
+                float(r.get("total") or 0)
+                for s in secs if not s.get("is_gas") and not s.get("below_line")
+                for r in s.get("rows", [])
+            )
+            gas_total = sum(
+                float(r.get("total") or 0)
+                for s in secs if s.get("is_gas")
+                for r in s.get("rows", [])
+            )
+            scenario["plumbing_total"] = round(plumbing_total, 2)
+            scenario["gas_total"]      = round(gas_total, 2)
+            scenario["grand_total"]    = round(plumbing_total + gas_total, 2)
         data_json = json.dumps(content)
     except Exception:
         pass
@@ -1455,17 +1479,18 @@ def save_estimate():
     try:
         display_name = f"{folder}/{ename}" if folder else ename
         clear_estimate_catalog_usage(display_name)
-        for section in content.get("sections", []):
-            for row in section.get("rows", []):
-                if row.get("description", "").strip():
-                    upsert_estimate_catalog(
-                        description   = row["description"].strip(),
-                        unit_cost     = float(row.get("unit_cost") or 0),
-                        comments      = row.get("comments", ""),
-                        add_comments  = row.get("add_comments", ""),
-                        category      = section.get("name", ""),
-                        estimate_name = display_name,
-                    )
+        for scenario in content.get("scenarios", []):
+            for section in scenario.get("sections", []):
+                for row in section.get("rows", []):
+                    if row.get("description", "").strip():
+                        upsert_estimate_catalog(
+                            description   = row["description"].strip(),
+                            unit_cost     = float(row.get("unit_cost") or 0),
+                            comments      = row.get("comments", ""),
+                            add_comments  = row.get("add_comments", ""),
+                            category      = section.get("name", ""),
+                            estimate_name = display_name,
+                        )
     except Exception:
         pass
 
@@ -1626,37 +1651,46 @@ def export_estimate_pdf():
         flash("Invalid estimate data.", "danger")
         return redirect(url_for("estimates_list"))
 
-    all_sections   = content.get("sections", [])
-    plumb_sections = [s for s in all_sections if not s.get("is_gas")]
-    gas_sections   = [s for s in all_sections if s.get("is_gas")]
+    content = _normalize_estimate_content(content)
 
-    alternate_rows = []
-    for sec in all_sections:
-        for row in sec.get("rows", []):
-            if row.get("is_alternative"):
-                alternate_rows.append({
-                    "section_name": sec.get("name", ""),
-                    "description":  row.get("description", ""),
-                    "qty":          row.get("qty", ""),
-                    "unit_cost":    row.get("unit_cost", 0),
-                    "total":        row.get("total", 0),
-                    "alt_comment":  row.get("alt_comment", ""),
-                })
+    scenarios_data = []
+    for scenario in content.get("scenarios", []):
+        all_secs = scenario.get("sections", [])
+        plumb_sections = [s for s in all_secs if not s.get("is_gas") and not s.get("below_line")]
+        gas_sections   = [s for s in all_secs if s.get("is_gas")]
+        below_sections = [s for s in all_secs if s.get("below_line") and not s.get("is_gas")]
+        alternate_rows = []
+        for sec in all_secs:
+            for row in sec.get("rows", []):
+                if row.get("is_alternative"):
+                    alternate_rows.append({
+                        "section_name": sec.get("name", ""),
+                        "description":  row.get("description", ""),
+                        "qty":          row.get("qty", ""),
+                        "unit_cost":    row.get("unit_cost", 0),
+                        "total":        row.get("total", 0),
+                        "alt_comment":  row.get("alt_comment", ""),
+                    })
+        scenarios_data.append({
+            "name":           scenario.get("name", ""),
+            "plumb_sections": plumb_sections,
+            "gas_sections":   gas_sections,
+            "below_sections": below_sections,
+            "plumbing_total": scenario.get("plumbing_total", 0.0),
+            "gas_total":      scenario.get("gas_total", 0.0),
+            "grand_total":    scenario.get("grand_total", 0.0),
+            "bids":           scenario.get("bids", []),
+            "notes":          scenario.get("notes", ""),
+            "alternate_rows": alternate_rows,
+            "alt_rows":       scenario.get("alt_rows", []),
+        })
 
     css_path = os.path.join(app.root_path, "static", "css", "order_summary.css")
     rendered = render_template(
         "estimate_summary.html",
-        project_info    = content.get("project_info", {}),
-        plumb_sections  = plumb_sections,
-        gas_sections    = gas_sections,
-        plumbing_total  = content.get("plumbing_total", 0.0),
-        gas_total       = content.get("gas_total", 0.0),
-        grand_total     = content.get("grand_total", 0.0),
-        bids            = content.get("bids", []),
-        notes           = content.get("notes", ""),
-        alternate_rows  = alternate_rows,
-        alt_rows        = content.get("alt_rows", []),
-        css_link        = f"file://{css_path}",
+        project_info = content.get("project_info", {}),
+        scenarios    = scenarios_data,
+        css_link     = f"file://{css_path}",
     )
 
     _xdg = tempfile.mkdtemp(prefix="wkhtml_")
@@ -1700,69 +1734,23 @@ def export_estimate_excel():
         flash("Invalid estimate data.", "danger")
         return redirect(url_for("estimates_list"))
 
+    content = _normalize_estimate_content(content)
     pi = content.get("project_info", {})
-    sections = content.get("sections", [])
-
-    wb = openpyxl.Workbook()
-    ws = wb.active
-    ws.title = "Estimate"
-
-    # Column widths
-    ws.column_dimensions["A"].width = 8
-    ws.column_dimensions["B"].width = 45
-    ws.column_dimensions["C"].width = 16
-    ws.column_dimensions["D"].width = 16
-    ws.column_dimensions["E"].width = 35
-    ws.column_dimensions["F"].width = 35
 
     header_fill   = PatternFill("solid", fgColor="1E3A5F")
     section_fill  = PatternFill("solid", fgColor="2B6CB0")
     subtotal_fill = PatternFill("solid", fgColor="EBF4FF")
     alt_fill      = PatternFill("solid", fgColor="F7FAFC")
+    gas_fill      = PatternFill("solid", fgColor="1A4731")
     bold_white    = Font(bold=True, color="FFFFFF")
     bold_dark     = Font(bold=True, color="1E3A5F")
-    thin = Side(style="thin", color="CBD5E0")
+    thin   = Side(style="thin", color="CBD5E0")
     border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    # Project info header
-    ws.merge_cells("A1:F1")
-    ws["A1"] = "Zamora Plumbing Corp — Estimate"
-    ws["A1"].font = Font(bold=True, size=14, color="FFFFFF")
-    ws["A1"].fill = header_fill
-    ws["A1"].alignment = Alignment(horizontal="center")
-
-    info_rows = [
-        ("Project", pi.get("name", "")),
-        ("Address", pi.get("address", "")),
-        ("Contractor", pi.get("contractor", "")),
-        ("Date", pi.get("date", "")),
-    ]
-    r = 2
-    for label, val in info_rows:
-        ws.cell(r, 1, label).font = Font(bold=True)
-        ws.cell(r, 2, val)
-        r += 1
-
-    r += 1  # blank row
-
-    # Column headers
-    headers = ["QTY", "SYSTEM / DESCRIPTION", "UNIT OUTLET COST", "TOTAL COST", "COMMENTS", "ADDITIONAL COMMENTS"]
-    for col, h in enumerate(headers, 1):
-        c = ws.cell(r, col, h)
-        c.font = bold_white
-        c.fill = header_fill
-        c.alignment = Alignment(horizontal="center")
-        c.border = border
-    r += 1
-
-    gas_fill = PatternFill("solid", fgColor="1A4731")
-
-    def _write_section(ws, section, r, section_fill, alt_fill, border, bold_white, bold_dark, subtotal_fill):
+    def _write_section(ws, section, r, sfill):
         ws.merge_cells(f"A{r}:F{r}")
         c = ws.cell(r, 1, section.get("name", "").upper())
-        c.font = bold_white
-        c.fill = section_fill
-        c.alignment = Alignment(horizontal="left")
+        c.font = bold_white; c.fill = sfill; c.alignment = Alignment(horizontal="left")
         r += 1
         subtotal = 0.0
         for i, row in enumerate(section.get("rows", [])):
@@ -1770,18 +1758,16 @@ def export_estimate_excel():
             desc = row.get("description", "")
             if row.get("type") == "material_list":
                 desc = f"[ML] {desc}"
-            cells_data = [
+            for col, val in enumerate([
                 row.get("qty") if row.get("qty") != "" else "",
                 desc,
                 row.get("unit_cost") or 0,
                 row.get("total") or 0,
                 row.get("comments", ""),
                 row.get("add_comments", ""),
-            ]
-            for col, val in enumerate(cells_data, 1):
+            ], 1):
                 c = ws.cell(r, col, val)
-                c.fill = fill
-                c.border = border
+                c.fill = fill; c.border = border
                 if col in (3, 4) and isinstance(val, (int, float)):
                     c.number_format = '"$"#,##0.00'
                 if col == 2:
@@ -1793,177 +1779,218 @@ def export_estimate_excel():
         ws.cell(r, 1).fill = subtotal_fill
         ws.cell(r, 1).alignment = Alignment(horizontal="right")
         c = ws.cell(r, 4, subtotal)
-        c.font = bold_dark
-        c.fill = subtotal_fill
-        c.number_format = '"$"#,##0.00'
+        c.font = bold_dark; c.fill = subtotal_fill; c.number_format = '"$"#,##0.00'
         r += 1
         return r
 
-    plumb_sections = [s for s in sections if not s.get("is_gas")]
-    gas_sections   = [s for s in sections if s.get("is_gas")]
+    wb = openpyxl.Workbook()
 
-    for section in plumb_sections:
-        r = _write_section(ws, section, r, section_fill, alt_fill, border, bold_white, bold_dark, subtotal_fill)
+    for sci, scenario in enumerate(content.get("scenarios", [])):
+        ws = wb.active if sci == 0 else wb.create_sheet()
+        # Excel sheet name: max 31 chars, no special chars
+        raw_title = scenario.get("name", f"Scenario {sci + 1}")
+        ws.title = raw_title[:31]
 
-    # Plumbing Project Total
-    r += 1
-    ws.merge_cells(f"A{r}:C{r}")
-    ws.cell(r, 1, "PLUMBING PROJECT TOTAL").font = Font(bold=True, size=12, color="FFFFFF")
-    ws.cell(r, 1).fill = header_fill
-    ws.cell(r, 1).alignment = Alignment(horizontal="right")
-    c = ws.cell(r, 4, content.get("plumbing_total", 0.0))
-    c.font = Font(bold=True, size=12, color="FFFFFF")
-    c.fill = header_fill
-    c.number_format = '"$"#,##0.00'
-    r += 2
+        ws.column_dimensions["A"].width = 8
+        ws.column_dimensions["B"].width = 45
+        ws.column_dimensions["C"].width = 16
+        ws.column_dimensions["D"].width = 16
+        ws.column_dimensions["E"].width = 35
+        ws.column_dimensions["F"].width = 35
 
-    # Gas System sections
-    for section in gas_sections:
-        r = _write_section(ws, section, r, gas_fill, alt_fill, border, bold_white, bold_dark, subtotal_fill)
+        # Project info + scenario header
+        ws.merge_cells("A1:F1")
+        title_text = "Zamora Plumbing Corp — Estimate"
+        if len(content.get("scenarios", [])) > 1:
+            title_text += f"  |  {raw_title}"
+        ws["A1"] = title_text
+        ws["A1"].font = Font(bold=True, size=14, color="FFFFFF")
+        ws["A1"].fill = header_fill
+        ws["A1"].alignment = Alignment(horizontal="center")
 
-    # Gas Total
-    r += 1
-    ws.merge_cells(f"A{r}:C{r}")
-    ws.cell(r, 1, "GAS SYSTEM TOTAL").font = Font(bold=True, size=12, color="FFFFFF")
-    ws.cell(r, 1).fill = gas_fill
-    ws.cell(r, 1).alignment = Alignment(horizontal="right")
-    c = ws.cell(r, 4, content.get("gas_total", 0.0))
-    c.font = Font(bold=True, size=12, color="FFFFFF")
-    c.fill = gas_fill
-    c.number_format = '"$"#,##0.00'
+        r = 2
+        for label, val in [
+            ("Project",    pi.get("name", "")),
+            ("Address",    pi.get("address", "")),
+            ("Contractor", pi.get("contractor", "")),
+            ("Date",       pi.get("date", "")),
+        ]:
+            ws.cell(r, 1, label).font = Font(bold=True)
+            ws.cell(r, 2, val)
+            r += 1
 
-    # Bids section
-    bids = content.get("bids", [])
-    r += 2
-    bids_header_fill = PatternFill("solid", fgColor="374151")
-    bids_col_fill    = PatternFill("solid", fgColor="4B5563")
-    ws.merge_cells(f"A{r}:F{r}")
-    c = ws.cell(r, 1, "BIDS")
-    c.font = Font(bold=True, size=12, color="FFFFFF")
-    c.fill = bids_header_fill
-    c.alignment = Alignment(horizontal="center")
-    r += 1
-    for col, label in [(1, "BID #"), (2, "AMOUNT ($)"), (3, "COMMENTS")]:
-        c = ws.cell(r, col, label)
-        c.font = bold_white
-        c.fill = bids_col_fill
-        c.alignment = Alignment(horizontal="center")
-        c.border = border
-    ws.merge_cells(f"C{r}:F{r}")
-    r += 1
-    for i, bid in enumerate(bids):
-        fill = alt_fill if i % 2 == 0 else PatternFill()
-        c = ws.cell(r, 1, bid.get("bid_num", ""))
-        c.fill = fill; c.border = border
-        c = ws.cell(r, 2, float(bid.get("amount") or 0))
-        c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
+        r += 1  # blank row
+
+        headers = ["QTY", "SYSTEM / DESCRIPTION", "UNIT OUTLET COST", "TOTAL COST", "COMMENTS", "ADDITIONAL COMMENTS"]
+        for col, h in enumerate(headers, 1):
+            c = ws.cell(r, col, h)
+            c.font = bold_white; c.fill = header_fill
+            c.alignment = Alignment(horizontal="center"); c.border = border
+        r += 1
+
+        sections      = scenario.get("sections", [])
+        plumb_secs    = [s for s in sections if not s.get("is_gas") and not s.get("below_line")]
+        gas_secs      = [s for s in sections if s.get("is_gas")]
+        below_secs    = [s for s in sections if s.get("below_line") and not s.get("is_gas")]
+
+        for section in plumb_secs:
+            r = _write_section(ws, section, r, section_fill)
+
+        # Plumbing Project Total
+        r += 1
+        ws.merge_cells(f"A{r}:C{r}")
+        ws.cell(r, 1, "PLUMBING PROJECT TOTAL").font = Font(bold=True, size=12, color="FFFFFF")
+        ws.cell(r, 1).fill = header_fill
+        ws.cell(r, 1).alignment = Alignment(horizontal="right")
+        c = ws.cell(r, 4, scenario.get("plumbing_total", 0.0))
+        c.font = Font(bold=True, size=12, color="FFFFFF")
+        c.fill = header_fill; c.number_format = '"$"#,##0.00'
+        r += 2
+
+        for section in gas_secs:
+            r = _write_section(ws, section, r, gas_fill)
+
+        # Gas Total
+        r += 1
+        ws.merge_cells(f"A{r}:C{r}")
+        ws.cell(r, 1, "GAS SYSTEM TOTAL").font = Font(bold=True, size=12, color="FFFFFF")
+        ws.cell(r, 1).fill = gas_fill
+        ws.cell(r, 1).alignment = Alignment(horizontal="right")
+        c = ws.cell(r, 4, scenario.get("gas_total", 0.0))
+        c.font = Font(bold=True, size=12, color="FFFFFF")
+        c.fill = gas_fill; c.number_format = '"$"#,##0.00'
+        r += 2
+
+        for section in below_secs:
+            r = _write_section(ws, section, r, section_fill)
+
+        # Bids section
+        bids = scenario.get("bids", [])
+        bids_header_fill = PatternFill("solid", fgColor="374151")
+        bids_col_fill    = PatternFill("solid", fgColor="4B5563")
+        r += 1
+        ws.merge_cells(f"A{r}:F{r}")
+        c = ws.cell(r, 1, "BIDS")
+        c.font = Font(bold=True, size=12, color="FFFFFF")
+        c.fill = bids_header_fill; c.alignment = Alignment(horizontal="center")
+        r += 1
+        for col, label in [(1, "BID #"), (2, "AMOUNT ($)"), (3, "COMMENTS")]:
+            c = ws.cell(r, col, label)
+            c.font = bold_white; c.fill = bids_col_fill
+            c.alignment = Alignment(horizontal="center"); c.border = border
         ws.merge_cells(f"C{r}:F{r}")
-        c = ws.cell(r, 3, bid.get("comments", ""))
-        c.fill = fill; c.border = border; c.alignment = Alignment(wrap_text=True)
         r += 1
-
-    # Notes section
-    notes = content.get("notes", "")
-    if notes:
-        r += 2
-        notes_hdr_fill = PatternFill("solid", fgColor="374151")
-        ws.merge_cells(f"A{r}:F{r}")
-        c = ws.cell(r, 1, "NOTES")
-        c.font = Font(bold=True, size=12, color="FFFFFF")
-        c.fill = notes_hdr_fill
-        c.alignment = Alignment(horizontal="center")
-        r += 1
-        ws.merge_cells(f"A{r}:F{r}")
-        c = ws.cell(r, 1, notes)
-        c.alignment = Alignment(wrap_text=True, vertical="top")
-        c.border = border
-        ws.row_dimensions[r].height = max(20, (len(notes) // 90 + 1) * 15)
-
-    # Alternates section
-    alt_mirrored = []
-    for sec in sections:
-        for row in sec.get("rows", []):
-            if row.get("is_alternative"):
-                alt_mirrored.append({
-                    "section_name": sec.get("name", ""),
-                    "description":  row.get("description", ""),
-                    "qty":          row.get("qty", ""),
-                    "unit_cost":    row.get("unit_cost", 0),
-                    "total":        row.get("total", 0),
-                    "alt_comment":  row.get("alt_comment", ""),
-                })
-    alt_manual = content.get("alt_rows", [])
-
-    if alt_mirrored or alt_manual:
-        amber_hdr  = PatternFill("solid", fgColor="B45309")
-        amber_col  = PatternFill("solid", fgColor="D97706")
-        amber_row  = PatternFill("solid", fgColor="FFFBEB")
-        amber_sub  = PatternFill("solid", fgColor="FEF3C7")
-        amber_font = Font(bold=True, color="FFFFFF")
-
-        r += 2
-        ws.merge_cells(f"A{r}:F{r}")
-        c = ws.cell(r, 1, "ALTERNATES")
-        c.font = Font(bold=True, size=12, color="FFFFFF")
-        c.fill = amber_hdr
-        c.alignment = Alignment(horizontal="center")
-        r += 1
-
-        if alt_mirrored:
-            for col, label in [(1,"SECTION"),(2,"DESCRIPTION"),(3,"QTY"),(4,"UNIT COST"),(5,"TOTAL"),(6,"COMMENT")]:
-                c = ws.cell(r, col, label)
-                c.font = amber_font; c.fill = amber_col
-                c.alignment = Alignment(horizontal="center"); c.border = border
+        for i, bid in enumerate(bids):
+            fill = alt_fill if i % 2 == 0 else PatternFill()
+            c = ws.cell(r, 1, bid.get("bid_num", ""))
+            c.fill = fill; c.border = border
+            c = ws.cell(r, 2, float(bid.get("amount") or 0))
+            c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
+            ws.merge_cells(f"C{r}:F{r}")
+            c = ws.cell(r, 3, bid.get("comments", ""))
+            c.fill = fill; c.border = border; c.alignment = Alignment(wrap_text=True)
             r += 1
-            for i, row in enumerate(alt_mirrored):
-                fill = amber_row if i % 2 == 0 else PatternFill()
-                for col, val in [(1, row["section_name"]), (2, row["description"]), (3, str(row["qty"])), (6, row["alt_comment"])]:
-                    c = ws.cell(r, col, val); c.fill = fill; c.border = border
-                c = ws.cell(r, 4, float(row["unit_cost"] or 0))
-                c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
-                c = ws.cell(r, 5, float(row["total"] or 0))
-                c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
-                ws.cell(r, 3).alignment = Alignment(horizontal="center")
-                r += 1
 
-        if alt_manual:
+        # Notes section
+        notes = scenario.get("notes", "")
+        if notes:
+            r += 1
+            notes_hdr_fill = PatternFill("solid", fgColor="374151")
+            ws.merge_cells(f"A{r}:F{r}")
+            c = ws.cell(r, 1, "NOTES")
+            c.font = Font(bold=True, size=12, color="FFFFFF")
+            c.fill = notes_hdr_fill; c.alignment = Alignment(horizontal="center")
+            r += 1
+            ws.merge_cells(f"A{r}:F{r}")
+            c = ws.cell(r, 1, notes)
+            c.alignment = Alignment(wrap_text=True, vertical="top"); c.border = border
+            ws.row_dimensions[r].height = max(20, (len(notes) // 90 + 1) * 15)
+            r += 1
+
+        # Alternates section
+        alt_mirrored = []
+        for sec in sections:
+            for row in sec.get("rows", []):
+                if row.get("is_alternative"):
+                    alt_mirrored.append({
+                        "section_name": sec.get("name", ""),
+                        "description":  row.get("description", ""),
+                        "qty":          row.get("qty", ""),
+                        "unit_cost":    row.get("unit_cost", 0),
+                        "total":        row.get("total", 0),
+                        "alt_comment":  row.get("alt_comment", ""),
+                    })
+        alt_manual = scenario.get("alt_rows", [])
+
+        if alt_mirrored or alt_manual:
+            amber_hdr  = PatternFill("solid", fgColor="B45309")
+            amber_col  = PatternFill("solid", fgColor="D97706")
+            amber_row  = PatternFill("solid", fgColor="FFFBEB")
+            amber_sub  = PatternFill("solid", fgColor="FEF3C7")
+            amber_font = Font(bold=True, color="FFFFFF")
+
+            r += 2
+            ws.merge_cells(f"A{r}:F{r}")
+            c = ws.cell(r, 1, "ALTERNATES")
+            c.font = Font(bold=True, size=12, color="FFFFFF")
+            c.fill = amber_hdr; c.alignment = Alignment(horizontal="center")
+            r += 1
+
             if alt_mirrored:
-                ws.merge_cells(f"A{r}:F{r}")
-                c = ws.cell(r, 1, "MANUAL")
-                c.font = Font(bold=True, color="B45309"); c.fill = amber_sub
-                c.alignment = Alignment(horizontal="left"); r += 1
-            for col, label in [(1,"DESCRIPTION"),(2,"QTY"),(3,"UNIT COST"),(4,"TOTAL"),(5,"COMMENT")]:
-                c = ws.cell(r, col, label)
-                c.font = amber_font; c.fill = amber_col
-                c.alignment = Alignment(horizontal="center"); c.border = border
-            ws.merge_cells(f"F{r}:F{r}")
-            r += 1
-            for i, row in enumerate(alt_manual):
-                fill = amber_row if i % 2 == 0 else PatternFill()
-                c = ws.cell(r, 1, row.get("description", ""))
-                c.fill = fill; c.border = border
-                c = ws.cell(r, 2, str(row.get("qty", "")))
-                c.fill = fill; c.border = border; c.alignment = Alignment(horizontal="center")
-                c = ws.cell(r, 3, float(row.get("unit_cost") or 0))
-                c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
-                c = ws.cell(r, 4, float(row.get("total") or 0))
-                c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
-                c = ws.cell(r, 5, row.get("comments", ""))
-                c.fill = fill; c.border = border; c.alignment = Alignment(wrap_text=True)
+                for col, label in [(1,"SECTION"),(2,"DESCRIPTION"),(3,"QTY"),(4,"UNIT COST"),(5,"TOTAL"),(6,"COMMENT")]:
+                    c = ws.cell(r, col, label)
+                    c.font = amber_font; c.fill = amber_col
+                    c.alignment = Alignment(horizontal="center"); c.border = border
+                r += 1
+                for i, row in enumerate(alt_mirrored):
+                    fill = amber_row if i % 2 == 0 else PatternFill()
+                    for col, val in [(1, row["section_name"]), (2, row["description"]), (3, str(row["qty"])), (6, row["alt_comment"])]:
+                        c = ws.cell(r, col, val); c.fill = fill; c.border = border
+                    c = ws.cell(r, 4, float(row["unit_cost"] or 0))
+                    c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
+                    c = ws.cell(r, 5, float(row["total"] or 0))
+                    c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
+                    ws.cell(r, 3).alignment = Alignment(horizontal="center")
+                    r += 1
+
+            if alt_manual:
+                if alt_mirrored:
+                    ws.merge_cells(f"A{r}:F{r}")
+                    c = ws.cell(r, 1, "MANUAL")
+                    c.font = Font(bold=True, color="B45309"); c.fill = amber_sub
+                    c.alignment = Alignment(horizontal="left"); r += 1
+                for col, label in [(1,"DESCRIPTION"),(2,"QTY"),(3,"UNIT COST"),(4,"TOTAL"),(5,"COMMENT")]:
+                    c = ws.cell(r, col, label)
+                    c.font = amber_font; c.fill = amber_col
+                    c.alignment = Alignment(horizontal="center"); c.border = border
                 ws.merge_cells(f"F{r}:F{r}")
                 r += 1
+                for i, row in enumerate(alt_manual):
+                    fill = amber_row if i % 2 == 0 else PatternFill()
+                    c = ws.cell(r, 1, row.get("description", ""))
+                    c.fill = fill; c.border = border
+                    c = ws.cell(r, 2, str(row.get("qty", "")))
+                    c.fill = fill; c.border = border; c.alignment = Alignment(horizontal="center")
+                    c = ws.cell(r, 3, float(row.get("unit_cost") or 0))
+                    c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
+                    c = ws.cell(r, 4, float(row.get("total") or 0))
+                    c.fill = fill; c.border = border; c.number_format = '"$"#,##0.00'
+                    c = ws.cell(r, 5, row.get("comments", ""))
+                    c.fill = fill; c.border = border; c.alignment = Alignment(wrap_text=True)
+                    ws.merge_cells(f"F{r}:F{r}")
+                    r += 1
 
-        alt_total = (sum(float(x.get("total") or 0) for x in alt_mirrored) +
-                     sum(float(x.get("total") or 0) for x in alt_manual))
-        ws.merge_cells(f"A{r}:D{r}")
-        c = ws.cell(r, 1, "ALTERNATES TOTAL")
-        c.font = Font(bold=True, color="B45309"); c.fill = amber_sub
-        c.alignment = Alignment(horizontal="right")
-        c = ws.cell(r, 5, alt_total)
-        c.font = Font(bold=True, color="B45309"); c.fill = amber_sub
-        c.number_format = '"$"#,##0.00'
-        ws.merge_cells(f"F{r}:F{r}")
-        ws.cell(r, 6).fill = amber_sub
+            alt_total = (sum(float(x.get("total") or 0) for x in alt_mirrored) +
+                         sum(float(x.get("total") or 0) for x in alt_manual))
+            ws.merge_cells(f"A{r}:D{r}")
+            c = ws.cell(r, 1, "ALTERNATES TOTAL")
+            c.font = Font(bold=True, color="B45309"); c.fill = amber_sub
+            c.alignment = Alignment(horizontal="right")
+            c = ws.cell(r, 5, alt_total)
+            c.font = Font(bold=True, color="B45309"); c.fill = amber_sub
+            c.number_format = '"$"#,##0.00'
+            ws.merge_cells(f"F{r}:F{r}")
+            ws.cell(r, 6).fill = amber_sub
 
     buf = io.BytesIO()
     wb.save(buf)
