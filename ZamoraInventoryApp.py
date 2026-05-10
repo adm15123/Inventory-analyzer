@@ -41,7 +41,7 @@ from db import (
     save_estimate_db, get_estimate_db, list_estimates_db,
     delete_estimate_db, duplicate_estimate_db,
     search_estimate_catalog, upsert_estimate_catalog, clear_estimate_catalog_usage,
-    deduplicate_catalog_usage, move_estimate_db,
+    deduplicate_catalog_usage, clean_lps_description_suffixes, move_estimate_db,
     get_material_list_total,
     add_attachment, get_attachments, delete_attachment, delete_attachments_for_estimate,
 )
@@ -65,6 +65,7 @@ import data_utils as du
 app = Flask(__name__)
 init_db()
 deduplicate_catalog_usage()
+clean_lps_description_suffixes()
 load_catalog_to_memory()
 app.secret_key = config.SECRET_KEY
 

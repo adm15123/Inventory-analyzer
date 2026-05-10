@@ -404,6 +404,49 @@ def deduplicate_catalog_usage() -> None:
             conn.execute(record_sql, (migration_id,))
 
 
+def clean_lps_description_suffixes() -> None:
+    """One-time migration: strip trailing pack-qty suffixes like ' (25)' from LPS descriptions."""
+    import re as _re
+    migration_id = "clean_lps_desc_suffixes_v1"
+    ensure_sql   = "CREATE TABLE IF NOT EXISTS _migrations (id TEXT PRIMARY KEY, run_at TEXT)"
+    check_sql    = "SELECT id FROM _migrations WHERE id = ?"
+    record_sql   = "INSERT OR IGNORE INTO _migrations (id, run_at) VALUES (?, datetime('now'))"
+    fetch_sql    = "SELECT id, description FROM invoice_items WHERE supplier = 'LPS'"
+    update_sql   = "UPDATE invoice_items SET description = ? WHERE id = ?"
+
+    pattern = _re.compile(r'\s*\(\d+\)\s*$')
+
+    def _build_updates(rows):
+        updates = []
+        for row in rows:
+            row_id   = row["id"]
+            desc     = row.get("description") or ""
+            cleaned  = pattern.sub('', desc).strip()
+            if cleaned != desc:
+                updates.append((cleaned, row_id))
+        return updates
+
+    if USE_TURSO:
+        _turso_execute(ensure_sql, [])
+        if _turso_execute(check_sql, [migration_id]):
+            return
+        rows    = _turso_execute(fetch_sql, [])
+        updates = _build_updates(rows)
+        if updates:
+            _turso_batch([(update_sql, list(u)) for u in updates])
+        _turso_execute(record_sql, [migration_id])
+    else:
+        with _local_conn() as conn:
+            conn.execute(ensure_sql)
+            if conn.execute(check_sql, (migration_id,)).fetchone():
+                return
+            rows    = [dict(r) for r in conn.execute(fetch_sql).fetchall()]
+            updates = _build_updates(rows)
+            if updates:
+                conn.executemany(update_sql, updates)
+            conn.execute(record_sql, (migration_id,))
+
+
 def save_parsed_document(parsed: dict, filename: str = "") -> int:
     """
     Insert a parsed PDF result into the DB.

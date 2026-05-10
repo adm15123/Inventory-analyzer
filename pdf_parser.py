@@ -119,9 +119,10 @@ def _parse_lps_invoice(pdf) -> dict:
                 if line_no in seen_lines:
                     continue
                 seen_lines.add(line_no)
+                desc = re.sub(r'\s*\(\d+\)\s*$', '', m.group(3).strip())
                 items.append({
                     "item_number": m.group(2),
-                    "description": m.group(3).strip(),
+                    "description": desc,
                     "uom": m.group(4),
                     "quantity": int(m.group(6)),   # shipped qty
                     "unit_price": _clean_price(m.group(7)),
