@@ -720,15 +720,17 @@ def price_intelligence_api():
         pct_change = round(((last_price - first_price) / first_price) * 100, 2)
         abs_change = round(last_price - first_price, 4)
         movers.append({
-            "description":    desc,
-            "item_number":    str(first_row.get("Item Number") or ""),
-            "first_price":    round(first_price, 4),
-            "last_price":     round(last_price, 4),
-            "abs_change":     abs_change,
-            "pct_change":     pct_change,
-            "first_date":     first_row["Date"].strftime("%Y-%m-%d"),
-            "last_date":      last_row["Date"].strftime("%Y-%m-%d"),
-            "purchase_count": len(grp),
+            "description":      desc,
+            "item_number":      str(first_row.get("Item Number") or ""),
+            "first_price":      round(first_price, 4),
+            "last_price":       round(last_price, 4),
+            "abs_change":       abs_change,
+            "pct_change":       pct_change,
+            "first_date":       first_row["Date"].strftime("%Y-%m-%d"),
+            "last_date":        last_row["Date"].strftime("%Y-%m-%d"),
+            "first_invoice_no": str(first_row.get("Invoice No.") or ""),
+            "last_invoice_no":  str(last_row.get("Invoice No.") or ""),
+            "purchase_count":   len(grp),
         })
 
     total     = len(movers)

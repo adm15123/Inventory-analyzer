@@ -668,6 +668,7 @@ function AnalyzePage({ data }) {
   const [sortField, setSortField] = useState("pct_change");
   const [sortDir, setSortDir]     = useState("desc");
   const [filter, setFilter]       = useState("changed");
+  const [expandedRow, setExpandedRow] = useState(null);
 
   const fetchData = useCallback(() => {
     if (!startDate || !endDate) return;
@@ -881,26 +882,72 @@ function AnalyzePage({ data }) {
               <tbody className="divide-y divide-slate-50">
                 {movers.length === 0
                   ? <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">No items match the current filter.</td></tr>
-                  : movers.map((r, i) => (
-                    <tr key={i} className="transition-colors hover:bg-slate-50">
-                      <td className="max-w-xs px-4 py-3">
-                        <p className="truncate text-sm font-medium text-slate-800">{r.description}</p>
-                        {r.item_number && <p className="text-xs text-slate-400">{r.item_number}</p>}
-                      </td>
-                      <td className="px-4 py-3 text-right text-sm text-slate-600">${r.first_price.toFixed(4)}</td>
-                      <td className="px-4 py-3 text-right text-sm text-slate-600">${r.last_price.toFixed(4)}</td>
-                      <td className={`px-4 py-3 text-right text-sm ${pctColor(r.pct_change)}`}>
-                        {r.abs_change >= 0 ? "+" : ""}${r.abs_change.toFixed(4)}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-bold ${pctBadge(r.pct_change)}`}>
-                          {r.pct_change >= 0 ? "+" : ""}{r.pct_change}%
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-center text-sm text-slate-500">{r.purchase_count}</td>
-                      <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">{r.first_date} → {r.last_date}</td>
-                    </tr>
-                  ))
+                  : movers.map((r, i) => {
+                    const isOpen = expandedRow === r.description;
+                    const detailUrl = `/product_detail?description=${encodeURIComponent(r.description)}&supply=${supply}&ref=analyze`;
+                    return (
+                      <React.Fragment key={i}>
+                        <tr
+                          onClick={() => setExpandedRow(isOpen ? null : r.description)}
+                          className={`cursor-pointer transition-colors hover:bg-sky-50 ${isOpen ? "bg-sky-50" : ""}`}
+                        >
+                          <td className="max-w-xs px-4 py-3">
+                            <p className="truncate text-sm font-medium text-slate-800">{r.description}</p>
+                            {r.item_number && <p className="text-xs text-slate-400">{r.item_number}</p>}
+                          </td>
+                          <td className="px-4 py-3 text-right text-sm text-slate-600">${r.first_price.toFixed(4)}</td>
+                          <td className="px-4 py-3 text-right text-sm text-slate-600">${r.last_price.toFixed(4)}</td>
+                          <td className={`px-4 py-3 text-right text-sm ${pctColor(r.pct_change)}`}>
+                            {r.abs_change >= 0 ? "+" : ""}${r.abs_change.toFixed(4)}
+                          </td>
+                          <td className="px-4 py-3 text-right">
+                            <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-bold ${pctBadge(r.pct_change)}`}>
+                              {r.pct_change >= 0 ? "+" : ""}{r.pct_change}%
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-center text-sm text-slate-500">{r.purchase_count}</td>
+                          <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">
+                            {r.first_date} → {r.last_date}
+                            <span className="ml-2 text-sky-400">{isOpen ? "▲" : "▼"}</span>
+                          </td>
+                        </tr>
+                        {isOpen && (
+                          <tr className="bg-sky-50">
+                            <td colSpan={7} className="px-6 pb-4 pt-0">
+                              <div className="grid grid-cols-2 gap-4 border-t border-sky-100 pt-4">
+                                <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">First Purchase</p>
+                                  <p className="mt-2 text-2xl font-bold text-slate-800">${r.first_price.toFixed(4)}</p>
+                                  <p className="mt-1 text-sm text-slate-600">{r.first_date}</p>
+                                  <p className="text-xs text-slate-400">Invoice # {r.first_invoice_no || "—"}</p>
+                                </div>
+                                <div className={`rounded-xl bg-white p-4 ring-1 ${r.pct_change > 0 ? "ring-rose-200" : r.pct_change < 0 ? "ring-emerald-200" : "ring-slate-200"}`}>
+                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Last Purchase</p>
+                                  <p className={`mt-2 text-2xl font-bold ${r.pct_change > 0 ? "text-rose-600" : r.pct_change < 0 ? "text-emerald-600" : "text-slate-800"}`}>
+                                    ${r.last_price.toFixed(4)}
+                                    <span className="ml-2 text-sm font-semibold">
+                                      {r.pct_change >= 0 ? "+" : ""}{r.pct_change}%
+                                    </span>
+                                  </p>
+                                  <p className="mt-1 text-sm text-slate-600">{r.last_date}</p>
+                                  <p className="text-xs text-slate-400">Invoice # {r.last_invoice_no || "—"}</p>
+                                </div>
+                              </div>
+                              <div className="mt-3">
+                                <a
+                                  href={detailUrl}
+                                  onClick={e => e.stopPropagation()}
+                                  className="text-sm font-medium text-sky-600 hover:text-sky-800 hover:underline"
+                                >
+                                  View full purchase history →
+                                </a>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
                 }
               </tbody>
             </table>
