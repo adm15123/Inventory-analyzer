@@ -719,6 +719,14 @@ def price_intelligence_api():
             continue
         pct_change = round(((last_price - first_price) / first_price) * 100, 2)
         abs_change = round(last_price - first_price, 4)
+        history = [
+            {
+                "date":       row["Date"].strftime("%Y-%m-%d"),
+                "price":      round(float(row["Price per Unit"]), 4),
+                "invoice_no": str(row.get("Invoice No.") or ""),
+            }
+            for _, row in grp.iterrows()
+        ]
         movers.append({
             "description":      desc,
             "item_number":      str(first_row.get("Item Number") or ""),
@@ -731,6 +739,7 @@ def price_intelligence_api():
             "first_invoice_no": str(first_row.get("Invoice No.") or ""),
             "last_invoice_no":  str(last_row.get("Invoice No.") or ""),
             "purchase_count":   len(grp),
+            "history":          history,
         })
 
     total     = len(movers)

@@ -656,8 +656,54 @@ function SearchPage({ data }) {
 }
 
 // ================================================================
-// AnalyzePage — IMPROVEMENT #12: CSV export button
+// AnalyzePage
 // ================================================================
+function PriceHistoryChart({ history, pctChange }) {
+  const canvasRef     = useRef(null);
+  const chartInstance = useRef(null);
+
+  useEffect(() => {
+    if (!canvasRef.current || !history?.length) return;
+    if (chartInstance.current) chartInstance.current.destroy();
+    const color   = pctChange > 0 ? "#e11d48" : pctChange < 0 ? "#059669" : "#0284c7";
+    const bgColor = pctChange > 0 ? "rgba(225,29,72,0.08)" : pctChange < 0 ? "rgba(5,150,105,0.08)" : "rgba(2,132,199,0.08)";
+    chartInstance.current = new Chart(canvasRef.current, {
+      type: "line",
+      data: {
+        labels: history.map(h => h.date),
+        datasets: [{
+          label: "Price per Unit",
+          data:  history.map(h => h.price),
+          borderColor:     color,
+          backgroundColor: bgColor,
+          pointRadius: history.length > 30 ? 2 : 4,
+          tension: 0.3,
+          fill: true,
+        }],
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label:      ctx => `$${ctx.parsed.y.toFixed(4)}`,
+              afterLabel: ctx => {
+                const h = history[ctx.dataIndex];
+                return h?.invoice_no ? `Invoice #${h.invoice_no}` : "";
+              },
+            },
+          },
+        },
+        scales: { y: { beginAtZero: false } },
+      },
+    });
+    return () => { if (chartInstance.current) chartInstance.current.destroy(); };
+  }, [history, pctChange]);
+
+  return <canvas ref={canvasRef} />;
+}
+
 function AnalyzePage({ data }) {
   const [supply, setSupply]       = useState(data.supply || "LPS");
   const [startDate, setStartDate] = useState(data.startDate || "");
@@ -913,34 +959,35 @@ function AnalyzePage({ data }) {
                         </tr>
                         {isOpen && (
                           <tr className="bg-sky-50">
-                            <td colSpan={7} className="px-6 pb-4 pt-0">
-                              <div className="grid grid-cols-2 gap-4 border-t border-sky-100 pt-4">
-                                <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">First Purchase</p>
-                                  <p className="mt-2 text-2xl font-bold text-slate-800">${r.first_price.toFixed(4)}</p>
-                                  <p className="mt-1 text-sm text-slate-600">{r.first_date}</p>
-                                  <p className="text-xs text-slate-400">Invoice # {r.first_invoice_no || "—"}</p>
+                            <td colSpan={7} className="px-6 pb-5 pt-0">
+                              <div className="border-t border-sky-100 pt-4 space-y-4">
+                                {/* First / Last cards */}
+                                <div className="grid grid-cols-2 gap-4">
+                                  <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">First Purchase</p>
+                                    <p className="mt-2 text-2xl font-bold text-slate-800">${r.first_price.toFixed(4)}</p>
+                                    <p className="mt-1 text-sm text-slate-600">{r.first_date}</p>
+                                    <p className="text-xs text-slate-400">Invoice #{r.first_invoice_no || "—"}</p>
+                                  </div>
+                                  <div className={`rounded-xl bg-white p-4 ring-1 ${r.pct_change > 0 ? "ring-rose-200" : r.pct_change < 0 ? "ring-emerald-200" : "ring-slate-200"}`}>
+                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Last Purchase</p>
+                                    <p className={`mt-2 text-2xl font-bold ${r.pct_change > 0 ? "text-rose-600" : r.pct_change < 0 ? "text-emerald-600" : "text-slate-800"}`}>
+                                      ${r.last_price.toFixed(4)}
+                                      <span className="ml-2 text-sm font-semibold">{r.pct_change >= 0 ? "+" : ""}{r.pct_change}%</span>
+                                    </p>
+                                    <p className="mt-1 text-sm text-slate-600">{r.last_date}</p>
+                                    <p className="text-xs text-slate-400">Invoice #{r.last_invoice_no || "—"}</p>
+                                  </div>
                                 </div>
-                                <div className={`rounded-xl bg-white p-4 ring-1 ${r.pct_change > 0 ? "ring-rose-200" : r.pct_change < 0 ? "ring-emerald-200" : "ring-slate-200"}`}>
-                                  <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Last Purchase</p>
-                                  <p className={`mt-2 text-2xl font-bold ${r.pct_change > 0 ? "text-rose-600" : r.pct_change < 0 ? "text-emerald-600" : "text-slate-800"}`}>
-                                    ${r.last_price.toFixed(4)}
-                                    <span className="ml-2 text-sm font-semibold">
-                                      {r.pct_change >= 0 ? "+" : ""}{r.pct_change}%
-                                    </span>
-                                  </p>
-                                  <p className="mt-1 text-sm text-slate-600">{r.last_date}</p>
-                                  <p className="text-xs text-slate-400">Invoice # {r.last_invoice_no || "—"}</p>
-                                </div>
-                              </div>
-                              <div className="mt-3">
-                                <a
-                                  href={detailUrl}
-                                  onClick={e => e.stopPropagation()}
-                                  className="text-sm font-medium text-sky-600 hover:text-sky-800 hover:underline"
-                                >
-                                  View full purchase history →
-                                </a>
+                                {/* Price history chart */}
+                                {r.history?.length > 1 && (
+                                  <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
+                                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                      Price History — {r.history.length} purchases
+                                    </p>
+                                    <PriceHistoryChart history={r.history} pctChange={r.pct_change} />
+                                  </div>
+                                )}
                               </div>
                             </td>
                           </tr>
