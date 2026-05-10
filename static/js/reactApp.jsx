@@ -797,6 +797,148 @@ function AnalyzePage({ data }) {
     URL.revokeObjectURL(url);
   };
 
+  const handleExportPDF = () => {
+    if (!movers.length) return;
+    const { jsPDF } = window.jspdf;
+    const doc  = new jsPDF({ orientation: "portrait", unit: "mm", format: "letter" });
+    const pageW  = doc.internal.pageSize.getWidth();
+    const pageH  = doc.internal.pageSize.getHeight();
+    const margin = 15;
+    const cW     = pageW - margin * 2;
+
+    const supplyLabel = (data.supplyOptions || []).find(o => o.value === supply)?.label || supply;
+    const genDate     = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+
+    // ── Header bar ────────────────────────────────────────────
+    doc.setFillColor(14, 165, 233);
+    doc.rect(0, 0, pageW, 22, "F");
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(15); doc.setFont("helvetica", "bold");
+    doc.text("Price Intelligence Report", margin, 14);
+    doc.setFontSize(8.5); doc.setFont("helvetica", "normal");
+    doc.text(`Generated ${genDate}`, pageW - margin, 14, { align: "right" });
+
+    // ── Sub-header ────────────────────────────────────────────
+    doc.setFillColor(240, 249, 255);
+    doc.rect(0, 22, pageW, 11, "F");
+    doc.setTextColor(71, 85, 105);
+    doc.setFontSize(8.5); doc.setFont("helvetica", "normal");
+    doc.text(`Supplier: ${supplyLabel}   |   Period: ${startDate}  →  ${endDate}`, margin, 30);
+
+    let y = 41;
+
+    // ── Summary cards ─────────────────────────────────────────
+    const s = results?.summary;
+    if (s) {
+      const cards = [
+        { label: "Items Analyzed",  value: String(s.total),        rgb: [30,41,59] },
+        { label: "Avg Price Change", value: `${s.avg_change_pct >= 0 ? "+" : ""}${s.avg_change_pct}%`,
+          rgb: s.avg_change_pct > 0 ? [225,29,72] : s.avg_change_pct < 0 ? [5,150,105] : [100,116,139] },
+        { label: "Price Increases", value: String(s.went_up),      rgb: [225,29,72] },
+        { label: "Price Decreases", value: String(s.went_down),    rgb: [5,150,105] },
+      ];
+      const cCardW = (cW - 9) / 4;
+      cards.forEach((card, i) => {
+        const cx = margin + i * (cCardW + 3);
+        doc.setFillColor(248, 250, 252); doc.setDrawColor(226, 232, 240);
+        doc.roundedRect(cx, y, cCardW, 18, 2, 2, "FD");
+        doc.setTextColor(148, 163, 184); doc.setFontSize(6.5); doc.setFont("helvetica", "bold");
+        doc.text(card.label.toUpperCase(), cx + cCardW / 2, y + 6, { align: "center" });
+        doc.setTextColor(...card.rgb); doc.setFontSize(14); doc.setFont("helvetica", "bold");
+        doc.text(card.value, cx + cCardW / 2, y + 14.5, { align: "center" });
+      });
+      y += 26;
+    }
+
+    // ── Top movers ────────────────────────────────────────────
+    if (top5Up.length > 0 || top5Down.length > 0) {
+      const halfW   = (cW - 6) / 2;
+      const rowsMax = Math.max(top5Up.length, top5Down.length);
+      const boxH    = 8 + rowsMax * 8;
+
+      const drawMovers = (list, dx, isUp) => {
+        const color = isUp ? [225,29,72] : [5,150,105];
+        const bgFill = isUp ? [254,242,242] : [236,253,245];
+        const bgStroke = isUp ? [254,202,202] : [167,243,208];
+        doc.setFillColor(...bgFill); doc.setDrawColor(...bgStroke);
+        doc.roundedRect(dx, y, halfW, boxH, 2, 2, "FD");
+        doc.setTextColor(...color); doc.setFontSize(6.5); doc.setFont("helvetica", "bold");
+        doc.text(isUp ? "TOP PRICE INCREASES" : "TOP PRICE DECREASES", dx + 4, y + 5.5);
+        list.forEach((r, i) => {
+          const ry = y + 10 + i * 8;
+          doc.setFillColor(255,255,255);
+          doc.rect(dx + 2, ry - 1, halfW - 4, 7, "F");
+          doc.setTextColor(30,41,59); doc.setFontSize(7.5); doc.setFont("helvetica", "normal");
+          const lbl = r.description.length > 33 ? r.description.slice(0,33) + "…" : r.description;
+          doc.text(lbl, dx + 4, ry + 4);
+          doc.setTextColor(...color); doc.setFont("helvetica", "bold");
+          doc.text(`${isUp ? "+" : ""}${r.pct_change}%`, dx + halfW - 4, ry + 4, { align: "right" });
+        });
+      };
+
+      if (top5Up.length   > 0) drawMovers(top5Up,   margin,             true);
+      if (top5Down.length > 0) drawMovers(top5Down,  margin + halfW + 6, false);
+      y += boxH + 8;
+    }
+
+    // ── Table header label ────────────────────────────────────
+    doc.setTextColor(30,41,59); doc.setFontSize(9); doc.setFont("helvetica", "bold");
+    doc.text("All Items", margin, y);
+    doc.setFont("helvetica", "normal"); doc.setTextColor(148,163,184); doc.setFontSize(7.5);
+    doc.text(`(${movers.length} items)`, margin + 24, y);
+    y += 3;
+
+    // ── AutoTable ─────────────────────────────────────────────
+    doc.autoTable({
+      startY: y,
+      margin: { left: margin, right: margin },
+      head: [["Description","Item #","First Price","Last Price","$ Change","% Change","Purchases","Period"]],
+      body: movers.map(r => [
+        r.description,
+        r.item_number || "—",
+        `$${r.first_price.toFixed(4)}`,
+        `$${r.last_price.toFixed(4)}`,
+        `${r.abs_change >= 0 ? "+" : ""}$${r.abs_change.toFixed(4)}`,
+        `${r.pct_change >= 0 ? "+" : ""}${r.pct_change}%`,
+        r.purchase_count,
+        `${r.first_date} → ${r.last_date}`,
+      ]),
+      styles: { fontSize: 7.5, cellPadding: 2.5, overflow: "linebreak" },
+      headStyles: { fillColor: [14,165,233], textColor: 255, fontStyle: "bold", fontSize: 7 },
+      alternateRowStyles: { fillColor: [248,250,252] },
+      columnStyles: {
+        0: { cellWidth: 50 },
+        1: { cellWidth: 16, halign: "left" },
+        2: { cellWidth: 19, halign: "right" },
+        3: { cellWidth: 19, halign: "right" },
+        4: { cellWidth: 19, halign: "right" },
+        5: { cellWidth: 16, halign: "right" },
+        6: { cellWidth: 14, halign: "center" },
+        7: { cellWidth: "auto" },
+      },
+      didParseCell: (d) => {
+        if (d.section !== "body") return;
+        const r = movers[d.row.index];
+        if (!r) return;
+        if (d.column.index === 4 || d.column.index === 5) {
+          if (r.pct_change > 0)      d.cell.styles.textColor = [225,29,72];
+          else if (r.pct_change < 0) d.cell.styles.textColor = [5,150,105];
+          else                        d.cell.styles.textColor = [148,163,184];
+        }
+      },
+      didDrawPage: (d) => {
+        const total = doc.internal.getNumberOfPages();
+        doc.setFontSize(7); doc.setTextColor(148,163,184);
+        doc.text(
+          `Zamora Inventory  |  Price Intelligence  |  Page ${d.pageNumber} of ${total}`,
+          pageW / 2, pageH - 7, { align: "center" }
+        );
+      },
+    });
+
+    doc.save(`price_intel_${supply}_${startDate}_to_${endDate}.pdf`);
+  };
+
   const s = results?.summary;
 
   return (
@@ -831,9 +973,10 @@ function AnalyzePage({ data }) {
           <Button type="submit" className="flex-1" disabled={loading}>
             {loading ? "Loading…" : "Analyze"}
           </Button>
-          {movers.length > 0 && (
+          {movers.length > 0 && (<>
             <Button type="button" variant="secondary" onClick={handleExportCSV} title="Export to CSV">⬇ CSV</Button>
-          )}
+            <Button type="button" variant="secondary" onClick={handleExportPDF} title="Export to PDF">⬇ PDF</Button>
+          </>)}
         </div>
       </form>
 
