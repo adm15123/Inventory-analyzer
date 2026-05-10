@@ -12,26 +12,35 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     /* ── Dark mode overrides ─────────────────────────────────────────── */
+
+    /* Page & structure */
     html.dark body,
     html.dark .min-h-screen { background-color: #0f172a; }
-    html.dark .bg-white { background-color: #1e293b !important; }
-    html.dark .bg-slate-50 { background-color: #162032 !important; }
+    html.dark .bg-white     { background-color: #1e293b !important; }
+    html.dark .bg-slate-50  { background-color: #162032 !important; }
     html.dark .bg-slate-100 { background-color: #0f172a !important; }
     html.dark .bg-slate-200 { background-color: #334155 !important; }
-    html.dark nav.sticky { background-color: #1e293b !important; border-color: #334155 !important; }
+    html.dark nav.sticky    { background-color: #1e293b !important; border-color: #334155 !important; }
+    html.dark .shadow-sm    { --tw-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.5) !important; }
+
+    /* Neutral text — lighter = more readable on dark backgrounds */
     html.dark .text-slate-900 { color: #f1f5f9 !important; }
     html.dark .text-slate-800 { color: #e2e8f0 !important; }
     html.dark .text-slate-700 { color: #cbd5e1 !important; }
     html.dark .text-slate-600 { color: #94a3b8 !important; }
-    html.dark .text-slate-500 { color: #64748b !important; }
-    html.dark .text-slate-400 { color: #475569 !important; }
+    html.dark .text-slate-500 { color: #94a3b8 !important; }
+    html.dark .text-slate-400 { color: #64748b !important; }
+
+    /* Borders & dividers */
     html.dark .border-slate-100 { border-color: #1e293b !important; }
     html.dark .border-slate-200 { border-color: #334155 !important; }
     html.dark .border-slate-300 { border-color: #475569 !important; }
     html.dark .divide-slate-50 > * + *,
     html.dark .divide-slate-100 > * + *,
     html.dark .divide-y > * + * { border-color: #1e293b !important; }
-    html.dark .ring-slate-200 { --tw-ring-color: #334155 !important; }
+    html.dark .ring-slate-200  { --tw-ring-color: #334155 !important; }
+
+    /* Inputs & selects */
     html.dark input:not([type="checkbox"]):not([type="radio"]),
     html.dark select,
     html.dark textarea {
@@ -41,12 +50,47 @@
     }
     html.dark input::placeholder,
     html.dark textarea::placeholder { color: #64748b !important; }
+
+    /* Hover states */
     html.dark .hover\:bg-slate-100:hover { background-color: #334155 !important; }
-    html.dark .hover\:bg-slate-50:hover { background-color: #1e293b !important; }
-    html.dark .hover\:bg-sky-50:hover { background-color: #0c4a6e !important; }
-    html.dark .bg-sky-50 { background-color: #0c4a6e !important; }
+    html.dark .hover\:bg-slate-50:hover  { background-color: #1e293b !important; }
+    html.dark .hover\:bg-sky-50:hover    { background-color: #0c3a5c !important; }
+
+    /* Sky (primary / active nav) */
+    html.dark .bg-sky-50   { background-color: #0c3a5c !important; }
+    html.dark .bg-sky-100  { background-color: #0c3a5c !important; }
     html.dark .text-sky-700 { color: #38bdf8 !important; }
-    html.dark .shadow-sm { --tw-shadow: 0 1px 2px 0 rgb(0 0 0 / 0.4) !important; }
+
+    /* Rose (price increases, error states) */
+    html.dark .bg-rose-50  { background-color: #2d0a11 !important; }
+    html.dark .bg-rose-100 { background-color: #3b0f17 !important; }
+    html.dark .border-rose-200 { border-color: #9f1239 !important; }
+    html.dark .ring-rose-100,
+    html.dark .ring-rose-200 { --tw-ring-color: #9f1239 !important; }
+
+    /* Emerald (price decreases, success states) */
+    html.dark .bg-emerald-50  { background-color: #052015 !important; }
+    html.dark .bg-emerald-100 { background-color: #072b1c !important; }
+    html.dark .border-emerald-200 { border-color: #065f46 !important; }
+    html.dark .ring-emerald-100,
+    html.dark .ring-emerald-200 { --tw-ring-color: #065f46 !important; }
+
+    /* Amber (Lion Supply card) */
+    html.dark .bg-amber-50  { background-color: #1c1100 !important; }
+    html.dark .border-amber-200 { border-color: #92400e !important; }
+    html.dark .text-amber-700   { color: #fbbf24 !important; }
+
+    /* Violet (S2 Supply card) */
+    html.dark .bg-violet-50  { background-color: #150d2b !important; }
+    html.dark .border-violet-200 { border-color: #5b21b6 !important; }
+    html.dark .text-violet-700   { color: #a78bfa !important; }
+
+    /* Emerald text stays vivid on dark emerald bg */
+    html.dark .text-emerald-600 { color: #34d399 !important; }
+    html.dark .text-emerald-700 { color: #34d399 !important; }
+
+    /* Table alternating rows */
+    html.dark .even\:bg-slate-50:nth-child(even) { background-color: #162032 !important; }
   </style>
   <script>
     /* Restore dark mode before React paints — prevents white flash */
