@@ -811,7 +811,7 @@ function SearchPage({ data }) {
                         ))}
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-slate-100 text-slate-700">
                       {displayRows.map((row, i) => (
                         <tr key={i} className={classNames("hover:bg-slate-50", !row.is_recent && "text-slate-400")}>
                           {rowCols.map((col) => (
