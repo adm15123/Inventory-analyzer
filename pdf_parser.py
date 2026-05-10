@@ -119,7 +119,12 @@ def _parse_lps_invoice(pdf) -> dict:
                 if line_no in seen_lines:
                     continue
                 seen_lines.add(line_no)
-                desc = re.sub(r'\s*\(\d+\)\s*$', '', m.group(3).strip())
+                raw_desc = m.group(3).strip()
+                # Strip full "(XX)", truncated "(XX", or bare "XX" pack-qty suffixes
+                desc = re.sub(r'\s*\(\d+\)\s*$', '', raw_desc)
+                desc = re.sub(r'\s+\(?\d+$', '', desc).strip()
+                # Normalise foam core pipe wording to current supplier label
+                desc = re.sub(r'\bPVCDWV\s+FOAM\s+CORE\b', 'PVC FOAMCORE', desc, flags=re.IGNORECASE)
                 items.append({
                     "item_number": m.group(2),
                     "description": desc,

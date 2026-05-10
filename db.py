@@ -456,6 +456,65 @@ def clean_lps_description_suffixes() -> None:
         print(f"[clean_lps_description_suffixes] migration skipped due to error: {e}")
 
 
+def fix_foamcore_descriptions() -> None:
+    """One-time migration: fix corrupt pack-qty suffixes and normalise foam core pipe descriptions."""
+    import re as _re
+    migration_id = "fix_foamcore_descriptions_v1"
+    ensure_sql   = "CREATE TABLE IF NOT EXISTS _migrations (id TEXT PRIMARY KEY, run_at TEXT)"
+    check_sql    = "SELECT id FROM _migrations WHERE id = ?"
+    record_sql   = "INSERT OR IGNORE INTO _migrations (id, run_at) VALUES (?, datetime('now'))"
+    fetch_sql    = "SELECT id, description FROM invoice_items WHERE supplier = 'LPS'"
+    update_sql   = "UPDATE invoice_items SET description = ? WHERE id = ?"
+
+    # Strip " 111" (bare trailing number) and " (67" (truncated open-paren + number)
+    corrupt_pattern = _re.compile(r'\s+\(?\d+$')
+    # Normalise old supplier wording for foam core pipe
+    foamcore_pattern = _re.compile(r'\bPVCDWV\s+FOAM\s+CORE\b', _re.IGNORECASE)
+
+    def _clean(desc: str) -> str:
+        d = corrupt_pattern.sub('', desc).strip()
+        d = foamcore_pattern.sub('PVC FOAMCORE', d)
+        return d
+
+    def _build_updates(rows):
+        updates = []
+        for row in rows:
+            original = row.get("description") or ""
+            cleaned  = _clean(original)
+            if cleaned != original:
+                updates.append((cleaned, row["id"]))
+        return updates
+
+    def _run_in_chunks(updates, chunk_size=50):
+        for i in range(0, len(updates), chunk_size):
+            chunk = updates[i : i + chunk_size]
+            _turso_batch([(update_sql, list(u)) for u in chunk])
+
+    try:
+        if USE_TURSO:
+            _turso_execute(ensure_sql, [])
+            if _turso_execute(check_sql, [migration_id]):
+                return
+            rows    = _turso_execute(fetch_sql, [])
+            updates = _build_updates(rows)
+            if updates:
+                _run_in_chunks(updates)
+            _turso_execute(record_sql, [migration_id])
+        else:
+            with _local_conn() as conn:
+                conn.execute(ensure_sql)
+                if conn.execute(check_sql, (migration_id,)).fetchone():
+                    return
+                rows    = [dict(r) for r in conn.execute(fetch_sql).fetchall()]
+                updates = _build_updates(rows)
+                if updates:
+                    conn.executemany(update_sql, updates)
+                conn.execute(record_sql, (migration_id,))
+        print(f"[fix_foamcore_descriptions] done")
+    except Exception as e:
+        print(f"[fix_foamcore_descriptions] migration skipped due to error: {e}")
+
+
 def save_parsed_document(parsed: dict, filename: str = "") -> int:
     """
     Insert a parsed PDF result into the DB.
