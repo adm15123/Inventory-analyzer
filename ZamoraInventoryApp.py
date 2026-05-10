@@ -185,6 +185,7 @@ SUPPLY_CODES = {
     "supply3": "LPS",
     "supply4": "BOND",
 }
+REVERSE_SUPPLY_CODES = {v: k for k, v in SUPPLY_CODES.items()}
 
 
 def _ensure_supply_loaded(supply: str):
@@ -279,13 +280,15 @@ def _search_supply_data(
         row["is_recent"] = idx < 3
         desc_counts[desc] = idx + 1
 
-    if supply != "all":
-        for row in rows:
-            desc = row.get("Description")
-            if desc:
-                row["graphUrl"] = url_for(
-                    "product_detail", description=desc, supply=supply, ref="search", query=query
-                )
+    for row in rows:
+        desc = row.get("Description")
+        if not desc:
+            continue
+        if supply == "all":
+            row_supply = REVERSE_SUPPLY_CODES.get(row.get("Supply", ""), "supply1")
+            row["graphUrl"] = url_for("product_detail", description=desc, supply=row_supply, ref="search", query=query)
+        else:
+            row["graphUrl"] = url_for("product_detail", description=desc, supply=supply, ref="search", query=query)
 
     return {"rows": rows, "columns": existing_cols, "next_page": None, "prev_page": None}
 
@@ -532,11 +535,11 @@ def search():
     results_payload = _search_supply_data(supply, query, page, per_page)
 
     supply_options = [
-        {"value": "supply1", "label": "Supply 1"},
-        {"value": "supply2", "label": "Supply 2"},
+        {"value": "supply1", "label": "Berger Plumbing Supply"},
+        {"value": "supply2", "label": "S2 Supply"},
         {"value": "supply3", "label": "Lion Plumbing Supply"},
         {"value": "supply4", "label": "Bond Plumbing Supply"},
-        {"value": "all", "label": "All Supplies"},
+        {"value": "all",     "label": "All Suppliers"},
     ]
 
     initial = {

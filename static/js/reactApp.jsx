@@ -207,6 +207,15 @@ function Table({ columns, rows, renderRow }) {
 // --------------- Layout ---------------
 function Layout({ page, navLinks, userEmail, logoutUrl, children }) {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'));
+
+  const toggleDark = () => {
+    const next = !dark;
+    setDark(next);
+    document.documentElement.classList.toggle('dark', next);
+    try { localStorage.setItem('zamora_dark', next ? '1' : '0'); } catch (e) {}
+  };
+
   return (
     <div className="min-h-screen bg-slate-100">
       <nav className="sticky top-0 z-40 border-b border-slate-200 bg-white shadow-sm">
@@ -232,6 +241,10 @@ function Layout({ page, navLinks, userEmail, logoutUrl, children }) {
             ))}
           </div>
           <div className="hidden md:flex items-center gap-3">
+            <button onClick={toggleDark} title="Toggle dark mode"
+              className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 transition text-base leading-none">
+              {dark ? "☀️" : "🌙"}
+            </button>
             {userEmail && <span className="text-xs text-slate-500 truncate max-w-[160px]">{userEmail}</span>}
             {logoutUrl && (
               <a href={logoutUrl} className="text-xs text-slate-500 hover:text-rose-600 transition">
@@ -240,13 +253,18 @@ function Layout({ page, navLinks, userEmail, logoutUrl, children }) {
             )}
           </div>
           {/* Mobile hamburger */}
-          <button
-            className="md:hidden rounded-lg p-2 text-slate-600 hover:bg-slate-100"
-            onClick={() => setMobileOpen((v) => !v)}
-            aria-label="Toggle menu"
-          >
-            {mobileOpen ? "✕" : "☰"}
-          </button>
+          <div className="md:hidden flex items-center gap-2">
+            <button onClick={toggleDark} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 transition text-base leading-none">
+              {dark ? "☀️" : "🌙"}
+            </button>
+            <button
+              className="rounded-lg p-2 text-slate-600 hover:bg-slate-100"
+              onClick={() => setMobileOpen((v) => !v)}
+              aria-label="Toggle menu"
+            >
+              {mobileOpen ? "✕" : "☰"}
+            </button>
+          </div>
         </div>
         {/* Mobile menu */}
         {mobileOpen && (
@@ -438,14 +456,20 @@ function ViewAllPage({ data }) {
 // ================================================================
 // SearchPage
 // ================================================================
+const RECENT_SEARCH_KEY = "zamora_recent_searches";
+
 function SearchPage({ data }) {
   const [supply, setSupply]       = useState(data.supply || "supply1");
   const [query, setQuery]         = useState(data.query || "");
   const [columns, setColumns]     = useState(data.columns || []);
   const [rows, setRows]           = useState(data.rows || []);
   const [loading, setLoading]     = useState(false);
-  const [addedDescs, setAddedDescs] = useState({});   // keyed by description
+  const [addedDescs, setAddedDescs] = useState({});
   const [expanded, setExpanded]   = useState(new Set());
+  const [recentSearches, setRecentSearches] = useState(() => {
+    try { return JSON.parse(localStorage.getItem(RECENT_SEARCH_KEY) || "[]"); }
+    catch { return []; }
+  });
   const debounceRef = useRef(null);
 
   const runSearch = useCallback((nextQuery, nextSupply) => {
@@ -457,7 +481,16 @@ function SearchPage({ data }) {
     url.searchParams.set("query", trimmed);
     fetch(url.toString(), { headers: { Accept: "application/json" } })
       .then((r) => r.json())
-      .then((p) => { setColumns(p.columns || []); setRows(p.rows || []); })
+      .then((p) => {
+        setColumns(p.columns || []);
+        setRows(p.rows || []);
+        try {
+          const prev    = JSON.parse(localStorage.getItem(RECENT_SEARCH_KEY) || "[]");
+          const updated = [trimmed, ...prev.filter(s => s !== trimmed)].slice(0, 10);
+          localStorage.setItem(RECENT_SEARCH_KEY, JSON.stringify(updated));
+          setRecentSearches(updated);
+        } catch {}
+      })
       .finally(() => setLoading(false));
   }, [data.searchApi]);
 
@@ -570,6 +603,24 @@ function SearchPage({ data }) {
             ))}
           </select>
         </div>
+        {/* Recent searches */}
+        {recentSearches.length > 0 && (
+          <div className="flex flex-wrap items-center gap-2 pt-1">
+            <span className="text-xs text-slate-400 font-medium">Recent:</span>
+            {recentSearches.map(s => (
+              <button key={s} type="button"
+                onClick={() => { setQuery(s); runSearch(s, supply); }}
+                className="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-600 hover:bg-sky-100 hover:text-sky-700 transition">
+                {s}
+              </button>
+            ))}
+            <button type="button"
+              onClick={() => { setRecentSearches([]); try { localStorage.removeItem(RECENT_SEARCH_KEY); } catch {} }}
+              className="text-xs text-slate-400 hover:text-rose-500 transition ml-1">
+              Clear
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Results */}
@@ -591,7 +642,12 @@ function SearchPage({ data }) {
               <div key={desc} className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
                 {/* Group header */}
                 <div className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200 flex-wrap">
-                  <span className="font-semibold text-slate-800 text-sm">{desc}</span>
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="font-semibold text-slate-800 text-sm">{desc}</span>
+                    {supply === "all" && [...new Set(groupRows.map(r => r.Supply).filter(Boolean))].map(s => (
+                      <span key={s} className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">{s}</span>
+                    ))}
+                  </div>
                   <div className="flex items-center gap-2 shrink-0">
                     {histRows.length > 0 && (
                       <button
@@ -714,11 +770,14 @@ function AnalyzePage({ data }) {
   const [sortDir, setSortDir]     = useState("desc");
   const [filter, setFilter]       = useState("changed");
   const [expandedRow, setExpandedRow] = useState(null);
+  const [preset, setPreset] = useState("90d");
 
-  const fetchData = useCallback(() => {
-    if (!startDate || !endDate) return;
+  const fetchData = useCallback((opts = {}) => {
+    const s = opts.start || startDate;
+    const e = opts.end   || endDate;
+    if (!s || !e) return;
     setLoading(true);
-    fetch(`${data.priceIntelApi}?supply=${supply}&start_date=${startDate}&end_date=${endDate}`)
+    fetch(`${data.priceIntelApi}?supply=${supply}&start_date=${s}&end_date=${e}`)
       .then(r => r.json())
       .then(d => setResults(d))
       .catch(() => setResults(null))
@@ -727,7 +786,22 @@ function AnalyzePage({ data }) {
 
   useEffect(() => { fetchData(); }, []);
 
-  const handleSubmit = (e) => { e.preventDefault(); fetchData(); };
+  const applyPreset = (p) => {
+    setPreset(p);
+    if (p === "custom") return;
+    const today = new Date();
+    const fmt   = d => d.toISOString().split('T')[0];
+    let start;
+    if      (p === "30d") start = new Date(today.getTime() - 30 * 86400000);
+    else if (p === "90d") start = new Date(today.getTime() - 90 * 86400000);
+    else if (p === "ytd") start = new Date(today.getFullYear(), 0, 1);
+    const s = fmt(start), e = fmt(today);
+    setStartDate(s);
+    setEndDate(e);
+    fetchData({ start: s, end: e });
+  };
+
+  const handleSubmit = (e) => { e.preventDefault(); setPreset("custom"); fetchData(); };
 
   const handleSort = (field) => {
     if (sortField === field) setSortDir(d => d === "desc" ? "asc" : "desc");
@@ -950,6 +1024,25 @@ function AnalyzePage({ data }) {
           <p className="mt-1 text-sm text-slate-500">
             Compare first vs. last purchase price per item. Spot what went up, what came down, and by how much.
           </p>
+          {/* Date presets */}
+          <div className="mt-3 flex flex-wrap gap-2 items-center">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">Quick:</span>
+            {[
+              { key: "30d",    label: "Last 30 days" },
+              { key: "90d",    label: "Last 90 days" },
+              { key: "ytd",    label: "This year"    },
+              { key: "custom", label: "Custom"       },
+            ].map(p => (
+              <button key={p.key} type="button" onClick={() => applyPreset(p.key)}
+                className={`rounded-full px-3 py-1 text-xs font-medium border transition ${
+                  preset === p.key
+                    ? "bg-sky-500 text-white border-sky-500"
+                    : "bg-white text-slate-600 border-slate-300 hover:border-sky-400 hover:text-sky-600"
+                }`}>
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="space-y-1">
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Supplier</label>
@@ -960,12 +1053,12 @@ function AnalyzePage({ data }) {
         </div>
         <div className="space-y-1">
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Start Date</label>
-          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+          <input type="date" value={startDate} onChange={e => { setStartDate(e.target.value); setPreset("custom"); }}
             className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200" />
         </div>
         <div className="space-y-1">
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">End Date</label>
-          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+          <input type="date" value={endDate} onChange={e => { setEndDate(e.target.value); setPreset("custom"); }}
             className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200" />
         </div>
         <div className="flex items-end gap-2">
