@@ -659,118 +659,253 @@ function SearchPage({ data }) {
 // AnalyzePage — IMPROVEMENT #12: CSV export button
 // ================================================================
 function AnalyzePage({ data }) {
-  const [supply, setSupply] = useState(data.supply || "supply1");
+  const [supply, setSupply]       = useState(data.supply || "LPS");
   const [startDate, setStartDate] = useState(data.startDate || "");
-  const [endDate, setEndDate] = useState(data.endDate || "");
-  const [columns, setColumns] = useState(data.columns || []);
-  const [rows, setRows] = useState(data.rows || []);
-  const [loading, setLoading] = useState(false);
+  const [endDate, setEndDate]     = useState(data.endDate || "");
+  const [results, setResults]     = useState(null);
+  const [loading, setLoading]     = useState(false);
+  const [search, setSearch]       = useState("");
+  const [sortField, setSortField] = useState("pct_change");
+  const [sortDir, setSortDir]     = useState("desc");
+  const [filter, setFilter]       = useState("changed");
 
-  const handleSubmit = (event) => {
-    event.preventDefault();
+  const fetchData = useCallback(() => {
+    if (!startDate || !endDate) return;
     setLoading(true);
-    fetch(data.analyzeApi || "/analyze", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ supply, start_date: startDate, end_date: endDate }),
-    })
-      .then((r) => r.json())
-      .then((p) => { setColumns(p.columns || []); setRows(p.rows || []); })
+    fetch(`${data.priceIntelApi}?supply=${supply}&start_date=${startDate}&end_date=${endDate}`)
+      .then(r => r.json())
+      .then(d => setResults(d))
+      .catch(() => setResults(null))
       .finally(() => setLoading(false));
+  }, [supply, startDate, endDate, data.priceIntelApi]);
+
+  useEffect(() => { fetchData(); }, []);
+
+  const handleSubmit = (e) => { e.preventDefault(); fetchData(); };
+
+  const handleSort = (field) => {
+    if (sortField === field) setSortDir(d => d === "desc" ? "asc" : "desc");
+    else { setSortField(field); setSortDir("desc"); }
   };
 
-  // IMPROVEMENT #12: export to CSV
+  const movers = useMemo(() => {
+    if (!results?.movers) return [];
+    let list = results.movers;
+    if (filter === "changed") list = list.filter(r => r.pct_change !== 0);
+    else if (filter === "up")   list = list.filter(r => r.pct_change > 0);
+    else if (filter === "down") list = list.filter(r => r.pct_change < 0);
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter(r =>
+        r.description.toLowerCase().includes(q) ||
+        (r.item_number || "").toLowerCase().includes(q)
+      );
+    }
+    return [...list].sort((a, b) => {
+      const va = a[sortField] ?? 0, vb = b[sortField] ?? 0;
+      return sortDir === "desc" ? vb - va : va - vb;
+    });
+  }, [results, filter, search, sortField, sortDir]);
+
+  const top5Up   = useMemo(() => results
+    ? [...results.movers].filter(r => r.pct_change > 0).sort((a, b) => b.pct_change - a.pct_change).slice(0, 5)
+    : [], [results]);
+  const top5Down = useMemo(() => results
+    ? [...results.movers].filter(r => r.pct_change < 0).sort((a, b) => a.pct_change - b.pct_change).slice(0, 5)
+    : [], [results]);
+
+  const pctColor = (pct) => {
+    if (pct > 5)  return "text-rose-600 font-semibold";
+    if (pct > 0)  return "text-orange-500";
+    if (pct < -5) return "text-emerald-600 font-semibold";
+    if (pct < 0)  return "text-emerald-500";
+    return "text-slate-400";
+  };
+  const pctBadge = (pct) => pct > 0
+    ? "bg-rose-50 ring-1 ring-rose-200 text-rose-600"
+    : pct < 0
+    ? "bg-emerald-50 ring-1 ring-emerald-200 text-emerald-600"
+    : "bg-slate-100 text-slate-400";
+
+  const SortIcon = ({ field }) => sortField !== field
+    ? <span className="ml-1 text-slate-300">↕</span>
+    : <span className="ml-1 text-sky-500">{sortDir === "desc" ? "↓" : "↑"}</span>;
+
   const handleExportCSV = () => {
-    if (!rows.length) return;
-    const header = columns.join(",");
-    const body = rows.map((row) =>
-      columns.map((col) => {
-        const val = row[col] ?? "";
-        return typeof val === "string" && val.includes(",") ? `"${val}"` : val;
-      }).join(",")
-    ).join("\n");
+    if (!movers.length) return;
+    const cols = ["description","item_number","first_price","last_price","abs_change","pct_change","first_date","last_date","purchase_count"];
+    const header = cols.join(",");
+    const body = movers.map(r => cols.map(c => {
+      const v = r[c] ?? "";
+      return typeof v === "string" && v.includes(",") ? `"${v}"` : v;
+    }).join(",")).join("\n");
     const blob = new Blob([header + "\n" + body], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `price_analysis_${supply}_${startDate}_${endDate}.csv`;
-    a.click();
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url; a.download = `price_intel_${supply}_${startDate}_to_${endDate}.csv`; a.click();
     URL.revokeObjectURL(url);
   };
 
+  const s = results?.summary;
+
   return (
     <div className="space-y-6">
-      <form
-        onSubmit={handleSubmit}
-        className="grid gap-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 lg:grid-cols-4"
-      >
+      {/* Filter bar */}
+      <form onSubmit={handleSubmit}
+        className="grid gap-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 lg:grid-cols-4">
         <div className="lg:col-span-4">
-          <h1 className="text-2xl font-semibold text-slate-900">Analyze Price Changes</h1>
+          <h1 className="text-2xl font-semibold text-slate-900">Price Intelligence</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Compare monthly price averages and surface items that changed between periods.
+            Compare first vs. last purchase price per item. Spot what went up, what came down, and by how much.
           </p>
         </div>
         <div className="space-y-1">
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Supplier</label>
-          <select
-            value={supply}
-            onChange={(e) => setSupply(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-          >
-            {(data.supplyOptions || []).map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
+          <select value={supply} onChange={e => setSupply(e.target.value)}
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200">
+            {(data.supplyOptions || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
         <div className="space-y-1">
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">Start Date</label>
-          <input
-            type="date"
-            value={startDate}
-            onChange={(e) => setStartDate(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-          />
+          <input type="date" value={startDate} onChange={e => setStartDate(e.target.value)}
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200" />
         </div>
         <div className="space-y-1">
           <label className="text-xs font-semibold uppercase tracking-wide text-slate-500">End Date</label>
-          <input
-            type="date"
-            value={endDate}
-            onChange={(e) => setEndDate(e.target.value)}
-            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200"
-          />
+          <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)}
+            className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-sky-500 focus:outline-none focus:ring-2 focus:ring-sky-200" />
         </div>
         <div className="flex items-end gap-2">
           <Button type="submit" className="flex-1" disabled={loading}>
-            {loading ? "Analyzing…" : "Analyze"}
+            {loading ? "Loading…" : "Analyze"}
           </Button>
-          {/* IMPROVEMENT #12 */}
-          {rows.length > 0 && (
-            <Button type="button" variant="secondary" onClick={handleExportCSV} title="Export to CSV">
-              ⬇ CSV
-            </Button>
+          {movers.length > 0 && (
+            <Button type="button" variant="secondary" onClick={handleExportCSV} title="Export to CSV">⬇ CSV</Button>
           )}
         </div>
       </form>
 
-      {loading ? (
-        <SkeletonRows cols={5} rows={8} />
-      ) : rows.length === 0 ? (
-        <EmptyState title="No results" description="Adjust the date range and run the analysis." />
-      ) : (
-        <Table
-          columns={columns}
-          rows={rows}
-          renderRow={(row, index) => (
-            <>
-              {columns.map((column) => (
-                <td key={`${column}-${index}`} className="whitespace-nowrap px-4 py-3 text-sm text-slate-600">
-                  {row[column] ?? ""}
-                </td>
+      {loading && <SkeletonRows cols={5} rows={8} />}
+
+      {!loading && results && (<>
+        {/* Summary cards */}
+        <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+          {[
+            { label: "Items Analyzed",  value: s.total,
+              color: "text-slate-800" },
+            { label: "Avg Price Change", value: `${s.avg_change_pct >= 0 ? "+" : ""}${s.avg_change_pct}%`,
+              color: s.avg_change_pct > 0 ? "text-rose-600" : s.avg_change_pct < 0 ? "text-emerald-600" : "text-slate-500" },
+            { label: "Price Increases",  value: s.went_up,   color: "text-rose-600" },
+            { label: "Price Decreases",  value: s.went_down,  color: "text-emerald-600" },
+          ].map(card => (
+            <div key={card.label} className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{card.label}</p>
+              <p className={`mt-1 text-3xl font-bold ${card.color}`}>{card.value}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Top movers */}
+        {(top5Up.length > 0 || top5Down.length > 0) && (
+          <div className="grid gap-6 lg:grid-cols-2">
+            {top5Up.length > 0 && (
+              <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+                <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-rose-500">Top Price Increases</h2>
+                <div className="space-y-2">
+                  {top5Up.map(r => (
+                    <div key={r.description}
+                      className="flex items-center justify-between gap-3 rounded-xl bg-rose-50 px-4 py-2.5 ring-1 ring-rose-100">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-800">{r.description}</p>
+                        <p className="text-xs text-slate-400">${r.first_price.toFixed(4)} → ${r.last_price.toFixed(4)}</p>
+                      </div>
+                      <span className="shrink-0 text-sm font-bold text-rose-600">+{r.pct_change}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {top5Down.length > 0 && (
+              <div className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
+                <h2 className="mb-3 text-xs font-semibold uppercase tracking-wide text-emerald-600">Top Price Decreases</h2>
+                <div className="space-y-2">
+                  {top5Down.map(r => (
+                    <div key={r.description}
+                      className="flex items-center justify-between gap-3 rounded-xl bg-emerald-50 px-4 py-2.5 ring-1 ring-emerald-100">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-medium text-slate-800">{r.description}</p>
+                        <p className="text-xs text-slate-400">${r.first_price.toFixed(4)} → ${r.last_price.toFixed(4)}</p>
+                      </div>
+                      <span className="shrink-0 text-sm font-bold text-emerald-600">{r.pct_change}%</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Full table */}
+        <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+          <div className="flex flex-wrap items-center gap-3 border-b border-slate-100 px-5 py-4">
+            <input type="text" placeholder="Search items…" value={search} onChange={e => setSearch(e.target.value)}
+              className="w-52 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-sky-400 focus:outline-none focus:ring-2 focus:ring-sky-100" />
+            <div className="flex overflow-hidden rounded-lg border border-slate-200 text-xs font-medium">
+              {[{key:"changed",label:"Changed"},{key:"up",label:"↑ Up"},{key:"down",label:"↓ Down"},{key:"all",label:"All"}].map(f => (
+                <button key={f.key} type="button" onClick={() => setFilter(f.key)}
+                  className={`px-3 py-1.5 transition ${filter === f.key ? "bg-sky-500 text-white" : "bg-white text-slate-600 hover:bg-slate-50"}`}>
+                  {f.label}
+                </button>
               ))}
-            </>
-          )}
-        />
+            </div>
+            <span className="ml-auto text-xs text-slate-400">{movers.length} items</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-100">
+              <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-4 py-3 text-left">Description</th>
+                  <th className="cursor-pointer select-none px-4 py-3 text-right" onClick={() => handleSort("first_price")}>First Price <SortIcon field="first_price" /></th>
+                  <th className="cursor-pointer select-none px-4 py-3 text-right" onClick={() => handleSort("last_price")}>Last Price <SortIcon field="last_price" /></th>
+                  <th className="cursor-pointer select-none px-4 py-3 text-right" onClick={() => handleSort("abs_change")}>$ Change <SortIcon field="abs_change" /></th>
+                  <th className="cursor-pointer select-none px-4 py-3 text-right" onClick={() => handleSort("pct_change")}>% Change <SortIcon field="pct_change" /></th>
+                  <th className="cursor-pointer select-none px-4 py-3 text-center" onClick={() => handleSort("purchase_count")}># Purchases <SortIcon field="purchase_count" /></th>
+                  <th className="px-4 py-3 text-left">Period</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {movers.length === 0
+                  ? <tr><td colSpan={7} className="px-4 py-10 text-center text-sm text-slate-400">No items match the current filter.</td></tr>
+                  : movers.map((r, i) => (
+                    <tr key={i} className="transition-colors hover:bg-slate-50">
+                      <td className="max-w-xs px-4 py-3">
+                        <p className="truncate text-sm font-medium text-slate-800">{r.description}</p>
+                        {r.item_number && <p className="text-xs text-slate-400">{r.item_number}</p>}
+                      </td>
+                      <td className="px-4 py-3 text-right text-sm text-slate-600">${r.first_price.toFixed(4)}</td>
+                      <td className="px-4 py-3 text-right text-sm text-slate-600">${r.last_price.toFixed(4)}</td>
+                      <td className={`px-4 py-3 text-right text-sm ${pctColor(r.pct_change)}`}>
+                        {r.abs_change >= 0 ? "+" : ""}${r.abs_change.toFixed(4)}
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <span className={`inline-block rounded-full px-2.5 py-0.5 text-xs font-bold ${pctBadge(r.pct_change)}`}>
+                          {r.pct_change >= 0 ? "+" : ""}{r.pct_change}%
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-center text-sm text-slate-500">{r.purchase_count}</td>
+                      <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-400">{r.first_date} → {r.last_date}</td>
+                    </tr>
+                  ))
+                }
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </>)}
+
+      {!loading && !results && (
+        <EmptyState title="No data yet" description="Select a supplier and date range, then click Analyze." />
       )}
     </div>
   );

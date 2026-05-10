@@ -658,65 +658,95 @@ def graph_data():
     prices = item_df["Price per Unit"].tolist()
     return jsonify({"dates": dates, "prices": prices})
 
-@app.route("/analyze", methods=["GET", "POST"])
+@app.route("/analyze")
 @login_required
 def analyze():
-    """
-    Analyze price changes for items across a custom date range from the selected supply.
-    """
-    supply = request.args.get("supply", "supply1")
-    _ensure_supply_loaded(supply)
-    current_df = du.get_current_dataframe(supply)
-    if current_df is None:
-        flash("⚠ Please ensure the Excel file for the selected supply is available.")
-        return redirect(url_for("index"))
-
-    if request.method == "POST" and request.is_json:
-        data = request.get_json(force=True) or {}
-        supply_value = data.get("supply", supply)
-        start_date = data.get("start_date")
-        end_date = data.get("end_date")
-        result_payload = _analyze_price_changes(supply_value, start_date, end_date)
-        return jsonify(result_payload)
-
-    default_end = datetime.today().date()
-    default_start = default_end - timedelta(days=30)
-
-    if request.method == "POST":
-        supply = request.form.get("supply", supply)
-        start_date = request.form.get("start_date") or default_start.isoformat()
-        end_date = request.form.get("end_date") or default_end.isoformat()
-        result_payload = _analyze_price_changes(supply, start_date, end_date)
-        if not result_payload.get("rows"):
-            flash("⚠ No price changes found in the selected range.")
-    else:
-        start_date = request.args.get("start_date")
-        end_date = request.args.get("end_date")
-        if start_date and end_date:
-            result_payload = _analyze_price_changes(supply, start_date, end_date)
-        else:
-            start_date = default_start.isoformat()
-            end_date = default_end.isoformat()
-            result_payload = {"rows": [], "columns": []}
-
+    default_end   = datetime.today().date()
+    default_start = (default_end - timedelta(days=90)).isoformat()
     supply_options = [
-        {"value": "supply1", "label": "Supply 1"},
-        {"value": "supply2", "label": "Supply 2"},
-        {"value": "supply3", "label": "Lion Plumbing Supply"},
-        {"value": "supply4", "label": "Bond Plumbing Supply"},
+        {"value": "LPS",  "label": "Lion Plumbing Supply"},
+        {"value": "BPS",  "label": "Berger Plumbing Supply"},
+        {"value": "S2",   "label": "S2 Supply"},
+        {"value": "BOND", "label": "Bond Plumbing Supply"},
+        {"value": "all",  "label": "All Suppliers"},
     ]
-
     initial = {
-        "supply": supply,
-        "startDate": start_date,
-        "endDate": end_date,
-        "columns": result_payload.get("columns", []),
-        "rows": result_payload.get("rows", []),
+        "supply":        "LPS",
+        "startDate":     default_start,
+        "endDate":       default_end.isoformat(),
         "supplyOptions": supply_options,
-        "analyzeApi": url_for("analyze"),
+        "priceIntelApi": url_for("price_intelligence_api"),
     }
-
     return render_app("analyze", initial)
+
+
+@app.route("/api/price-intelligence")
+@login_required
+def price_intelligence_api():
+    supply     = request.args.get("supply", "LPS")
+    start_date = request.args.get("start_date")
+    end_date   = request.args.get("end_date")
+
+    df = get_catalog_df()
+    empty_summary = {"total": 0, "went_up": 0, "went_down": 0, "flat": 0, "avg_change_pct": 0}
+    if df is None or df.empty:
+        return jsonify({"movers": [], "summary": empty_summary})
+
+    wdf = df.copy()
+    if supply != "all":
+        wdf = wdf[wdf["Supply"] == supply]
+
+    wdf["Date"] = pd.to_datetime(wdf["Date"], errors="coerce")
+    wdf = wdf.dropna(subset=["Date", "Price per Unit"])
+    wdf = wdf[wdf["Price per Unit"] > 0]
+
+    if start_date:
+        wdf = wdf[wdf["Date"] >= pd.to_datetime(start_date)]
+    if end_date:
+        wdf = wdf[wdf["Date"] <= pd.to_datetime(end_date)]
+
+    if wdf.empty:
+        return jsonify({"movers": [], "summary": empty_summary})
+
+    movers = []
+    for desc, grp in wdf.groupby("Description"):
+        grp         = grp.sort_values("Date")
+        first_row   = grp.iloc[0]
+        last_row    = grp.iloc[-1]
+        first_price = float(first_row["Price per Unit"])
+        last_price  = float(last_row["Price per Unit"])
+        if first_price <= 0:
+            continue
+        pct_change = round(((last_price - first_price) / first_price) * 100, 2)
+        abs_change = round(last_price - first_price, 4)
+        movers.append({
+            "description":    desc,
+            "item_number":    str(first_row.get("Item Number") or ""),
+            "first_price":    round(first_price, 4),
+            "last_price":     round(last_price, 4),
+            "abs_change":     abs_change,
+            "pct_change":     pct_change,
+            "first_date":     first_row["Date"].strftime("%Y-%m-%d"),
+            "last_date":      last_row["Date"].strftime("%Y-%m-%d"),
+            "purchase_count": len(grp),
+        })
+
+    total     = len(movers)
+    went_up   = sum(1 for m in movers if m["pct_change"] > 0)
+    went_down = sum(1 for m in movers if m["pct_change"] < 0)
+    avg_chg   = round(sum(m["pct_change"] for m in movers) / total, 2) if total else 0
+    movers.sort(key=lambda x: x["pct_change"], reverse=True)
+
+    return jsonify({
+        "movers": movers,
+        "summary": {
+            "total":          total,
+            "went_up":        went_up,
+            "went_down":      went_down,
+            "flat":           total - went_up - went_down,
+            "avg_change_pct": avg_chg,
+        },
+    })
 
 @app.route("/product_detail", methods=["GET"])
 @login_required
