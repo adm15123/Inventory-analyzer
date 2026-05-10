@@ -278,11 +278,10 @@ function Layout({ page, navLinks, userEmail, logoutUrl, children }) {
 function HomePage({ data }) {
   const stats = data.stats || {};
   const statCards = [
-    { label: "Supply 1 Items", value: stats.supply1Count ?? "—", color: "sky" },
-    { label: "Supply 2 Items", value: stats.supply2Count ?? "—", color: "violet" },
-    { label: "Lion Supply Items", value: stats.supply3Count ?? "—", color: "amber" },
-    { label: "Bond Supply Items", value: stats.supply4Count ?? "—", color: "emerald" },
-    { label: "Templates Saved", value: stats.templateCount ?? "—", color: "rose" },
+    { label: "Berger Supply Items", value: stats.supply1Count ?? "—", color: "sky" },
+    { label: "S2 Supply Items",     value: stats.supply2Count ?? "—", color: "violet" },
+    { label: "Lion Supply Items",   value: stats.supply3Count ?? "—", color: "amber" },
+    { label: "Bond Supply Items",   value: stats.supply4Count ?? "—", color: "emerald" },
   ];
 
   const colorMap = {
@@ -304,7 +303,7 @@ function HomePage({ data }) {
       </div>
 
       {/* Stat cards */}
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {statCards.map((card) => (
           <div
             key={card.label}

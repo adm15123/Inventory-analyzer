@@ -420,8 +420,6 @@ def favicon():
 @app.route("/")
 @login_required
 def index():
-    template_count = count_templates_db(session.get("email", ""), session.get("role", "user"))
-
     _df = get_catalog_df()
     def _unique_count(code):
         if _df is None or _df.empty:
@@ -433,19 +431,18 @@ def index():
         "supply2Count": _unique_count("S2"),
         "supply3Count": _unique_count("LPS"),
         "supply4Count": _unique_count("BOND"),
-        "templateCount": template_count,
     }
 
     initial = {
         "pageTitle": "Zamora Plumbing Corp Material Analyzer",
         "stats": stats,
         "actions": [
-            {"label": "View All Content", "href": url_for("view_all"), "variant": "secondary"},
-            {"label": "Search Description", "href": url_for("search"), "variant": "secondary"},
-            {"label": "Analyze Price Changes", "href": url_for("analyze"), "variant": "secondary"},
-            {"label": "Templates", "href": url_for("templates_list"), "variant": "secondary"},
-            {"label": "Material List", "href": url_for("material_list"), "variant": "primary"},
-            {"label": "Upload PDF", "href": url_for("upload_pdf"), "variant": "secondary"},
+            {"label": "View All Content",      "href": url_for("view_all"),      "variant": "secondary"},
+            {"label": "Search Description",    "href": url_for("search"),         "variant": "secondary"},
+            {"label": "Analyze Price Changes", "href": url_for("analyze"),        "variant": "secondary"},
+            {"label": "Estimates",             "href": url_for("estimates_list"), "variant": "secondary"},
+            {"label": "Material List",         "href": url_for("material_list"),  "variant": "primary"},
+            {"label": "Upload PDF",            "href": url_for("upload_pdf"),     "variant": "secondary"},
         ],
     }
     return render_app("home", initial)
