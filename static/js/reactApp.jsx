@@ -960,34 +960,37 @@ function AnalyzePage({ data }) {
                         {isOpen && (
                           <tr className="bg-sky-50">
                             <td colSpan={7} className="px-6 pb-5 pt-0">
-                              <div className="border-t border-sky-100 pt-4 space-y-4">
-                                {/* First / Last cards */}
-                                <div className="grid grid-cols-2 gap-4">
-                                  <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">First Purchase</p>
-                                    <p className="mt-2 text-2xl font-bold text-slate-800">${r.first_price.toFixed(4)}</p>
-                                    <p className="mt-1 text-sm text-slate-600">{r.first_date}</p>
-                                    <p className="text-xs text-slate-400">Invoice #{r.first_invoice_no || "—"}</p>
+                              <div className="border-t border-sky-100 pt-4">
+                                <div className="grid grid-cols-3 gap-4 items-stretch">
+                                  {/* Left column — First & Last cards stacked */}
+                                  <div className="col-span-1 flex flex-col gap-4">
+                                    <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">First Purchase</p>
+                                      <p className="mt-2 text-2xl font-bold text-slate-800">${r.first_price.toFixed(4)}</p>
+                                      <p className="mt-1 text-sm text-slate-600">{r.first_date}</p>
+                                      <p className="text-xs text-slate-400">Invoice #{r.first_invoice_no || "—"}</p>
+                                    </div>
+                                    <div className={`rounded-xl bg-white p-4 ring-1 ${r.pct_change > 0 ? "ring-rose-200" : r.pct_change < 0 ? "ring-emerald-200" : "ring-slate-200"}`}>
+                                      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Last Purchase</p>
+                                      <p className={`mt-2 text-2xl font-bold ${r.pct_change > 0 ? "text-rose-600" : r.pct_change < 0 ? "text-emerald-600" : "text-slate-800"}`}>
+                                        ${r.last_price.toFixed(4)}
+                                        <span className="ml-2 text-sm font-semibold">{r.pct_change >= 0 ? "+" : ""}{r.pct_change}%</span>
+                                      </p>
+                                      <p className="mt-1 text-sm text-slate-600">{r.last_date}</p>
+                                      <p className="text-xs text-slate-400">Invoice #{r.last_invoice_no || "—"}</p>
+                                    </div>
                                   </div>
-                                  <div className={`rounded-xl bg-white p-4 ring-1 ${r.pct_change > 0 ? "ring-rose-200" : r.pct_change < 0 ? "ring-emerald-200" : "ring-slate-200"}`}>
-                                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Last Purchase</p>
-                                    <p className={`mt-2 text-2xl font-bold ${r.pct_change > 0 ? "text-rose-600" : r.pct_change < 0 ? "text-emerald-600" : "text-slate-800"}`}>
-                                      ${r.last_price.toFixed(4)}
-                                      <span className="ml-2 text-sm font-semibold">{r.pct_change >= 0 ? "+" : ""}{r.pct_change}%</span>
+                                  {/* Right column — chart */}
+                                  <div className="col-span-2 rounded-xl bg-white p-4 ring-1 ring-slate-200 flex flex-col">
+                                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
+                                      Price History — {r.history?.length || 0} purchases
                                     </p>
-                                    <p className="mt-1 text-sm text-slate-600">{r.last_date}</p>
-                                    <p className="text-xs text-slate-400">Invoice #{r.last_invoice_no || "—"}</p>
+                                    {r.history?.length > 1
+                                      ? <div className="flex-1"><PriceHistoryChart history={r.history} pctChange={r.pct_change} /></div>
+                                      : <p className="text-sm text-slate-400 my-auto">Only one purchase recorded — no trend to display.</p>
+                                    }
                                   </div>
                                 </div>
-                                {/* Price history chart */}
-                                {r.history?.length > 1 && (
-                                  <div className="rounded-xl bg-white p-4 ring-1 ring-slate-200">
-                                    <p className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-400">
-                                      Price History — {r.history.length} purchases
-                                    </p>
-                                    <PriceHistoryChart history={r.history} pctChange={r.pct_change} />
-                                  </div>
-                                )}
                               </div>
                             </td>
                           </tr>
