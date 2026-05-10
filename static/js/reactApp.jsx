@@ -685,7 +685,7 @@ function AnalyzePage({ data }) {
 
   const handleSort = (field) => {
     if (sortField === field) setSortDir(d => d === "desc" ? "asc" : "desc");
-    else { setSortField(field); setSortDir("desc"); }
+    else { setSortField(field); setSortDir(field === "description" ? "asc" : "desc"); }
   };
 
   const movers = useMemo(() => {
@@ -702,7 +702,11 @@ function AnalyzePage({ data }) {
       );
     }
     return [...list].sort((a, b) => {
-      const va = a[sortField] ?? 0, vb = b[sortField] ?? 0;
+      const va = a[sortField] ?? "", vb = b[sortField] ?? "";
+      if (typeof va === "string" || typeof vb === "string") {
+        const cmp = String(va).localeCompare(String(vb));
+        return sortDir === "desc" ? -cmp : cmp;
+      }
       return sortDir === "desc" ? vb - va : va - vb;
     });
   }, [results, filter, search, sortField, sortDir]);
@@ -865,7 +869,7 @@ function AnalyzePage({ data }) {
             <table className="min-w-full divide-y divide-slate-100">
               <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-4 py-3 text-left">Description</th>
+                  <th className="cursor-pointer select-none px-4 py-3 text-left" onClick={() => handleSort("description")}>Description <SortIcon field="description" /></th>
                   <th className="cursor-pointer select-none px-4 py-3 text-right" onClick={() => handleSort("first_price")}>First Price <SortIcon field="first_price" /></th>
                   <th className="cursor-pointer select-none px-4 py-3 text-right" onClick={() => handleSort("last_price")}>Last Price <SortIcon field="last_price" /></th>
                   <th className="cursor-pointer select-none px-4 py-3 text-right" onClick={() => handleSort("abs_change")}>$ Change <SortIcon field="abs_change" /></th>
