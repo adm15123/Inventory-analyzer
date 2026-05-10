@@ -470,7 +470,28 @@ function SearchPage({ data }) {
     try { return JSON.parse(localStorage.getItem(RECENT_SEARCH_KEY) || "[]"); }
     catch { return []; }
   });
+  const [pinnedItems, setPinnedItems] = useState([]);
   const debounceRef = useRef(null);
+
+  const handlePin = (desc, groupRows) => {
+    const isPinned = pinnedItems.some(p => p.desc === desc);
+    if (isPinned) { setPinnedItems(prev => prev.filter(p => p.desc !== desc)); return; }
+    if (pinnedItems.length >= 3) return;
+    const sorted    = [...groupRows].sort((a, b) => new Date(b.Date || 0) - new Date(a.Date || 0));
+    const lastRow   = sorted[0];
+    const firstRow  = sorted[sorted.length - 1];
+    const suppliers = [...new Set(groupRows.map(r => r.Supply).filter(Boolean))];
+    setPinnedItems(prev => [...prev, {
+      desc,
+      suppliers,
+      lastPrice:     parseFloat(lastRow?.["Price per Unit"] || 0),
+      lastDate:      lastRow?.["Date"] || "",
+      firstPrice:    parseFloat(firstRow?.["Price per Unit"] || 0),
+      firstDate:     firstRow?.["Date"] || "",
+      purchaseCount: groupRows.length,
+      graphUrl:      groupRows[0]?.graphUrl || null,
+    }]);
+  };
 
   const runSearch = useCallback((nextQuery, nextSupply) => {
     const trimmed = nextQuery.trim();
@@ -623,6 +644,87 @@ function SearchPage({ data }) {
         )}
       </div>
 
+      {/* ── Pin tray ── */}
+      {pinnedItems.length > 0 && (
+        <div className="rounded-2xl bg-white shadow-sm ring-1 ring-amber-300 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-700">
+              📌 Comparing {pinnedItems.length} item{pinnedItems.length > 1 ? "s" : ""}
+              <span className="ml-2 text-xs font-normal text-slate-400">({pinnedItems.length}/3 slots used)</span>
+            </h2>
+            <button onClick={() => setPinnedItems([])}
+              className="text-xs text-slate-400 hover:text-rose-500 transition">
+              Clear all
+            </button>
+          </div>
+
+          {/* Pinned cards */}
+          <div className={`grid gap-3 ${pinnedItems.length === 1 ? "grid-cols-1" : pinnedItems.length === 2 ? "grid-cols-2" : "grid-cols-3"}`}>
+            {pinnedItems.map((item) => {
+              const cheapest   = pinnedItems.length > 1 ? pinnedItems.reduce((a, b) => a.lastPrice <= b.lastPrice ? a : b) : null;
+              const isCheapest = cheapest && item.lastPrice === cheapest.lastPrice && pinnedItems.length > 1;
+              return (
+                <div key={item.desc} className={`rounded-xl p-4 ring-1 ${isCheapest ? "ring-emerald-400 bg-emerald-50" : "ring-slate-200 bg-slate-50"}`}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-slate-800 leading-snug">{item.desc}</p>
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {item.suppliers.map(s => (
+                          <span key={s} className="rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">{s}</span>
+                        ))}
+                        {isCheapest && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-700">Cheapest</span>
+                        )}
+                      </div>
+                    </div>
+                    <button onClick={() => setPinnedItems(prev => prev.filter(p => p.desc !== item.desc))}
+                      className="shrink-0 text-slate-400 hover:text-rose-500 text-xl leading-none transition">×</button>
+                  </div>
+                  <p className="mt-3 text-2xl font-bold text-slate-900">${item.lastPrice.toFixed(4)}</p>
+                  <p className="mt-0.5 text-xs text-slate-400">Last: {item.lastDate} · {item.purchaseCount} purchase{item.purchaseCount !== 1 ? "s" : ""}</p>
+                  <p className="mt-1 text-xs text-slate-500">First: ${item.firstPrice.toFixed(4)} on {item.firstDate}</p>
+                  {item.graphUrl && (
+                    <a href={item.graphUrl} className="mt-2 inline-block text-xs text-sky-600 hover:underline">View history →</a>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Comparison summary */}
+          {pinnedItems.length === 2 && (() => {
+            const [a, b] = pinnedItems;
+            const diff   = Math.abs(a.lastPrice - b.lastPrice);
+            const pct    = a.lastPrice && b.lastPrice ? ((diff / Math.max(a.lastPrice, b.lastPrice)) * 100).toFixed(1) : "0.0";
+            const cheaper = a.lastPrice <= b.lastPrice ? a : b;
+            const pricier  = a.lastPrice <= b.lastPrice ? b : a;
+            return (
+              <p className="text-center text-sm border-t border-slate-100 pt-3">
+                {diff === 0
+                  ? <span className="text-slate-500">Both suppliers have the same price.</span>
+                  : <><span className="font-semibold text-emerald-600">{cheaper.suppliers[0]}</span>
+                      <span className="text-slate-600"> is </span>
+                      <span className="font-bold text-slate-800">${diff.toFixed(4)} ({pct}%) cheaper</span>
+                      <span className="text-slate-600"> than </span>
+                      <span className="font-semibold text-rose-500">{pricier.suppliers[0]}</span></>
+                }
+              </p>
+            );
+          })()}
+
+          {pinnedItems.length === 3 && (() => {
+            const sorted = [...pinnedItems].sort((a, b) => a.lastPrice - b.lastPrice);
+            return (
+              <div className="border-t border-slate-100 pt-3 flex justify-center gap-6 text-sm flex-wrap">
+                <span><span className="text-slate-500">Best: </span><span className="font-bold text-emerald-600">{sorted[0].suppliers[0]} ${sorted[0].lastPrice.toFixed(4)}</span></span>
+                <span><span className="text-slate-500">Mid: </span><span className="font-semibold text-slate-700">{sorted[1].suppliers[0]} ${sorted[1].lastPrice.toFixed(4)}</span></span>
+                <span><span className="text-slate-500">Highest: </span><span className="font-semibold text-rose-500">{sorted[2].suppliers[0]} ${sorted[2].lastPrice.toFixed(4)}</span></span>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Results */}
       {loading ? (
         <SkeletonRows cols={(rowCols.length || 4) + 1} rows={6} />
@@ -631,15 +733,17 @@ function SearchPage({ data }) {
       ) : (
         <div className="space-y-3">
           {groups.map(([desc, groupRows]) => {
-            const recentRows = groupRows.filter((r) => r.is_recent);
-            const histRows   = groupRows.filter((r) => !r.is_recent);
-            const isExpanded = expanded.has(desc);
+            const recentRows  = groupRows.filter((r) => r.is_recent);
+            const histRows    = groupRows.filter((r) => !r.is_recent);
+            const isExpanded  = expanded.has(desc);
             const displayRows = isExpanded ? groupRows : recentRows;
-            const graphUrl   = groupRows[0]?.graphUrl;
-            const isAdded    = !!addedDescs[desc];
+            const graphUrl    = groupRows[0]?.graphUrl;
+            const isAdded     = !!addedDescs[desc];
+            const isPinned    = pinnedItems.some(p => p.desc === desc);
+            const canPin      = pinnedItems.length < 3 || isPinned;
 
             return (
-              <div key={desc} className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
+              <div key={desc} className={`rounded-2xl bg-white shadow-sm ring-1 overflow-hidden transition ${isPinned ? "ring-amber-400" : "ring-slate-200"}`}>
                 {/* Group header */}
                 <div className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200 flex-wrap">
                   <div className="flex items-center gap-2 min-w-0">
@@ -649,6 +753,23 @@ function SearchPage({ data }) {
                     ))}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {supply === "all" && (
+                      <button
+                        onClick={() => handlePin(desc, groupRows)}
+                        disabled={!canPin}
+                        title={!canPin ? "Unpin an item to pin another" : isPinned ? "Unpin" : "Pin for comparison"}
+                        className={classNames(
+                          "rounded-lg px-3 py-1 text-xs font-medium border transition",
+                          isPinned
+                            ? "bg-amber-100 border-amber-300 text-amber-700 hover:bg-amber-200"
+                            : canPin
+                            ? "border-slate-300 text-slate-600 hover:bg-slate-100"
+                            : "border-slate-200 text-slate-300 cursor-not-allowed"
+                        )}
+                      >
+                        {isPinned ? "📌 Pinned" : "📌 Pin"}
+                      </button>
+                    )}
                     {histRows.length > 0 && (
                       <button
                         onClick={() => toggleExpanded(desc)}
