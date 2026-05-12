@@ -46,6 +46,9 @@ from db import (
     add_attachment, get_attachments, delete_attachment, delete_attachments_for_estimate,
     get_fixture_types, add_fixture_type, search_fixture_catalog_db,
     sync_fixture_catalog, clear_fixture_usage, search_items,
+    get_all_kits, get_kit_with_members, create_kit, rename_kit, delete_kit,
+    add_kit_member, remove_kit_member,
+    add_fixture_spec, get_fixture_specs, delete_fixture_spec,
 )
 import r2_utils
 import tempfile
@@ -573,6 +576,7 @@ def api_search():
             return jsonify({"columns": [], "rows": []})
         fc_rows = search_fixture_catalog_db(query.strip(), limit=100)
         formatted = [{
+            "catalog_id":     r.get("id"),
             "Description":    r.get("description", ""),
             "Item Number":    r.get("item_number", ""),
             "Fixture Type":   r.get("fixture_type", ""),
@@ -582,6 +586,9 @@ def api_search():
             "Invoice No.":    r.get("invoice_no", ""),
             "Date":           r.get("date", ""),
             "Used In":        r.get("used_in") or "",
+            "kits":           r.get("kits", []),
+            "spec_count":     r.get("spec_count", 0),
+            "is_recent":      True,
         } for r in fc_rows]
         return jsonify({
             "columns": ["Description", "Item Number", "Fixture Type", "Supply",
@@ -1718,6 +1725,113 @@ def api_fixture_supplier_search():
         if desc not in seen:
             seen[desc] = row
     return jsonify(list(seen.values())[:20])
+
+
+# ── Fixture Kits ──────────────────────────────────────────────────────────────
+
+@app.route("/api/fixture-kits", methods=["GET", "POST"])
+@login_required
+def api_fixture_kits():
+    if request.method == "GET":
+        return jsonify({"kits": get_all_kits()})
+    data = request.get_json(force=True, silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"ok": False, "error": "Kit name required"}), 400
+    kit_id = create_kit(name)
+    return jsonify({"ok": True, "kit_id": kit_id})
+
+
+@app.route("/api/fixture-kits/members/<int:member_id>", methods=["DELETE"])
+@login_required
+def api_fixture_kit_member_delete(member_id):
+    remove_kit_member(member_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/fixture-kits/<int:kit_id>", methods=["GET", "PUT", "DELETE"])
+@login_required
+def api_fixture_kit_detail(kit_id):
+    if request.method == "GET":
+        result = get_kit_with_members(kit_id)
+        if result is None:
+            return jsonify({"error": "Kit not found"}), 404
+        return jsonify(result)
+    if request.method == "PUT":
+        data = request.get_json(force=True, silent=True) or {}
+        name = (data.get("name") or "").strip()
+        if not name:
+            return jsonify({"ok": False, "error": "Name required"}), 400
+        rename_kit(kit_id, name)
+        return jsonify({"ok": True})
+    # DELETE
+    delete_kit(kit_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/fixture-kits/<int:kit_id>/members", methods=["POST"])
+@login_required
+def api_fixture_kit_add_member(kit_id):
+    data = request.get_json(force=True, silent=True) or {}
+    catalog_id = data.get("catalog_id")
+    role = (data.get("role") or "").strip()
+    if not catalog_id:
+        return jsonify({"ok": False, "error": "catalog_id required"}), 400
+    member_id = add_kit_member(kit_id, int(catalog_id), role)
+    return jsonify({"ok": True, "member_id": member_id})
+
+
+# ── Fixture Specs ──────────────────────────────────────────────────────────────
+
+@app.route("/api/fixture-specs/upload", methods=["POST"])
+@login_required
+def api_fixture_spec_upload():
+    if not r2_utils.ENABLED:
+        return jsonify({"ok": False, "error": "R2 not configured"}), 503
+    catalog_id = request.form.get("catalog_id", "").strip()
+    if not catalog_id:
+        return jsonify({"ok": False, "error": "Missing catalog_id"}), 400
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"ok": False, "error": "No file"}), 400
+    if f.content_type not in ALLOWED_ATTACHMENT_TYPES:
+        return jsonify({"ok": False, "error": "File type not allowed"}), 400
+    f.seek(0, 2)
+    if f.tell() / (1024 * 1024) > MAX_ATTACHMENT_MB:
+        return jsonify({"ok": False, "error": f"File exceeds {MAX_ATTACHMENT_MB} MB limit"}), 400
+    f.seek(0)
+    safe_name = secure_filename(f.filename)
+    key = f"fixture-specs/{catalog_id}/{uuid.uuid4().hex}_{safe_name}"
+    r2_utils.upload_file(f.stream, key, f.content_type)
+    spec_id = add_fixture_spec(int(catalog_id), safe_name, f.content_type, key)
+    url = r2_utils.presigned_url(key)
+    return jsonify({"ok": True, "id": spec_id, "file_name": safe_name, "file_type": f.content_type, "url": url})
+
+
+@app.route("/api/fixture-specs")
+@login_required
+def api_fixture_spec_list():
+    catalog_id = request.args.get("catalog_id", "").strip()
+    if not catalog_id:
+        return jsonify({"ok": False, "error": "Missing catalog_id"}), 400
+    rows = get_fixture_specs(int(catalog_id))
+    if r2_utils.ENABLED:
+        for row in rows:
+            row["url"] = r2_utils.presigned_url(row.pop("r2_key"))
+    else:
+        for row in rows:
+            row["url"] = ""
+            row.pop("r2_key", None)
+    return jsonify({"ok": True, "specs": rows})
+
+
+@app.route("/api/fixture-specs/<int:spec_id>", methods=["DELETE"])
+@login_required
+def api_fixture_spec_delete(spec_id):
+    key = delete_fixture_spec(spec_id)
+    if key and r2_utils.ENABLED:
+        r2_utils.delete_file(key)
+    return jsonify({"ok": True})
 
 
 @app.route("/api/material_list_names")

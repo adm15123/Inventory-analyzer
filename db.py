@@ -407,7 +407,37 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_fusage_est ON fixture_usage (estimate_name);
 
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_fusage_fid_est ON fixture_usage (fixture_id, estimate_name)
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_fusage_fid_est ON fixture_usage (fixture_id, estimate_name);
+
+        CREATE TABLE IF NOT EXISTS fixture_kits (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            name       TEXT NOT NULL,
+            created_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE TABLE IF NOT EXISTS fixture_kit_members (
+            id         INTEGER PRIMARY KEY AUTOINCREMENT,
+            kit_id     INTEGER NOT NULL REFERENCES fixture_kits(id) ON DELETE CASCADE,
+            catalog_id INTEGER NOT NULL REFERENCES fixture_catalog(id) ON DELETE CASCADE,
+            role       TEXT DEFAULT '',
+            sort_order INTEGER DEFAULT 0,
+            UNIQUE (kit_id, catalog_id)
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_fkm_kit ON fixture_kit_members (kit_id);
+
+        CREATE INDEX IF NOT EXISTS idx_fkm_cat ON fixture_kit_members (catalog_id);
+
+        CREATE TABLE IF NOT EXISTS fixture_specs (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            catalog_id  INTEGER NOT NULL REFERENCES fixture_catalog(id) ON DELETE CASCADE,
+            file_name   TEXT NOT NULL,
+            file_type   TEXT NOT NULL,
+            r2_key      TEXT NOT NULL,
+            uploaded_at TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_fspecs_cat ON fixture_specs (catalog_id)
     """
 
     if USE_TURSO:
@@ -1501,23 +1531,45 @@ def add_fixture_type(name: str) -> None:
             conn.execute(sql, (name,))
 
 
+def _parse_kit_memberships(s: str) -> list[dict]:
+    if not s:
+        return []
+    result = []
+    for entry in s.split("\x1f"):
+        parts = entry.split("\x1e", 2)
+        if len(parts) == 3:
+            try:
+                result.append({"member_id": int(parts[0]), "kit_id": int(parts[1]), "kit_name": parts[2]})
+            except ValueError:
+                pass
+    return result
+
+
 def search_fixture_catalog_db(q: str, limit: int = 50) -> list[dict]:
     sql = """
         SELECT
             fc.id, fc.item_number, fc.description, fc.fixture_type,
             fc.supplier, fc.price_per_unit, fc.unit, fc.invoice_no, fc.date,
             (SELECT GROUP_CONCAT(estimate_name, ', ')
-             FROM fixture_usage WHERE fixture_id = fc.id) AS used_in
+             FROM fixture_usage WHERE fixture_id = fc.id) AS used_in,
+            (SELECT GROUP_CONCAT(fkm.id || char(30) || fk.id || char(30) || fk.name, char(31))
+             FROM fixture_kit_members fkm
+             JOIN fixture_kits fk ON fk.id = fkm.kit_id
+             WHERE fkm.catalog_id = fc.id) AS kit_memberships,
+            (SELECT COUNT(*) FROM fixture_specs WHERE catalog_id = fc.id) AS spec_count
         FROM fixture_catalog fc
         WHERE fc.description LIKE '%' || ? || '%'
         ORDER BY fc.description
         LIMIT ?
     """
     if USE_TURSO:
-        return _turso_execute(sql, [q, limit])
+        rows = _turso_execute(sql, [q, limit])
     else:
         with _local_conn() as conn:
-            return [dict(r) for r in conn.execute(sql, (q, limit)).fetchall()]
+            rows = [dict(r) for r in conn.execute(sql, (q, limit)).fetchall()]
+    for r in rows:
+        r["kits"] = _parse_kit_memberships(r.pop("kit_memberships", None) or "")
+    return rows
 
 
 def clear_fixture_usage(estimate_name: str) -> None:
@@ -1621,6 +1673,140 @@ def sync_fixture_catalog(estimate_name: str, fixture_packages: list) -> None:
                     ))
                     fid = cur.lastrowid
                 conn.execute(ins_usage, (fid, estimate_name, e["pkg_title"]))
+
+
+def get_all_kits() -> list[dict]:
+    sql = """
+        SELECT fk.id, fk.name, COUNT(fkm.id) AS member_count
+        FROM fixture_kits fk
+        LEFT JOIN fixture_kit_members fkm ON fkm.kit_id = fk.id
+        GROUP BY fk.id
+        ORDER BY fk.name
+    """
+    if USE_TURSO:
+        return _turso_execute(sql)
+    else:
+        with _local_conn() as conn:
+            return [dict(r) for r in conn.execute(sql).fetchall()]
+
+
+def get_kit_with_members(kit_id: int) -> dict | None:
+    kit_sql = "SELECT id, name FROM fixture_kits WHERE id = ?"
+    mem_sql = """
+        SELECT fkm.id AS member_id, fkm.role, fkm.sort_order,
+               fc.id AS catalog_id, fc.description, fc.item_number,
+               fc.supplier, fc.price_per_unit, fc.unit, fc.fixture_type
+        FROM fixture_kit_members fkm
+        JOIN fixture_catalog fc ON fc.id = fkm.catalog_id
+        WHERE fkm.kit_id = ?
+        ORDER BY fkm.sort_order, fkm.id
+    """
+    if USE_TURSO:
+        kits = _turso_execute(kit_sql, [kit_id])
+        if not kits:
+            return None
+        return {"kit": kits[0], "members": _turso_execute(mem_sql, [kit_id])}
+    else:
+        with _local_conn() as conn:
+            kit = conn.execute(kit_sql, (kit_id,)).fetchone()
+            if not kit:
+                return None
+            members = [dict(r) for r in conn.execute(mem_sql, (kit_id,)).fetchall()]
+            return {"kit": dict(kit), "members": members}
+
+
+def create_kit(name: str) -> int | None:
+    sql = "INSERT INTO fixture_kits (name) VALUES (?)"
+    if USE_TURSO:
+        _turso_execute(sql, [name])
+        rows = _turso_execute(
+            "SELECT id FROM fixture_kits WHERE name = ? ORDER BY id DESC LIMIT 1", [name]
+        )
+        return rows[0]["id"] if rows else None
+    else:
+        with _local_conn() as conn:
+            return conn.execute(sql, (name,)).lastrowid
+
+
+def rename_kit(kit_id: int, name: str) -> None:
+    sql = "UPDATE fixture_kits SET name = ? WHERE id = ?"
+    if USE_TURSO:
+        _turso_execute(sql, [name, kit_id])
+    else:
+        with _local_conn() as conn:
+            conn.execute(sql, (name, kit_id))
+
+
+def delete_kit(kit_id: int) -> None:
+    sql = "DELETE FROM fixture_kits WHERE id = ?"
+    if USE_TURSO:
+        _turso_execute(sql, [kit_id])
+    else:
+        with _local_conn() as conn:
+            conn.execute(sql, (kit_id,))
+
+
+def add_kit_member(kit_id: int, catalog_id: int, role: str = "") -> int | None:
+    sql = "INSERT OR IGNORE INTO fixture_kit_members (kit_id, catalog_id, role) VALUES (?, ?, ?)"
+    sel = "SELECT id FROM fixture_kit_members WHERE kit_id=? AND catalog_id=? LIMIT 1"
+    if USE_TURSO:
+        _turso_execute(sql, [kit_id, catalog_id, role])
+        rows = _turso_execute(sel, [kit_id, catalog_id])
+        return rows[0]["id"] if rows else None
+    else:
+        with _local_conn() as conn:
+            conn.execute(sql, (kit_id, catalog_id, role))
+            row = conn.execute(sel, (kit_id, catalog_id)).fetchone()
+            return row[0] if row else None
+
+
+def remove_kit_member(member_id: int) -> None:
+    sql = "DELETE FROM fixture_kit_members WHERE id = ?"
+    if USE_TURSO:
+        _turso_execute(sql, [member_id])
+    else:
+        with _local_conn() as conn:
+            conn.execute(sql, (member_id,))
+
+
+def add_fixture_spec(catalog_id: int, file_name: str, file_type: str, r2_key: str) -> int | None:
+    sql = "INSERT INTO fixture_specs (catalog_id, file_name, file_type, r2_key) VALUES (?, ?, ?, ?)"
+    if USE_TURSO:
+        _turso_execute(sql, [catalog_id, file_name, file_type, r2_key])
+        rows = _turso_execute("SELECT id FROM fixture_specs WHERE r2_key = ? LIMIT 1", [r2_key])
+        return rows[0]["id"] if rows else None
+    else:
+        with _local_conn() as conn:
+            return conn.execute(sql, (catalog_id, file_name, file_type, r2_key)).lastrowid
+
+
+def get_fixture_specs(catalog_id: int) -> list[dict]:
+    sql = (
+        "SELECT id, file_name, file_type, r2_key, uploaded_at "
+        "FROM fixture_specs WHERE catalog_id = ? ORDER BY uploaded_at"
+    )
+    if USE_TURSO:
+        return _turso_execute(sql, [catalog_id])
+    else:
+        with _local_conn() as conn:
+            return [dict(r) for r in conn.execute(sql, (catalog_id,)).fetchall()]
+
+
+def delete_fixture_spec(spec_id: int) -> str | None:
+    sel = "SELECT r2_key FROM fixture_specs WHERE id = ?"
+    delete = "DELETE FROM fixture_specs WHERE id = ?"
+    if USE_TURSO:
+        rows = _turso_execute(sel, [spec_id])
+        key = rows[0]["r2_key"] if rows else None
+        if key:
+            _turso_execute(delete, [spec_id])
+        return key
+    else:
+        with _local_conn() as conn:
+            row = conn.execute(sel, (spec_id,)).fetchone()
+            key = row[0] if row else None
+            conn.execute(delete, (spec_id,))
+            return key
 
 
 def delete_attachments_for_estimate(estimate_name: str) -> list:

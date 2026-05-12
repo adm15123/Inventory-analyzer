@@ -454,6 +454,210 @@ function ViewAllPage({ data }) {
 }
 
 // ================================================================
+// FixtureKitsModal
+// ================================================================
+function FixtureKitsModal({ onClose, initialKits }) {
+  const [kits, setKits]               = useState(initialKits || []);
+  const [selectedKitId, setSelectedKitId] = useState(null);
+  const [kitDetail, setKitDetail]     = useState(null);
+  const [editingKitId, setEditingKitId] = useState(null);
+  const [editingKitName, setEditingKitName] = useState("");
+  const [newKitName, setNewKitName]   = useState("");
+  const [memberSearchQ, setMemberSearchQ] = useState("");
+  const [memberSearchRes, setMemberSearchRes] = useState([]);
+  const [memberRole, setMemberRole]   = useState("");
+  const memberTimer = useRef(null);
+
+  const fetchKits = () =>
+    fetch("/api/fixture-kits").then(r => r.json()).then(d => setKits(d.kits || []));
+
+  const fetchKitDetail = (kitId) => {
+    setSelectedKitId(kitId);
+    fetch(`/api/fixture-kits/${kitId}`).then(r => r.json()).then(d => setKitDetail(d));
+  };
+
+  const createKit = () => {
+    if (!newKitName.trim()) return;
+    fetch("/api/fixture-kits", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newKitName.trim() }),
+    }).then(r => r.json()).then(d => {
+      setNewKitName(""); fetchKits(); if (d.kit_id) fetchKitDetail(d.kit_id);
+    });
+  };
+
+  const saveRename = (kitId) => {
+    if (!editingKitName.trim()) { setEditingKitId(null); return; }
+    fetch(`/api/fixture-kits/${kitId}`, {
+      method: "PUT", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: editingKitName.trim() }),
+    }).then(() => {
+      setEditingKitId(null); fetchKits();
+      if (selectedKitId === kitId) fetchKitDetail(kitId);
+    });
+  };
+
+  const deleteKit = (kitId) => {
+    if (!confirm("Delete this kit? This cannot be undone.")) return;
+    fetch(`/api/fixture-kits/${kitId}`, { method: "DELETE" }).then(() => {
+      fetchKits();
+      if (selectedKitId === kitId) { setSelectedKitId(null); setKitDetail(null); }
+    });
+  };
+
+  const removeMember = (memberId) => {
+    fetch(`/api/fixture-kits/members/${memberId}`, { method: "DELETE" }).then(() => {
+      fetchKits(); if (selectedKitId) fetchKitDetail(selectedKitId);
+    });
+  };
+
+  const searchMembers = (q) => {
+    setMemberSearchQ(q); clearTimeout(memberTimer.current);
+    if (q.length < 2) { setMemberSearchRes([]); return; }
+    memberTimer.current = setTimeout(() => {
+      fetch(`/api/search?supply=fixtures_db&query=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(d => setMemberSearchRes((d.rows || []).slice(0, 10)));
+    }, 250);
+  };
+
+  const addMember = (row) => {
+    if (!selectedKitId || !row.catalog_id) return;
+    fetch(`/api/fixture-kits/${selectedKitId}/members`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ catalog_id: row.catalog_id, role: memberRole }),
+    }).then(() => {
+      setMemberSearchQ(""); setMemberSearchRes([]); setMemberRole("");
+      fetchKits(); fetchKitDetail(selectedKitId);
+    });
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-4xl flex flex-col overflow-hidden" style={{ maxHeight: "80vh" }}>
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 shrink-0">
+          <h2 className="text-lg font-bold text-slate-800">🔧 Fixture Kits</h2>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600 text-2xl leading-none transition">×</button>
+        </div>
+        <div className="flex flex-1 overflow-hidden min-h-0">
+          {/* Left: kit list */}
+          <div className="w-72 border-r border-slate-200 flex flex-col shrink-0">
+            <div className="flex-1 overflow-y-auto p-3 space-y-1">
+              {kits.map(kit => (
+                <div key={kit.id} onClick={() => fetchKitDetail(kit.id)}
+                  className={`flex items-center gap-2 rounded-xl px-3 py-2 cursor-pointer group transition ${selectedKitId === kit.id ? "bg-teal-50 ring-1 ring-teal-300" : "hover:bg-slate-50"}`}>
+                  {editingKitId === kit.id ? (
+                    <input autoFocus value={editingKitName}
+                      onChange={e => setEditingKitName(e.target.value)}
+                      onBlur={() => saveRename(kit.id)}
+                      onKeyDown={e => { if (e.key === "Enter") saveRename(kit.id); if (e.key === "Escape") setEditingKitId(null); }}
+                      onClick={e => e.stopPropagation()}
+                      className="flex-1 min-w-0 rounded border border-teal-300 px-1.5 py-0.5 text-sm focus:outline-none" />
+                  ) : (
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 truncate">{kit.name}</p>
+                      <p className="text-xs text-slate-400">{kit.member_count} item{kit.member_count !== 1 ? "s" : ""}</p>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
+                    <button title="Rename" onClick={e => { e.stopPropagation(); setEditingKitId(kit.id); setEditingKitName(kit.name); }}
+                      className="text-slate-400 hover:text-teal-600 text-xs px-1">✎</button>
+                    <button title="Delete" onClick={e => { e.stopPropagation(); deleteKit(kit.id); }}
+                      className="text-slate-400 hover:text-rose-500 text-xl leading-none">×</button>
+                  </div>
+                </div>
+              ))}
+              {kits.length === 0 && (
+                <p className="text-xs text-slate-400 text-center py-6">No kits yet. Create one below.</p>
+              )}
+            </div>
+            <div className="border-t border-slate-200 p-3 flex gap-2 shrink-0">
+              <input value={newKitName} onChange={e => setNewKitName(e.target.value)}
+                onKeyDown={e => e.key === "Enter" && createKit()}
+                placeholder="New kit name…"
+                className="flex-1 min-w-0 rounded-lg border border-slate-300 px-2 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200" />
+              <button onClick={createKit} disabled={!newKitName.trim()}
+                className="rounded-lg bg-teal-600 text-white px-3 py-1.5 text-sm font-bold hover:bg-teal-700 disabled:opacity-40 transition">+</button>
+            </div>
+          </div>
+
+          {/* Right: kit detail */}
+          <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+            {kitDetail ? (
+              <>
+                <div className="px-5 py-3 border-b border-slate-100 bg-slate-50 shrink-0">
+                  <p className="text-sm font-bold text-teal-700">{kitDetail.kit?.name}</p>
+                  <p className="text-xs text-slate-400">{(kitDetail.members || []).length} items in kit</p>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {(kitDetail.members || []).length === 0 ? (
+                    <p className="text-xs text-slate-400 text-center py-10">No items yet. Search below to add items to this kit.</p>
+                  ) : (
+                    <table className="w-full text-sm">
+                      <thead className="sticky top-0 bg-white border-b border-slate-200">
+                        <tr>
+                          {["Role", "Description", "Supplier", "Price"].map(h => (
+                            <th key={h} className={`px-4 py-2 text-xs font-semibold text-slate-500 uppercase ${h === "Price" ? "text-right" : "text-left"}`}>{h}</th>
+                          ))}
+                          <th className="w-8 px-2"></th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {(kitDetail.members || []).map(m => (
+                          <tr key={m.member_id} className="hover:bg-slate-50">
+                            <td className="px-4 py-2 text-xs text-slate-500 whitespace-nowrap">{m.role || <span className="italic text-slate-300">—</span>}</td>
+                            <td className="px-4 py-2 font-medium text-slate-800">{m.description}</td>
+                            <td className="px-4 py-2 text-xs text-slate-500">{m.supplier}</td>
+                            <td className="px-4 py-2 text-right font-semibold text-slate-800">${(m.price_per_unit || 0).toFixed(2)}</td>
+                            <td className="px-2 py-2">
+                              <button onClick={() => removeMember(m.member_id)}
+                                className="text-slate-300 hover:text-rose-500 text-xl leading-none transition">×</button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+                {/* Add member */}
+                <div className="border-t border-slate-200 px-5 py-4 space-y-2 bg-slate-50 shrink-0">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Add Item to Kit</p>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <input value={memberSearchQ} onChange={e => searchMembers(e.target.value)}
+                        placeholder="Search fixture catalog…"
+                        className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200" />
+                      {memberSearchRes.length > 0 && (
+                        <div className="absolute bottom-full left-0 right-0 mb-1 border border-slate-200 rounded-xl bg-white shadow-xl max-h-48 overflow-y-auto z-20">
+                          {memberSearchRes.map((r, i) => (
+                            <button key={i} onClick={() => addMember(r)}
+                              className="w-full text-left px-3 py-2 text-sm hover:bg-teal-50 flex justify-between items-center border-b border-slate-100 last:border-0 transition">
+                              <span className="font-medium text-slate-800 truncate">{r.Description}</span>
+                              <span className="text-xs text-slate-400 ml-2 shrink-0">{r["Supply"]} · ${parseFloat(r["Price per Unit"] || 0).toFixed(2)}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <input value={memberRole} onChange={e => setMemberRole(e.target.value)}
+                      placeholder="Role (Bowl, Tank…)"
+                      className="w-40 rounded-lg border border-slate-300 px-3 py-1.5 text-sm focus:border-teal-500 focus:outline-none" />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center">
+                <p className="text-sm text-slate-400">← Select a kit to view or edit its items</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ================================================================
 // SearchPage
 // ================================================================
 const RECENT_SEARCH_KEY = "zamora_recent_searches";
@@ -472,6 +676,101 @@ function SearchPage({ data }) {
   });
   const [pinnedItems, setPinnedItems] = useState([]);
   const debounceRef = useRef(null);
+  // Fixtures DB — kits & specs
+  const [showKitsModal, setShowKitsModal]   = useState(false);
+  const [allKitsList, setAllKitsList]       = useState([]);
+  const [addToKitTarget, setAddToKitTarget] = useState(null); // {desc, catalogId}
+  const [addToKitKitId, setAddToKitKitId]   = useState("");
+  const [addToKitNewName, setAddToKitNewName] = useState("");
+  const [addToKitRole, setAddToKitRole]     = useState("");
+  const [addToKitLoading, setAddToKitLoading] = useState(false);
+  const [specsTarget, setSpecsTarget]       = useState(null); // {desc, catalogId}
+  const [specsData, setSpecsData]           = useState([]);
+  const [specsLoading, setSpecsLoading]     = useState(false);
+  const [specsUploading, setSpecsUploading] = useState(false);
+  const specsFileRef = useRef(null);
+  const [viewingKitInfo, setViewingKitInfo] = useState(null); // {desc, kitId, kitName, members}
+
+  const fetchAllKits = () =>
+    fetch("/api/fixture-kits").then(r => r.json()).then(d => setAllKitsList(d.kits || []));
+
+  useEffect(() => {
+    if (supply === "fixtures_db") fetchAllKits();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supply]);
+
+  const openAddToKit = (desc, catalogId) => {
+    setAddToKitTarget({ desc, catalogId });
+    setAddToKitKitId(allKitsList.length > 0 ? String(allKitsList[0].id) : "new");
+    setAddToKitRole("");
+    setAddToKitNewName("");
+  };
+
+  const confirmAddToKit = async () => {
+    if (!addToKitTarget) return;
+    setAddToKitLoading(true);
+    try {
+      let kitId = addToKitKitId;
+      if (kitId === "new") {
+        const d = await fetch("/api/fixture-kits", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name: addToKitNewName.trim() }),
+        }).then(r => r.json());
+        kitId = d.kit_id;
+        fetchAllKits();
+      }
+      await fetch(`/api/fixture-kits/${kitId}/members`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ catalog_id: addToKitTarget.catalogId, role: addToKitRole }),
+      });
+      setAddToKitTarget(null);
+      if (query) runSearch(query, supply);
+    } finally {
+      setAddToKitLoading(false);
+    }
+  };
+
+  const openSpecs = (desc, catalogId) => {
+    if (specsTarget?.desc === desc) { setSpecsTarget(null); return; }
+    setSpecsTarget({ desc, catalogId });
+    setSpecsData([]); setSpecsLoading(true);
+    fetch(`/api/fixture-specs?catalog_id=${catalogId}`)
+      .then(r => r.json())
+      .then(d => setSpecsData(d.specs || []))
+      .finally(() => setSpecsLoading(false));
+  };
+
+  const uploadSpec = () => {
+    const file = specsFileRef.current?.files?.[0];
+    if (!file || !specsTarget) return;
+    setSpecsUploading(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("catalog_id", specsTarget.catalogId);
+    fetch("/api/fixture-specs/upload", { method: "POST", body: fd })
+      .then(r => r.json())
+      .then(d => {
+        if (d.ok) {
+          setSpecsData(prev => [...prev, d]);
+          if (specsFileRef.current) specsFileRef.current.value = "";
+          if (query) runSearch(query, supply);
+        }
+      })
+      .finally(() => setSpecsUploading(false));
+  };
+
+  const deleteSpec = (specId) => {
+    fetch(`/api/fixture-specs/${specId}`, { method: "DELETE" })
+      .then(() => setSpecsData(prev => prev.filter(s => s.id !== specId)));
+  };
+
+  const toggleViewKit = async (desc, kitId, kitName) => {
+    if (viewingKitInfo?.desc === desc && viewingKitInfo?.kitId === kitId) {
+      setViewingKitInfo(null); return;
+    }
+    const d = await fetch(`/api/fixture-kits/${kitId}`).then(r => r.json());
+    setViewingKitInfo({ desc, kitId, kitName, members: d.members || [] });
+  };
 
   const handlePin = (desc, groupRows) => {
     const isPinned = pinnedItems.some(p => p.desc === desc);
@@ -624,6 +923,16 @@ function SearchPage({ data }) {
             ))}
           </select>
         </div>
+        {/* Fixtures DB toolbar */}
+        {supply === "fixtures_db" && (
+          <div className="flex items-center justify-between py-1">
+            <p className="text-xs text-teal-600 font-medium">Searching Fixtures Catalog — items saved across all estimates</p>
+            <button onClick={() => setShowKitsModal(true)}
+              className="rounded-lg border border-teal-300 px-3 py-1.5 text-xs font-semibold text-teal-700 hover:bg-teal-50 transition">
+              🔧 Manage Kits
+            </button>
+          </div>
+        )}
         {/* Recent searches */}
         {recentSearches.length > 0 && (
           <div className="flex flex-wrap items-center gap-2 pt-1">
@@ -741,18 +1050,30 @@ function SearchPage({ data }) {
             const isAdded     = !!addedDescs[desc];
             const isPinned    = pinnedItems.some(p => p.desc === desc);
             const canPin      = pinnedItems.length < 3 || isPinned;
+            // Fixtures DB extras
+            const catalogId   = groupRows[0]?.catalog_id;
+            const itemKits    = groupRows[0]?.kits || [];
+            const specCount   = groupRows[0]?.spec_count || 0;
+            const isFixturesDb = supply === "fixtures_db";
 
             return (
               <div key={desc} className={`rounded-2xl bg-white shadow-sm ring-1 overflow-hidden transition ${isPinned ? "ring-amber-400" : "ring-slate-200"}`}>
                 {/* Group header */}
                 <div className="flex items-center justify-between gap-3 px-4 py-3 bg-slate-50 border-b border-slate-200 flex-wrap">
-                  <div className="flex items-center gap-2 min-w-0">
+                  <div className="flex items-center gap-2 min-w-0 flex-wrap">
                     <span className="font-semibold text-slate-800 text-sm">{desc}</span>
                     {supply === "all" && [...new Set(groupRows.map(r => r.Supply).filter(Boolean))].map(s => (
                       <span key={s} className="shrink-0 rounded-full bg-sky-100 px-2 py-0.5 text-xs font-medium text-sky-700">{s}</span>
                     ))}
+                    {isFixturesDb && itemKits.map(k => (
+                      <button key={k.kit_id}
+                        onClick={() => toggleViewKit(desc, k.kit_id, k.kit_name)}
+                        className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium transition ${viewingKitInfo?.desc === desc && viewingKitInfo?.kitId === k.kit_id ? "bg-teal-600 text-white" : "bg-teal-100 text-teal-700 hover:bg-teal-200"}`}>
+                        🔗 {k.kit_name}
+                      </button>
+                    ))}
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
+                  <div className="flex items-center gap-2 shrink-0 flex-wrap">
                     {supply === "all" && (
                       <button
                         onClick={() => handlePin(desc, groupRows)}
@@ -778,26 +1099,35 @@ function SearchPage({ data }) {
                         {isExpanded ? "Hide History" : `Show History (${histRows.length} more)`}
                       </button>
                     )}
-                    {graphUrl && (
-                      <a
-                        href={graphUrl}
-                        className="rounded-lg border border-sky-300 px-3 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 transition"
-                      >
+                    {graphUrl && !isFixturesDb && (
+                      <a href={graphUrl}
+                        className="rounded-lg border border-sky-300 px-3 py-1 text-xs font-medium text-sky-700 hover:bg-sky-50 transition">
                         Graph
                       </a>
                     )}
-                    <button
-                      onClick={() => handleAddToList(recentRows[0] || groupRows[0], desc)}
-                      disabled={isAdded}
-                      className={classNames(
-                        "rounded-lg px-3 py-1 text-xs font-semibold transition",
-                        isAdded
-                          ? "bg-emerald-100 text-emerald-700 cursor-default"
-                          : "bg-sky-600 text-white hover:bg-sky-700"
-                      )}
-                    >
-                      {isAdded ? "✓ Added" : "+ Add"}
-                    </button>
+                    {isFixturesDb ? (
+                      <>
+                        <button onClick={() => openAddToKit(desc, catalogId)}
+                          className={`rounded-lg border px-3 py-1 text-xs font-medium transition ${addToKitTarget?.desc === desc ? "bg-teal-600 border-teal-600 text-white" : "border-teal-300 text-teal-700 hover:bg-teal-50"}`}>
+                          + Kit
+                        </button>
+                        <button onClick={() => openSpecs(desc, catalogId)}
+                          className={`rounded-lg border px-3 py-1 text-xs font-medium transition ${specsTarget?.desc === desc ? "bg-slate-700 border-slate-700 text-white" : "border-slate-300 text-slate-600 hover:bg-slate-50"}`}>
+                          📄 {specCount > 0 ? `${specCount} Spec${specCount > 1 ? "s" : ""}` : "Specs"}
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => handleAddToList(recentRows[0] || groupRows[0], desc)}
+                        disabled={isAdded}
+                        className={classNames(
+                          "rounded-lg px-3 py-1 text-xs font-semibold transition",
+                          isAdded ? "bg-emerald-100 text-emerald-700 cursor-default" : "bg-sky-600 text-white hover:bg-sky-700"
+                        )}
+                      >
+                        {isAdded ? "✓ Added" : "+ Add"}
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -822,10 +1152,116 @@ function SearchPage({ data }) {
                     </tbody>
                   </table>
                 </div>
+
+                {/* Kit members expansion */}
+                {isFixturesDb && viewingKitInfo?.desc === desc && (
+                  <div className="border-t border-teal-200 bg-teal-50/50 px-4 py-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-xs font-semibold text-teal-700">🔗 Kit: {viewingKitInfo.kitName}</p>
+                      <button onClick={() => setViewingKitInfo(null)} className="text-xs text-slate-400 hover:text-slate-600 transition">Close</button>
+                    </div>
+                    {(viewingKitInfo.members || []).length === 0 ? (
+                      <p className="text-xs text-slate-400">No members in this kit yet. Use Manage Kits to add items.</p>
+                    ) : (
+                      <table className="w-full text-sm">
+                        <thead>
+                          <tr className="text-xs font-semibold text-teal-600 uppercase">
+                            <th className="text-left py-0.5 pr-4">Role</th>
+                            <th className="text-left py-0.5 pr-4">Description</th>
+                            <th className="text-left py-0.5 pr-4">Supplier</th>
+                            <th className="text-right py-0.5">Price/Unit</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {viewingKitInfo.members.map(m => (
+                            <tr key={m.member_id} className="border-t border-teal-100">
+                              <td className="py-1 text-slate-400 text-xs pr-4">{m.role || "—"}</td>
+                              <td className="py-1 font-medium text-slate-800 pr-4">{m.description}</td>
+                              <td className="py-1 text-slate-500 text-xs pr-4">{m.supplier}</td>
+                              <td className="py-1 text-right font-semibold text-slate-800">${(m.price_per_unit || 0).toFixed(2)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                )}
+
+                {/* Add to Kit inline panel */}
+                {isFixturesDb && addToKitTarget?.desc === desc && (
+                  <div className="border-t border-teal-100 bg-teal-50/30 px-4 py-3 space-y-2">
+                    <p className="text-xs font-semibold text-teal-700">Add to Kit</p>
+                    <div className="flex flex-wrap gap-2 items-center">
+                      <select value={addToKitKitId} onChange={e => setAddToKitKitId(e.target.value)}
+                        className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none">
+                        {allKitsList.map(k => (
+                          <option key={k.id} value={String(k.id)}>{k.name} ({k.member_count} items)</option>
+                        ))}
+                        <option value="new">+ Create New Kit…</option>
+                      </select>
+                      {addToKitKitId === "new" && (
+                        <input value={addToKitNewName} onChange={e => setAddToKitNewName(e.target.value)}
+                          placeholder="New kit name…"
+                          className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm shadow-sm focus:border-teal-500 focus:outline-none" />
+                      )}
+                      <input value={addToKitRole} onChange={e => setAddToKitRole(e.target.value)}
+                        placeholder="Role (Bowl, Tank, Seat…)"
+                        className="rounded-lg border border-slate-300 px-2 py-1.5 text-sm shadow-sm focus:border-teal-500 focus:outline-none" />
+                      <button onClick={confirmAddToKit}
+                        disabled={addToKitLoading || (addToKitKitId === "new" && !addToKitNewName.trim())}
+                        className="rounded-lg bg-teal-600 text-white px-3 py-1.5 text-sm font-semibold hover:bg-teal-700 disabled:opacity-50 transition">
+                        {addToKitLoading ? "Adding…" : "Add"}
+                      </button>
+                      <button onClick={() => setAddToKitTarget(null)} className="text-sm text-slate-400 hover:text-slate-600 transition">Cancel</button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Specs inline panel */}
+                {isFixturesDb && specsTarget?.desc === desc && (
+                  <div className="border-t border-slate-200 bg-slate-50 px-4 py-3 space-y-2">
+                    <p className="text-xs font-semibold text-slate-600">📄 Specification Sheets</p>
+                    {specsLoading ? (
+                      <p className="text-xs text-slate-400">Loading…</p>
+                    ) : specsData.length === 0 ? (
+                      <p className="text-xs text-slate-400">No specs uploaded yet.</p>
+                    ) : (
+                      <div className="flex flex-wrap gap-2">
+                        {specsData.map(s => (
+                          <div key={s.id} className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
+                            <span className="text-sm text-slate-700">{s.file_name}</span>
+                            <a href={s.url} target="_blank" rel="noreferrer"
+                              className="text-sky-600 hover:underline text-xs font-medium">View</a>
+                            <button onClick={() => deleteSpec(s.id)}
+                              className="text-slate-300 hover:text-rose-500 text-xl leading-none transition">×</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <input ref={specsFileRef} type="file" accept=".pdf,image/*"
+                        className="text-xs text-slate-600 file:mr-2 file:rounded-lg file:border-0 file:bg-teal-50 file:px-2 file:py-1 file:text-xs file:text-teal-700 file:font-semibold hover:file:bg-teal-100 cursor-pointer" />
+                      <button onClick={uploadSpec} disabled={specsUploading}
+                        className="rounded-lg bg-slate-700 text-white px-3 py-1.5 text-xs font-semibold hover:bg-slate-800 disabled:opacity-50 transition">
+                        {specsUploading ? "Uploading…" : "Upload"}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
+      )}
+      {showKitsModal && (
+        <FixtureKitsModal
+          initialKits={allKitsList}
+          onClose={() => {
+            setShowKitsModal(false);
+            fetchAllKits();
+            if (query) runSearch(query, supply);
+          }}
+        />
       )}
     </div>
   );
