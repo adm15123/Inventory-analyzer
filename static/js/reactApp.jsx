@@ -3802,12 +3802,18 @@ function EstimatesPage({ data }) {
 // ================================================================
 // FixturesPanel — a single plumbing fixtures package
 // ================================================================
-function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onRemoveRow, onUpdateRow, supplierSearchUrl, fixtureTypes }) {
+function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRowsFromKit, onRemoveRow, onUpdateRow, supplierSearchUrl, fixtureTypes }) {
   const [collapsed, setCollapsed] = useState(false);
   const [acResults, setAcResults] = useState([]);
   const [acRowIdx, setAcRowIdx]   = useState(null);
   const [acAnchor, setAcAnchor]   = useState(null);
   const acTimerRef = useRef(null);
+  // Kit picker state
+  const [showKitPicker, setShowKitPicker] = useState(false);
+  const [kitsList, setKitsList]           = useState([]);
+  const [selectedKitId, setSelectedKitId] = useState("");
+  const [kitPreview, setKitPreview]       = useState(null); // {kit, members}
+  const [kitLoading, setKitLoading]       = useState(false);
 
   const inputClass = "w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200";
 
@@ -3855,6 +3861,34 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onRemoveR
       date:           item.Date || "",
     });
     setAcResults([]); setAcRowIdx(null); setAcAnchor(null);
+  };
+
+  const openKitPicker = () => {
+    if (showKitPicker) { setShowKitPicker(false); return; }
+    setShowKitPicker(true);
+    setKitPreview(null);
+    setSelectedKitId("");
+    fetch("/api/fixture-kits").then(r => r.json()).then(d => {
+      const kits = d.kits || [];
+      setKitsList(kits);
+      if (kits.length > 0) loadKitPreview(kits[0].id);
+    });
+  };
+
+  const loadKitPreview = (kitId) => {
+    setSelectedKitId(String(kitId));
+    setKitLoading(true);
+    fetch(`/api/fixture-kits/${kitId}`)
+      .then(r => r.json())
+      .then(d => setKitPreview(d))
+      .finally(() => setKitLoading(false));
+  };
+
+  const addAllFromKit = () => {
+    if (!kitPreview?.members?.length) return;
+    onAddRowsFromKit(pkgIdx, kitPreview.members);
+    setShowKitPicker(false);
+    setKitPreview(null);
   };
 
   const subtotal  = (pkg.rows || []).reduce((s, r) => s + (parseFloat(r.sub_total) || 0), 0);
@@ -3968,9 +4002,64 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onRemoveR
             </table>
           </div>
 
-          <div className="px-5 py-2 border-t border-teal-100">
+          <div className="px-5 py-2 border-t border-teal-100 flex items-center gap-4">
             <button onClick={() => onAddRow(pkgIdx)} className="text-sm text-teal-600 font-semibold hover:text-teal-800 transition">+ Add Row</button>
+            <button onClick={openKitPicker}
+              className={`text-sm font-semibold transition ${showKitPicker ? "text-teal-700" : "text-slate-400 hover:text-teal-600"}`}>
+              📦 Add from Kit
+            </button>
           </div>
+
+          {/* Kit picker panel */}
+          {showKitPicker && (
+            <div className="border-t border-teal-200 bg-teal-50/40 px-5 py-4 space-y-3">
+              <div className="flex items-center gap-3 flex-wrap">
+                <span className="text-xs font-semibold text-teal-700 uppercase tracking-wide">Select Kit</span>
+                <select
+                  value={selectedKitId}
+                  onChange={e => loadKitPreview(e.target.value)}
+                  className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-sm text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none"
+                >
+                  {kitsList.length === 0 && <option value="">No kits yet — create one in Manage Kits</option>}
+                  {kitsList.map(k => (
+                    <option key={k.id} value={String(k.id)}>{k.name} ({k.member_count} items)</option>
+                  ))}
+                </select>
+                <button onClick={addAllFromKit}
+                  disabled={!kitPreview?.members?.length}
+                  className="rounded-lg bg-teal-600 text-white px-4 py-1.5 text-sm font-semibold hover:bg-teal-700 disabled:opacity-40 transition">
+                  Add {kitPreview?.members?.length ? `${kitPreview.members.length} Row${kitPreview.members.length > 1 ? "s" : ""}` : "All"}
+                </button>
+                <button onClick={() => setShowKitPicker(false)} className="text-sm text-slate-400 hover:text-slate-600 transition">Cancel</button>
+              </div>
+              {kitLoading ? (
+                <p className="text-xs text-slate-400">Loading…</p>
+              ) : kitPreview?.members?.length > 0 ? (
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs font-semibold text-teal-600 uppercase">
+                      <th className="text-left py-1 pr-4 w-32">Role → Fixture Type</th>
+                      <th className="text-left py-1 pr-4">Description</th>
+                      <th className="text-left py-1 pr-4 w-20">Item #</th>
+                      <th className="text-right py-1 w-24">Price/Unit</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {kitPreview.members.map(m => (
+                      <tr key={m.member_id} className="border-t border-teal-100">
+                        <td className="py-1 pr-4 text-slate-500 text-xs">{m.fixture_type || m.role || "—"}</td>
+                        <td className="py-1 pr-4 font-medium text-slate-800">{m.description}</td>
+                        <td className="py-1 pr-4 text-slate-400 text-xs">{m.item_number || "—"}</td>
+                        <td className="py-1 text-right font-semibold text-teal-700">${(m.price_per_unit || 0).toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : kitPreview && (
+                <p className="text-xs text-slate-400">This kit has no members yet. Use Manage Kits to add items.</p>
+              )}
+            </div>
+          )}
 
           {/* Totals */}
           <div className="border-t border-teal-100 bg-teal-50/40 px-5 py-4">
@@ -4225,6 +4314,28 @@ function EstimateBuilderPage({ data }) {
   const updateBid = (i, patch) => setBids((b) => b.map((bid, j) => j === i ? { ...bid, ...patch } : bid));
 
   // ── fixture package helpers ──────────────────────────────────────
+  const [showFixtureKitsModal, setShowFixtureKitsModal] = useState(false);
+
+  const addFixtureRowsFromKit = useCallback((pkgIdx, members) => {
+    setFixturePackages(prev => prev.map((p, i) => {
+      if (i !== pkgIdx) return p;
+      const newRows = members.map(m => ({
+        id: crypto.randomUUID(),
+        fixture_type: m.fixture_type || m.role || "",
+        description:  m.description || "",
+        item_number:  m.item_number || "",
+        qty:          "",
+        price_per_unit: m.price_per_unit || "",
+        unit:         m.unit || "",
+        invoice_no:   "",
+        date:         "",
+        sub_total:    0,
+        comments:     "",
+      }));
+      return { ...p, rows: [...(p.rows || []), ...newRows] };
+    }));
+  }, []);
+
   const addFixturePackage = () => {
     setFixturePackages(prev => [...prev, { id: crypto.randomUUID(), title: "", supplier: "supply1", rows: [], extras: "" }]);
   };
@@ -5329,12 +5440,18 @@ function EstimateBuilderPage({ data }) {
       {activeView === "fixtures" && <>
       {/* Plumbing Fixtures Packages */}
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Plumbing Fixtures</h2>
-          <button
-            onClick={addFixturePackage}
-            className="text-sm text-teal-600 font-semibold hover:text-teal-800 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg transition"
-          >+ Add Package</button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowFixtureKitsModal(true)}
+              className="text-sm text-teal-600 font-semibold hover:text-teal-800 border border-teal-300 hover:bg-teal-50 px-3 py-1.5 rounded-lg transition"
+            >🔧 Manage Kits</button>
+            <button
+              onClick={addFixturePackage}
+              className="text-sm text-teal-600 font-semibold hover:text-teal-800 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg transition"
+            >+ Add Package</button>
+          </div>
         </div>
         {fixturePackages.length === 0 && (
           <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 px-5 py-8 text-center text-sm text-slate-400">
@@ -5349,6 +5466,7 @@ function EstimateBuilderPage({ data }) {
             onUpdatePkg={updateFixturePkg}
             onDelete={() => removeFixturePackage(pkgIdx)}
             onAddRow={addFixtureRow}
+            onAddRowsFromKit={addFixtureRowsFromKit}
             onRemoveRow={removeFixtureRow}
             onUpdateRow={updateFixtureRow}
             supplierSearchUrl={data.fixtureSuppSearchUrl || ""}
@@ -5357,6 +5475,12 @@ function EstimateBuilderPage({ data }) {
         ))}
       </div>
 
+      {showFixtureKitsModal && (
+        <FixtureKitsModal
+          initialKits={[]}
+          onClose={() => setShowFixtureKitsModal(false)}
+        />
+      )}
       </>}
 
       <datalist id="fixture-types-datalist">
