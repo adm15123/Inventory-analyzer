@@ -4505,6 +4505,7 @@ function EstimateBuilderPage({ data }) {
 
   // ── fixture package helpers ──────────────────────────────────────
   const [showFixtureKitsModal, setShowFixtureKitsModal] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
 
   const addFixtureRowsFromKit = useCallback((pkgIdx, members, kitMeta) => {
     setFixturePackages(prev => prev.map((p, i) => {
@@ -4528,6 +4529,121 @@ function EstimateBuilderPage({ data }) {
       return { ...p, rows: [...(p.rows || []), ...newRows] };
     }));
   }, []);
+
+  const exportFixturePDF = async () => {
+    if (exportingPdf) return;
+    setExportingPdf(true);
+    try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "letter" });
+      const margin = 18;
+      const pageW  = doc.internal.pageSize.getWidth();
+
+      // ── Header ──────────────────────────────────────────────────
+      doc.setFontSize(18);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(13, 105, 98);
+      doc.text("Zamora Plumbing", margin, 22);
+
+      doc.setFontSize(11);
+      doc.setFont("helvetica", "bold");
+      doc.setTextColor(51, 65, 85);
+      doc.text("Plumbing Fixtures Schedule", pageW - margin, 22, { align: "right" });
+
+      doc.setDrawColor(13, 105, 98);
+      doc.setLineWidth(0.4);
+      doc.line(margin, 26, pageW - margin, 26);
+
+      // ── Project info ─────────────────────────────────────────────
+      let y = 33;
+      const infoRows = [
+        ["Project",    projectInfo.name],
+        ["Contractor", projectInfo.contractor],
+        ["Address",    projectInfo.address],
+        ["Date",       projectInfo.date || estimateName],
+      ].filter(([, v]) => v);
+
+      infoRows.forEach(([label, value]) => {
+        doc.setFontSize(9.5);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(71, 85, 105);
+        doc.text(label + ":", margin, y);
+        doc.setFont("helvetica", "normal");
+        doc.setTextColor(30, 41, 59);
+        doc.text(String(value), margin + 26, y);
+        y += 5.5;
+      });
+      y += 5;
+
+      // ── Fixture packages ─────────────────────────────────────────
+      const activePkgs = fixturePackages.filter(p => p.rows && p.rows.length > 0);
+      for (const pkg of activePkgs) {
+        if (y > doc.internal.pageSize.getHeight() - 45) { doc.addPage(); y = 20; }
+
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.setTextColor(13, 105, 98);
+        doc.text(pkg.title || "Fixture Package", margin, y);
+        y += 2;
+
+        doc.autoTable({
+          startY: y,
+          margin: { left: margin, right: margin },
+          head: [["FIXTURE TYPE", "DESCRIPTION", "ITEM #", "QTY"]],
+          body: (pkg.rows || []).map(r => [
+            r.fixture_type || "",
+            r.description  || "",
+            r.item_number  || "",
+            String(r.qty   || ""),
+          ]),
+          styles: {
+            fontSize: 8.5,
+            cellPadding: { top: 2.5, right: 3, bottom: 2.5, left: 3 },
+            overflow: "linebreak",
+            valign: "middle",
+          },
+          headStyles: { fillColor: [13, 105, 98], textColor: 255, fontStyle: "bold", fontSize: 8 },
+          alternateRowStyles: { fillColor: [240, 253, 250] },
+          columnStyles: {
+            0: { cellWidth: 34 },
+            2: { cellWidth: 30 },
+            3: { cellWidth: 14, halign: "center" },
+          },
+        });
+        y = doc.lastAutoTable.finalY + 14;
+      }
+
+      // ── Send to server for spec merging ──────────────────────────
+      const tableBlob = doc.output("blob");
+
+      const allRows = fixturePackages.flatMap(p => p.rows || []);
+      const catalogIds = [...new Set(allRows.filter(r => r.catalog_id).map(r => r.catalog_id))];
+      const rowRefs    = allRows.filter(r => !r.catalog_id && r.id && estimateName)
+                                .map(r => ({ estimate_name: estimateName, row_id: r.id }));
+
+      const fd = new FormData();
+      fd.append("table_pdf",   tableBlob, "table.pdf");
+      fd.append("catalog_ids", JSON.stringify(catalogIds));
+      fd.append("row_refs",    JSON.stringify(rowRefs));
+
+      const resp = await fetch("/api/fixture-packages/export-pdf", { method: "POST", body: fd });
+      if (!resp.ok) { alert("PDF export failed. Please try again."); return; }
+
+      const blob = await resp.blob();
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `${estimateName || "fixtures"}-fixture-schedule.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { document.body.removeChild(a); URL.revokeObjectURL(url); }, 1000);
+    } catch (err) {
+      console.error("PDF export error:", err);
+      alert("PDF export failed: " + err.message);
+    } finally {
+      setExportingPdf(false);
+    }
+  };
 
   const addFixturePackage = () => {
     setFixturePackages(prev => [...prev, { id: crypto.randomUUID(), title: "", supplier: "supply1", rows: [], extras: "" }]);
@@ -5640,6 +5756,11 @@ function EstimateBuilderPage({ data }) {
               onClick={() => setShowFixtureKitsModal(true)}
               className="text-sm text-teal-600 font-semibold hover:text-teal-800 border border-teal-300 hover:bg-teal-50 px-3 py-1.5 rounded-lg transition"
             >🔧 Manage Kits</button>
+            <button
+              onClick={exportFixturePDF}
+              disabled={exportingPdf || fixturePackages.length === 0}
+              className="text-sm text-slate-600 font-semibold hover:text-slate-800 border border-slate-300 hover:bg-slate-50 px-3 py-1.5 rounded-lg transition disabled:opacity-40"
+            >{exportingPdf ? "Exporting…" : "📥 Export PDF"}</button>
             <button
               onClick={addFixturePackage}
               className="text-sm text-teal-600 font-semibold hover:text-teal-800 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg transition"

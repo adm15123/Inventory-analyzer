@@ -12,3 +12,5 @@ requests
 openai
 pdfplumber
 boto3
+pypdf
+Pillow

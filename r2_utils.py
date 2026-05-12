@@ -47,6 +47,12 @@ def delete_file(key: str) -> None:
         pass
 
 
+def get_file(key: str) -> bytes:
+    """Download an object from R2 and return its raw bytes."""
+    response = _client().get_object(Bucket=R2_BUCKET_NAME, Key=key)
+    return response["Body"].read()
+
+
 def presigned_url(key: str, expires: int = 3600) -> str:
     """Return a presigned GET URL valid for `expires` seconds."""
     return _client().generate_presigned_url(
