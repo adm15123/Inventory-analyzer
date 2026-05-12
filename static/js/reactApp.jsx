@@ -4540,22 +4540,30 @@ function EstimateBuilderPage({ data }) {
       const pageW  = doc.internal.pageSize.getWidth();
 
       // ── Header ──────────────────────────────────────────────────
-      doc.setFontSize(18);
+      const blue = [30, 64, 175]; // blue-800
+
+      doc.setFontSize(16);
       doc.setFont("helvetica", "bold");
-      doc.setTextColor(13, 105, 98);
-      doc.text("Zamora Plumbing", margin, 22);
+      doc.setTextColor(...blue);
+      doc.text("Zamora Plumbing Corp", margin, 20);
+
+      doc.setFontSize(8.5);
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(71, 85, 105);
+      doc.text("3432 W 84 ST #106  Hialeah FL 33018", margin, 26);
+      doc.text("Prepared by: Aliant Delgado Medina  |  786-661-5636", margin, 31);
 
       doc.setFontSize(11);
       doc.setFont("helvetica", "bold");
       doc.setTextColor(51, 65, 85);
-      doc.text("Plumbing Fixtures Schedule", pageW - margin, 22, { align: "right" });
+      doc.text("Plumbing Fixtures Schedule", pageW - margin, 20, { align: "right" });
 
-      doc.setDrawColor(13, 105, 98);
+      doc.setDrawColor(...blue);
       doc.setLineWidth(0.4);
-      doc.line(margin, 26, pageW - margin, 26);
+      doc.line(margin, 35, pageW - margin, 35);
 
       // ── Project info ─────────────────────────────────────────────
-      let y = 33;
+      let y = 42;
       const infoRows = [
         ["Project",    projectInfo.name],
         ["Contractor", projectInfo.contractor],
@@ -4582,7 +4590,7 @@ function EstimateBuilderPage({ data }) {
 
         doc.setFontSize(11);
         doc.setFont("helvetica", "bold");
-        doc.setTextColor(13, 105, 98);
+        doc.setTextColor(...blue);
         doc.text(pkg.title || "Fixture Package", margin, y);
         y += 2;
 
@@ -4602,8 +4610,8 @@ function EstimateBuilderPage({ data }) {
             overflow: "linebreak",
             valign: "middle",
           },
-          headStyles: { fillColor: [13, 105, 98], textColor: 255, fontStyle: "bold", fontSize: 8 },
-          alternateRowStyles: { fillColor: [240, 253, 250] },
+          headStyles: { fillColor: [30, 64, 175], textColor: 255, fontStyle: "bold", fontSize: 8 },
+          alternateRowStyles: { fillColor: [239, 246, 255] },
           columnStyles: {
             0: { cellWidth: 34 },
             2: { cellWidth: 30 },
