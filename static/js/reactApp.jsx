@@ -3364,6 +3364,241 @@ function EstimatesPage({ data }) {
 }
 
 // ================================================================
+// FixturesPanel — a single plumbing fixtures package
+// ================================================================
+function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onRemoveRow, onUpdateRow, supplierSearchUrl, fixtureTypes }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [acResults, setAcResults] = useState([]);
+  const [acRowIdx, setAcRowIdx]   = useState(null);
+  const [acAnchor, setAcAnchor]   = useState(null);
+  const acTimerRef = useRef(null);
+
+  const inputClass = "w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200";
+
+  const fetchAc = (q, rowIdx, inputEl) => {
+    clearTimeout(acTimerRef.current);
+    if (!q || q.length < 2) { setAcResults([]); setAcRowIdx(null); return; }
+    acTimerRef.current = setTimeout(() => {
+      fetch(`${supplierSearchUrl}?q=${encodeURIComponent(q)}&supplier=${encodeURIComponent(pkg.supplier || "")}`)
+        .then(r => r.json())
+        .then(res => {
+          if (res && res.length > 0) {
+            setAcResults(res);
+            setAcRowIdx(rowIdx);
+            if (inputEl) {
+              const rect = inputEl.getBoundingClientRect();
+              const spaceBelow = window.innerHeight - rect.bottom;
+              const openUp = spaceBelow < 280 && rect.top > 280;
+              setAcAnchor({
+                left: rect.left,
+                ...(openUp ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
+                openUp,
+                maxH: openUp ? rect.top - 20 : spaceBelow - 20,
+              });
+            }
+          } else {
+            setAcResults([]);
+          }
+        })
+        .catch(() => {});
+    }, 250);
+  };
+
+  const applyAc = (item) => {
+    if (acRowIdx === null) return;
+    onUpdateRow(pkgIdx, acRowIdx, {
+      description:    item.Description || "",
+      item_number:    item["Item Number"] || "",
+      price_per_unit: parseFloat(item["Price per Unit"] || 0),
+      unit:           item.Unit || "",
+      invoice_no:     item["Invoice No."] || "",
+      date:           item.Date || "",
+    });
+    setAcResults([]); setAcRowIdx(null); setAcAnchor(null);
+  };
+
+  const subtotal  = (pkg.rows || []).reduce((s, r) => s + (parseFloat(r.sub_total) || 0), 0);
+  const tax       = subtotal * 0.07;
+  const extrasAmt = parseFloat(pkg.extras) || 0;
+  const grandTotal = subtotal + tax + extrasAmt;
+  const fmt = (n) => Number(n).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  return (
+    <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 overflow-hidden">
+      {/* Package header */}
+      <div className="flex items-center gap-3 px-5 py-3 bg-teal-700">
+        <button onClick={() => setCollapsed(c => !c)} className="text-white/70 hover:text-white text-sm w-4 transition">{collapsed ? "▸" : "▾"}</button>
+        <input
+          value={pkg.title || ""}
+          onChange={e => onUpdatePkg(pkgIdx, { title: e.target.value })}
+          className="flex-1 bg-transparent text-white font-semibold text-sm focus:outline-none placeholder-teal-300 border-b border-transparent focus:border-teal-400"
+          placeholder="Package title (e.g. Huntington Brass Pro Line)…"
+        />
+        <select
+          value={pkg.supplier || "supply1"}
+          onChange={e => onUpdatePkg(pkgIdx, { supplier: e.target.value })}
+          className="rounded-lg bg-teal-800 text-white text-xs px-2 py-1 border border-teal-600 focus:outline-none"
+        >
+          <option value="supply1">Berger</option>
+          <option value="supply2">S2 Supply</option>
+          <option value="supply3">Lion</option>
+          <option value="supply4">Bond</option>
+        </select>
+        <span className="text-teal-200 text-sm font-semibold whitespace-nowrap">${fmt(grandTotal)}</span>
+        <button onClick={onDelete} className="text-teal-300 hover:text-rose-300 text-2xl leading-none transition ml-1" title="Remove package">×</button>
+      </div>
+
+      {!collapsed && (
+        <>
+          {/* Rows table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-teal-50 border-b border-teal-100">
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-40">FIXTURE TYPE</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700">DESCRIPTION</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-28">ITEM #</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-16">QTY</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-24">PRICE/UNIT</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-14">UNIT</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-24">INVOICE #</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-24">DATE</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-24">SUBTOTAL</th>
+                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700">COMMENTS</th>
+                  <th className="px-3 py-2 w-8"></th>
+                </tr>
+              </thead>
+              <tbody>
+                {(pkg.rows || []).map((row, ri) => (
+                  <tr key={row.id} className={ri % 2 === 0 ? "bg-white" : "bg-teal-50/30"}>
+                    <td className="px-3 py-1.5">
+                      <input
+                        list="fixture-types-datalist"
+                        value={row.fixture_type || ""}
+                        onChange={e => onUpdateRow(pkgIdx, ri, { fixture_type: e.target.value })}
+                        className={inputClass}
+                        placeholder="Type…"
+                      />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <AutoTextarea
+                        value={row.description || ""}
+                        onChange={e => {
+                          onUpdateRow(pkgIdx, ri, { description: e.target.value });
+                          fetchAc(e.target.value, ri, e.target);
+                        }}
+                        onBlur={() => setTimeout(() => { setAcResults([]); setAcRowIdx(null); }, 200)}
+                        className={inputClass}
+                        placeholder="Search supplier…"
+                      />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input value={row.item_number || ""} onChange={e => onUpdateRow(pkgIdx, ri, { item_number: e.target.value })} className={inputClass} placeholder="Item #" />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input type="number" min="0" step="1" value={row.qty || ""} onChange={e => onUpdateRow(pkgIdx, ri, { qty: e.target.value })} className={inputClass} />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input type="number" min="0" step="0.01" value={row.price_per_unit || ""} onChange={e => onUpdateRow(pkgIdx, ri, { price_per_unit: e.target.value })} className={inputClass} />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input value={row.unit || ""} onChange={e => onUpdateRow(pkgIdx, ri, { unit: e.target.value })} className={inputClass} placeholder="EA" />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input value={row.invoice_no || ""} onChange={e => onUpdateRow(pkgIdx, ri, { invoice_no: e.target.value })} className={inputClass} placeholder="Invoice #" />
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <input type="date" value={row.date || ""} onChange={e => onUpdateRow(pkgIdx, ri, { date: e.target.value })} className={inputClass} />
+                    </td>
+                    <td className="px-3 py-1.5 text-sm font-semibold text-teal-700 whitespace-nowrap">
+                      ${fmt(parseFloat(row.sub_total) || 0)}
+                    </td>
+                    <td className="px-3 py-1.5">
+                      <AutoTextarea value={row.comments || ""} onChange={e => onUpdateRow(pkgIdx, ri, { comments: e.target.value })} className={inputClass} placeholder="Comments…" />
+                    </td>
+                    <td className="px-3 py-1.5 text-center">
+                      <button onClick={() => onRemoveRow(pkgIdx, ri)} className="text-slate-400 hover:text-rose-500 text-xl leading-none transition" title="Remove">×</button>
+                    </td>
+                  </tr>
+                ))}
+                {(!pkg.rows || pkg.rows.length === 0) && (
+                  <tr><td colSpan="11" className="px-3 py-6 text-center text-sm text-slate-400">No items yet — click + Add Row below.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="px-5 py-2 border-t border-teal-100">
+            <button onClick={() => onAddRow(pkgIdx)} className="text-sm text-teal-600 font-semibold hover:text-teal-800 transition">+ Add Row</button>
+          </div>
+
+          {/* Totals */}
+          <div className="border-t border-teal-100 bg-teal-50/40 px-5 py-4">
+            <div className="flex flex-col items-end gap-1.5 text-sm">
+              <div className="flex items-center gap-12">
+                <span className="text-slate-500">Project Sub Total</span>
+                <span className="font-semibold text-slate-800 w-28 text-right">${fmt(subtotal)}</span>
+              </div>
+              <div className="flex items-center gap-12">
+                <span className="text-slate-500">Total + Taxes (7%)</span>
+                <span className="font-semibold text-slate-800 w-28 text-right">${fmt(subtotal + tax)}</span>
+              </div>
+              <div className="flex items-center gap-4">
+                <span className="text-slate-500">Extras ($)</span>
+                <input
+                  type="number" min="0" step="0.01"
+                  value={pkg.extras || ""}
+                  onChange={e => onUpdatePkg(pkgIdx, { extras: e.target.value })}
+                  className="w-28 rounded-lg border border-slate-300 px-2 py-1 text-sm text-right text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none"
+                  placeholder="0.00"
+                />
+              </div>
+              <div className="flex items-center gap-12 pt-1.5 border-t border-teal-200 mt-0.5">
+                <span className="font-bold text-teal-800 text-base">Grand Total</span>
+                <span className="font-bold text-teal-700 text-base w-28 text-right">${fmt(grandTotal)}</span>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Autocomplete popup */}
+      {acResults.length > 0 && acAnchor && (
+        <div
+          style={{
+            position: "fixed",
+            left: acAnchor.left,
+            ...(acAnchor.openUp ? { bottom: acAnchor.bottom } : { top: acAnchor.top }),
+            minWidth: "400px",
+            maxHeight: Math.max(acAnchor.maxH || 200, 150),
+            overflowY: "auto",
+            zIndex: 9997,
+          }}
+          className="bg-white rounded-xl shadow-2xl ring-1 ring-slate-200"
+        >
+          <div className="flex items-center justify-between px-3 py-2 border-b border-slate-100 bg-slate-50 rounded-t-xl">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wide">{acResults.length} result{acResults.length !== 1 ? "s" : ""}</span>
+            <button onMouseDown={() => { setAcResults([]); setAcRowIdx(null); }} className="text-slate-400 hover:text-slate-600 text-base leading-none">×</button>
+          </div>
+          {acResults.map((item, idx) => (
+            <button
+              key={idx}
+              onMouseDown={() => applyAc(item)}
+              className="w-full text-left px-3 py-2.5 hover:bg-teal-50 border-b border-slate-50 last:border-0 transition"
+            >
+              <span className="font-semibold text-slate-800 text-sm block truncate">{item.Description}</span>
+              <span className="text-xs text-teal-600">${parseFloat(item["Price per Unit"] || 0).toFixed(2)}</span>
+              {item["Item Number"] && <span className="ml-2 text-xs text-slate-400">#{item["Item Number"]}</span>}
+              {item.Date && <span className="ml-2 text-xs text-slate-400">{item.Date}</span>}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ================================================================
 // EstimateBuilderPage — create / edit a sectioned estimate
 // ================================================================
 const isBelowLine = (s) => s.is_gas || !!s.below_line;
@@ -3408,6 +3643,8 @@ function EstimateBuilderPage({ data }) {
   const [attachUploading, setAttachUploading] = useState(false);
   const [attachError, setAttachError]     = useState("");
   const attachInputRef = useRef(null);
+  const [fixturePackages, setFixturePackages] = useState(data.content?.fixture_packages ?? []);
+  const fixtureTypes = data.fixtureTypes || [];
 
   const exportFormRef = useRef(null);
   const exportDataRef = useRef(null);
@@ -3544,6 +3781,41 @@ function EstimateBuilderPage({ data }) {
   const addBid    = () => setBids((b) => [...b, { id: crypto.randomUUID(), bid_num: "", amount: "", comments: "" }]);
   const removeBid = (i) => setBids((b) => b.filter((_, j) => j !== i));
   const updateBid = (i, patch) => setBids((b) => b.map((bid, j) => j === i ? { ...bid, ...patch } : bid));
+
+  // ── fixture package helpers ──────────────────────────────────────
+  const addFixturePackage = () => {
+    setFixturePackages(prev => [...prev, { id: crypto.randomUUID(), title: "", supplier: "supply1", rows: [], extras: "" }]);
+  };
+  const removeFixturePackage = (pkgIdx) => {
+    if (!window.confirm("Remove this fixture package?")) return;
+    setFixturePackages(prev => prev.filter((_, i) => i !== pkgIdx));
+  };
+  const updateFixturePkg = (pkgIdx, patch) => {
+    setFixturePackages(prev => prev.map((p, i) => i !== pkgIdx ? p : { ...p, ...patch }));
+  };
+  const addFixtureRow = (pkgIdx) => {
+    setFixturePackages(prev => prev.map((p, i) => i !== pkgIdx ? p : {
+      ...p,
+      rows: [...p.rows, { id: crypto.randomUUID(), fixture_type: "", description: "", item_number: "", qty: "", price_per_unit: "", unit: "", invoice_no: "", date: "", sub_total: 0, comments: "" }],
+    }));
+  };
+  const removeFixtureRow = (pkgIdx, rowIdx) => {
+    setFixturePackages(prev => prev.map((p, i) => i !== pkgIdx ? p : { ...p, rows: p.rows.filter((_, j) => j !== rowIdx) }));
+  };
+  const updateFixtureRow = (pkgIdx, rowIdx, patch) => {
+    setFixturePackages(prev => prev.map((p, i) => {
+      if (i !== pkgIdx) return p;
+      const rows = p.rows.map((r, j) => {
+        if (j !== rowIdx) return r;
+        const next  = { ...r, ...patch };
+        const qty   = parseFloat(next.qty) || 0;
+        const price = parseFloat(next.price_per_unit) || 0;
+        next.sub_total = parseFloat((qty * price).toFixed(2));
+        return next;
+      });
+      return { ...p, rows };
+    }));
+  };
 
   // ── attachment helpers ────────────────────────────────────────────
   const fetchAttachments = (name) => {
@@ -3724,7 +3996,7 @@ function EstimateBuilderPage({ data }) {
       grand_total:    parseFloat(grandTotal.toFixed(2)),
     };
     const allScenarios = scenarios.map((s, i) => i === activeScenarioIdx ? currentScenario : s);
-    return JSON.stringify({ project_info: projectInfo, scenarios: allScenarios });
+    return JSON.stringify({ project_info: projectInfo, scenarios: allScenarios, fixture_packages: fixturePackages });
   };
 
   // ── save ─────────────────────────────────────────────────────────
@@ -4592,6 +4864,41 @@ function EstimateBuilderPage({ data }) {
           )}
         </div>
       </div>
+
+      {/* Plumbing Fixtures Packages */}
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-500 uppercase tracking-wide">Plumbing Fixtures</h2>
+          <button
+            onClick={addFixturePackage}
+            className="text-sm text-teal-600 font-semibold hover:text-teal-800 bg-teal-50 hover:bg-teal-100 px-3 py-1.5 rounded-lg transition"
+          >+ Add Package</button>
+        </div>
+        {fixturePackages.length === 0 && (
+          <div className="rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 px-5 py-8 text-center text-sm text-slate-400">
+            No fixture packages yet — click <span className="font-semibold text-teal-600">+ Add Package</span> to add a fixtures schedule.
+          </div>
+        )}
+        {fixturePackages.map((pkg, pkgIdx) => (
+          <FixturesPanel
+            key={pkg.id}
+            pkg={pkg}
+            pkgIdx={pkgIdx}
+            onUpdatePkg={updateFixturePkg}
+            onDelete={() => removeFixturePackage(pkgIdx)}
+            onAddRow={addFixtureRow}
+            onRemoveRow={removeFixtureRow}
+            onUpdateRow={updateFixtureRow}
+            supplierSearchUrl={data.fixtureSuppSearchUrl || ""}
+            fixtureTypes={fixtureTypes}
+          />
+        ))}
+      </div>
+
+      {/* datalist for fixture type autocomplete */}
+      <datalist id="fixture-types-datalist">
+        {fixtureTypes.map(t => <option key={t} value={t} />)}
+      </datalist>
 
       {/* Attachments panel */}
       {data.r2Enabled && (

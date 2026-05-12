@@ -363,6 +363,51 @@ def init_db():
 
         CREATE INDEX IF NOT EXISTS idx_eat_estimate
             ON estimate_attachments (estimate_name);
+
+        CREATE TABLE IF NOT EXISTS fixture_types (
+            id   INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT UNIQUE NOT NULL
+        );
+
+        INSERT OR IGNORE INTO fixture_types (name) VALUES ('Toilet');
+        INSERT OR IGNORE INTO fixture_types (name) VALUES ('Lavatory Faucet');
+        INSERT OR IGNORE INTO fixture_types (name) VALUES ('Tub');
+        INSERT OR IGNORE INTO fixture_types (name) VALUES ('Tub Rough Valve & Trim');
+        INSERT OR IGNORE INTO fixture_types (name) VALUES ('Shower Rough Valve & Trim');
+        INSERT OR IGNORE INTO fixture_types (name) VALUES ('Kitchen Faucet');
+        INSERT OR IGNORE INTO fixture_types (name) VALUES ('Hose Bib');
+        INSERT OR IGNORE INTO fixture_types (name) VALUES ('Utility Sink');
+
+        CREATE TABLE IF NOT EXISTS fixture_catalog (
+            id             INTEGER PRIMARY KEY AUTOINCREMENT,
+            item_number    TEXT DEFAULT '',
+            description    TEXT NOT NULL,
+            fixture_type   TEXT DEFAULT '',
+            supplier       TEXT DEFAULT '',
+            price_per_unit REAL DEFAULT 0,
+            unit           TEXT DEFAULT '',
+            invoice_no     TEXT DEFAULT '',
+            date           TEXT DEFAULT '',
+            created_at     TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_fcat_item ON fixture_catalog (item_number);
+
+        CREATE INDEX IF NOT EXISTS idx_fcat_desc ON fixture_catalog (description);
+
+        CREATE TABLE IF NOT EXISTS fixture_usage (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            fixture_id    INTEGER NOT NULL REFERENCES fixture_catalog(id) ON DELETE CASCADE,
+            estimate_name TEXT NOT NULL,
+            package_title TEXT DEFAULT '',
+            used_at       TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_fusage_fid ON fixture_usage (fixture_id);
+
+        CREATE INDEX IF NOT EXISTS idx_fusage_est ON fixture_usage (estimate_name);
+
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_fusage_fid_est ON fixture_usage (fixture_id, estimate_name)
     """
 
     if USE_TURSO:
@@ -1250,6 +1295,7 @@ def move_estimate_db(
     new_display = f"{new_folder}/{name}" if new_folder else name
     usage_sql  = "UPDATE estimate_catalog_usage SET estimate_name=? WHERE estimate_name=?"
     attach_sql = "UPDATE estimate_attachments SET estimate_name=? WHERE estimate_name=?"
+    fusage_sql = "UPDATE fixture_usage SET estimate_name=? WHERE estimate_name=?"
 
     if actor_role == "admin":
         upd_sql = "UPDATE estimates SET folder=?, updated_at=? WHERE name=? AND folder=?"
@@ -1263,6 +1309,7 @@ def move_estimate_db(
         if old_display != new_display:
             _turso_execute(usage_sql, [new_display, old_display])
             _turso_execute(attach_sql, [new_display, old_display])
+            _turso_execute(fusage_sql, [new_display, old_display])
         return True
     else:
         with _local_conn() as conn:
@@ -1272,6 +1319,7 @@ def move_estimate_db(
             if old_display != new_display:
                 conn.execute(usage_sql, (new_display, old_display))
                 conn.execute(attach_sql, (new_display, old_display))
+                conn.execute(fusage_sql, (new_display, old_display))
             return True
 
 
@@ -1432,6 +1480,147 @@ def delete_attachment(attachment_id: int) -> str | None:
             key = row[0]
             conn.execute(delete, (attachment_id,))
             return key
+
+
+def get_fixture_types() -> list[str]:
+    sql = "SELECT name FROM fixture_types ORDER BY name"
+    if USE_TURSO:
+        rows = _turso_execute(sql)
+    else:
+        with _local_conn() as conn:
+            rows = [dict(r) for r in conn.execute(sql).fetchall()]
+    return [r["name"] for r in rows]
+
+
+def add_fixture_type(name: str) -> None:
+    sql = "INSERT OR IGNORE INTO fixture_types (name) VALUES (?)"
+    if USE_TURSO:
+        _turso_execute(sql, [name])
+    else:
+        with _local_conn() as conn:
+            conn.execute(sql, (name,))
+
+
+def search_fixture_catalog_db(q: str, limit: int = 50) -> list[dict]:
+    sql = """
+        SELECT
+            fc.id, fc.item_number, fc.description, fc.fixture_type,
+            fc.supplier, fc.price_per_unit, fc.unit, fc.invoice_no, fc.date,
+            (SELECT GROUP_CONCAT(estimate_name, ', ')
+             FROM fixture_usage WHERE fixture_id = fc.id) AS used_in
+        FROM fixture_catalog fc
+        WHERE fc.description LIKE '%' || ? || '%'
+        ORDER BY fc.description
+        LIMIT ?
+    """
+    if USE_TURSO:
+        return _turso_execute(sql, [q, limit])
+    else:
+        with _local_conn() as conn:
+            return [dict(r) for r in conn.execute(sql, (q, limit)).fetchall()]
+
+
+def clear_fixture_usage(estimate_name: str) -> None:
+    sql = "DELETE FROM fixture_usage WHERE estimate_name = ?"
+    if USE_TURSO:
+        _turso_execute(sql, [estimate_name])
+    else:
+        with _local_conn() as conn:
+            conn.execute(sql, (estimate_name,))
+
+
+def sync_fixture_catalog(estimate_name: str, fixture_packages: list) -> None:
+    """
+    Upsert catalog entries for all fixture rows; refresh usage links.
+    Catalog entries are never deleted — only usage links are refreshed per estimate.
+    """
+    find_by_item = (
+        "SELECT id FROM fixture_catalog "
+        "WHERE item_number = ? AND supplier = ? AND item_number != ''"
+    )
+    find_by_desc = "SELECT id FROM fixture_catalog WHERE description = ? AND supplier = ?"
+    ins_sql = (
+        "INSERT INTO fixture_catalog "
+        "(item_number, description, fixture_type, supplier, price_per_unit, unit, invoice_no, date) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+    )
+    upd_sql = (
+        "UPDATE fixture_catalog "
+        "SET description=?, fixture_type=?, price_per_unit=?, unit=?, invoice_no=?, date=? "
+        "WHERE id=?"
+    )
+    clear_sql = "DELETE FROM fixture_usage WHERE estimate_name = ?"
+    ins_usage = (
+        "INSERT OR IGNORE INTO fixture_usage (fixture_id, estimate_name, package_title) "
+        "VALUES (?, ?, ?)"
+    )
+
+    entries = []
+    for pkg in fixture_packages:
+        pkg_title = pkg.get("title", "")
+        supplier  = (pkg.get("supplier") or "").strip()
+        for row in pkg.get("rows", []):
+            desc = (row.get("description") or "").strip()
+            if not desc:
+                continue
+            entries.append({
+                "item_number":  (row.get("item_number")  or "").strip(),
+                "description":  desc,
+                "fixture_type": (row.get("fixture_type") or "").strip(),
+                "supplier":     supplier,
+                "price":        float(row.get("price_per_unit") or 0),
+                "unit":         (row.get("unit")         or "").strip(),
+                "invoice_no":   (row.get("invoice_no")   or "").strip(),
+                "date":         (row.get("date")         or "").strip(),
+                "pkg_title":    pkg_title,
+            })
+
+    if USE_TURSO:
+        _turso_execute(clear_sql, [estimate_name])
+        for e in entries:
+            if e["item_number"]:
+                rows = _turso_execute(find_by_item, [e["item_number"], e["supplier"]])
+            else:
+                rows = _turso_execute(find_by_desc, [e["description"], e["supplier"]])
+            if rows:
+                fid = rows[0]["id"]
+                _turso_execute(upd_sql, [
+                    e["description"], e["fixture_type"], e["price"],
+                    e["unit"], e["invoice_no"], e["date"], fid,
+                ])
+            else:
+                _turso_execute(ins_sql, [
+                    e["item_number"], e["description"], e["fixture_type"],
+                    e["supplier"], e["price"], e["unit"], e["invoice_no"], e["date"],
+                ])
+                if e["item_number"]:
+                    new = _turso_execute(find_by_item, [e["item_number"], e["supplier"]])
+                else:
+                    new = _turso_execute(find_by_desc, [e["description"], e["supplier"]])
+                fid = new[0]["id"] if new else None
+            if fid:
+                _turso_execute(ins_usage, [fid, estimate_name, e["pkg_title"]])
+    else:
+        with _local_conn() as conn:
+            conn.execute(clear_sql, (estimate_name,))
+            for e in entries:
+                if e["item_number"]:
+                    row = conn.execute(find_by_item, (e["item_number"], e["supplier"])).fetchone()
+                else:
+                    row = conn.execute(find_by_desc, (e["description"], e["supplier"])).fetchone()
+                if row:
+                    fid = row["id"]
+                    conn.execute(upd_sql, (
+                        e["description"], e["fixture_type"], e["price"],
+                        e["unit"], e["invoice_no"], e["date"], fid,
+                    ))
+                else:
+                    cur = conn.execute(ins_sql, (
+                        e["item_number"], e["description"], e["fixture_type"],
+                        e["supplier"], e["price"], e["unit"], e["invoice_no"], e["date"],
+                    ))
+                    fid = cur.lastrowid
+                conn.execute(ins_usage, (fid, estimate_name, e["pkg_title"]))
 
 
 def delete_attachments_for_estimate(estimate_name: str) -> list:

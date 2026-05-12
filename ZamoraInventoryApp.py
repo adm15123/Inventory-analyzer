@@ -44,6 +44,8 @@ from db import (
     deduplicate_catalog_usage, clean_lps_description_suffixes, fix_foamcore_descriptions, move_estimate_db,
     get_material_list_total,
     add_attachment, get_attachments, delete_attachment, delete_attachments_for_estimate,
+    get_fixture_types, add_fixture_type, search_fixture_catalog_db,
+    sync_fixture_catalog, clear_fixture_usage,
 )
 import r2_utils
 import tempfile
@@ -535,12 +537,16 @@ def search():
     results_payload = _search_supply_data(supply, query, page, per_page)
 
     supply_options = [
-        {"value": "supply1", "label": "Berger Plumbing Supply"},
-        {"value": "supply2", "label": "S2 Supply"},
-        {"value": "supply3", "label": "Lion Plumbing Supply"},
-        {"value": "supply4", "label": "Bond Plumbing Supply"},
-        {"value": "all",     "label": "All Suppliers"},
+        {"value": "supply1",     "label": "Berger Plumbing Supply"},
+        {"value": "supply2",     "label": "S2 Supply"},
+        {"value": "supply3",     "label": "Lion Plumbing Supply"},
+        {"value": "supply4",     "label": "Bond Plumbing Supply"},
+        {"value": "all",         "label": "All Suppliers"},
+        {"value": "fixtures_db", "label": "Fixtures DB"},
     ]
+
+    if supply == "fixtures_db":
+        results_payload = {"columns": [], "rows": []}
 
     initial = {
         "supply": supply,
@@ -560,18 +566,38 @@ def search():
 @login_required
 def api_search():
     supply = request.args.get("supply", "supply1")
-    query = request.args.get("query", "")
-    page = request.args.get("page", 1, type=int)
+    query  = request.args.get("query", "")
+
+    if supply == "fixtures_db":
+        if not query.strip():
+            return jsonify({"columns": [], "rows": []})
+        fc_rows = search_fixture_catalog_db(query.strip(), limit=100)
+        formatted = [{
+            "Description":    r.get("description", ""),
+            "Item Number":    r.get("item_number", ""),
+            "Fixture Type":   r.get("fixture_type", ""),
+            "Supply":         r.get("supplier", ""),
+            "Price per Unit": r.get("price_per_unit", 0),
+            "Unit":           r.get("unit", ""),
+            "Invoice No.":    r.get("invoice_no", ""),
+            "Date":           r.get("date", ""),
+            "Used In":        r.get("used_in") or "",
+        } for r in fc_rows]
+        return jsonify({
+            "columns": ["Description", "Item Number", "Fixture Type", "Supply",
+                        "Price per Unit", "Unit", "Invoice No.", "Date", "Used In"],
+            "rows": formatted,
+        })
+
+    page     = request.args.get("page", 1, type=int)
     per_page = request.args.get("per_page", type=int)
-    payload = _search_supply_data(supply, query, page, per_page)
-    return jsonify(
-        {
-            "columns": payload.get("columns", []),
-            "rows": payload.get("rows", []),
-            "next_page": payload.get("next_page"),
-            "prev_page": payload.get("prev_page"),
-        }
-    )
+    payload  = _search_supply_data(supply, query, page, per_page)
+    return jsonify({
+        "columns":   payload.get("columns", []),
+        "rows":      payload.get("rows", []),
+        "next_page": payload.get("next_page"),
+        "prev_page": payload.get("prev_page"),
+    })
     
 @app.route("/api/sku_judge", methods=["POST"])
 @login_required
@@ -1482,6 +1508,8 @@ def estimate_builder():
         "attachListUrl":   "/api/estimates/attachments",
         "attachDeleteUrl": "/api/estimates/attachments/",
         "r2Enabled":       r2_utils.ENABLED,
+        "fixtureTypes":        get_fixture_types(),
+        "fixtureSuppSearchUrl": url_for("api_fixture_supplier_search"),
     })
 
 
@@ -1537,6 +1565,20 @@ def save_estimate():
     except Exception:
         pass
 
+    # Sync fixture catalog and save any new fixture types
+    try:
+        fixture_packages = content.get("fixture_packages", [])
+        sync_fixture_catalog(display_name, fixture_packages)
+        seen_types = set()
+        for pkg in fixture_packages:
+            for row in pkg.get("rows", []):
+                ft = (row.get("fixture_type") or "").strip()
+                if ft and ft not in seen_types:
+                    seen_types.add(ft)
+                    add_fixture_type(ft)
+    except Exception as _fe:
+        print(f"[save_estimate] fixture sync error: {_fe}")
+
     tid = save_estimate_db(ename, folder, session["email"], session.get("role", "user"), data_json)
     if tid is None:
         return jsonify({"ok": False, "error": "Access denied"}), 403
@@ -1551,6 +1593,7 @@ def delete_estimate(name):
     if ok:
         display_name = f"{folder}/{ename}" if folder else ename
         clear_estimate_catalog_usage(display_name)
+        clear_fixture_usage(display_name)
         for key in delete_attachments_for_estimate(display_name):
             r2_utils.delete_file(key)
         flash("Estimate deleted.", "success")
@@ -1657,6 +1700,24 @@ def api_estimate_catalog():
     q = request.args.get("q", "").strip()
     results = search_estimate_catalog(q, limit=20) if q else []
     return jsonify(results)
+
+
+@app.route("/api/fixture-catalog/supplier-search")
+@login_required
+def api_fixture_supplier_search():
+    """Autocomplete endpoint: search invoice_items by description for a specific supplier."""
+    q            = request.args.get("q", "").strip()
+    supplier_key = request.args.get("supplier", "")
+    supplier_code = SUPPLY_CODES.get(supplier_key, "")
+    if not q or len(q) < 2:
+        return jsonify([])
+    rows = search_items(q, supplier=supplier_code if supplier_code else None, limit=50)
+    seen = {}
+    for row in rows:
+        desc = row.get("Description", "")
+        if desc not in seen:
+            seen[desc] = row
+    return jsonify(list(seen.values())[:20])
 
 
 @app.route("/api/material_list_names")
