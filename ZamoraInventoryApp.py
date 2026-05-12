@@ -45,7 +45,7 @@ from db import (
     get_material_list_total,
     add_attachment, get_attachments, delete_attachment, delete_attachments_for_estimate,
     get_fixture_types, add_fixture_type, search_fixture_catalog_db,
-    sync_fixture_catalog, clear_fixture_usage,
+    sync_fixture_catalog, clear_fixture_usage, search_items,
 )
 import r2_utils
 import tempfile
