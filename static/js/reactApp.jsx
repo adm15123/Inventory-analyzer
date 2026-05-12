@@ -3378,24 +3378,28 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onRemoveR
   const fetchAc = (q, rowIdx, inputEl) => {
     clearTimeout(acTimerRef.current);
     if (!q || q.length < 2) { setAcResults([]); setAcRowIdx(null); return; }
+    // Capture rect immediately — don't wait for the debounce timer
+    let anchor = null;
+    if (inputEl) {
+      const rect = inputEl.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const openUp = spaceBelow < 280 && rect.top > 280;
+      anchor = {
+        left: rect.left,
+        ...(openUp ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
+        openUp,
+        maxH: openUp ? rect.top - 20 : spaceBelow - 20,
+      };
+    }
     acTimerRef.current = setTimeout(() => {
+      if (!supplierSearchUrl) return;
       fetch(`${supplierSearchUrl}?q=${encodeURIComponent(q)}&supplier=${encodeURIComponent(pkg.supplier || "")}`)
         .then(r => r.json())
         .then(res => {
           if (res && res.length > 0) {
             setAcResults(res);
             setAcRowIdx(rowIdx);
-            if (inputEl) {
-              const rect = inputEl.getBoundingClientRect();
-              const spaceBelow = window.innerHeight - rect.bottom;
-              const openUp = spaceBelow < 280 && rect.top > 280;
-              setAcAnchor({
-                left: rect.left,
-                ...(openUp ? { bottom: window.innerHeight - rect.top + 4 } : { top: rect.bottom + 4 }),
-                openUp,
-                maxH: openUp ? rect.top - 20 : spaceBelow - 20,
-              });
-            }
+            setAcAnchor(anchor);
           } else {
             setAcResults([]);
           }
@@ -3621,6 +3625,7 @@ function EstimateBuilderPage({ data }) {
   const [projectInfo, setProjectInfo]     = useState(data.content?.project_info || { name: "", address: "", contractor: "", date: "" });
   const [scenarios, setScenarios]         = useState(() => _buildInitialScenarios(data.content));
   const [activeScenarioIdx, setActiveScenarioIdx] = useState(0);
+  const [activeView, setActiveView]       = useState("estimate"); // "estimate" | "fixtures"
   const [renamingIdx, setRenamingIdx]     = useState(null);
   const [sections, setSections]           = useState(data.content?.scenarios?.[0]?.sections ?? data.content?.sections ?? []);
   const [bids, setBids]                   = useState(data.content?.scenarios?.[0]?.bids     ?? data.content?.bids     ?? []);
@@ -3731,6 +3736,7 @@ function EstimateBuilderPage({ data }) {
     );
 
   const switchScenario = (newIdx) => {
+    setActiveView("estimate");
     if (newIdx === activeScenarioIdx) return;
     const saved = _saveCurrentScenario(scenarios);
     const next  = saved[newIdx];
@@ -4167,9 +4173,26 @@ function EstimateBuilderPage({ data }) {
             title="Add new scenario"
             className="mb-0 px-3 py-2.5 text-sm text-slate-400 hover:text-sky-600 hover:bg-slate-50 rounded-t transition self-end whitespace-nowrap"
           >＋ Add</button>
+          <div className="ml-auto border-l border-slate-200 self-stretch flex items-center pl-2 pr-1">
+            <button
+              onClick={() => setActiveView(v => v === "fixtures" ? "estimate" : "fixtures")}
+              title="Toggle Fixtures Packages view"
+              className={`px-3 py-2 text-sm rounded-t transition font-medium whitespace-nowrap ${
+                activeView === "fixtures"
+                  ? "text-teal-700 bg-teal-50 border-b-2 border-teal-500"
+                  : "text-slate-400 hover:text-teal-600 hover:bg-teal-50"
+              }`}
+            >🔧 Fixtures</button>
+          </div>
         </div>
-        <p className="px-4 py-1.5 text-xs text-slate-400">Click to switch · Double-click to rename · ⧉ to duplicate</p>
+        <p className="px-4 py-1.5 text-xs text-slate-400">
+          {activeView === "fixtures"
+            ? "Viewing Fixtures Packages — click a scenario tab to return to the estimate"
+            : "Click to switch · Double-click to rename · ⧉ to duplicate"}
+        </p>
       </div>
+
+      {activeView === "estimate" && <>
 
       {/* Plumbing sections */}
       {sections.map((section, si) => !isBelowLine(section) && (
@@ -4865,6 +4888,9 @@ function EstimateBuilderPage({ data }) {
         </div>
       </div>
 
+      </>}
+
+      {activeView === "fixtures" && <>
       {/* Plumbing Fixtures Packages */}
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -4895,7 +4921,8 @@ function EstimateBuilderPage({ data }) {
         ))}
       </div>
 
-      {/* datalist for fixture type autocomplete */}
+      </>}
+
       <datalist id="fixture-types-datalist">
         {fixtureTypes.map(t => <option key={t} value={t} />)}
       </datalist>
