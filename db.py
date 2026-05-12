@@ -1695,7 +1695,8 @@ def get_kit_with_members(kit_id: int) -> dict | None:
     mem_sql = """
         SELECT fkm.id AS member_id, fkm.role, fkm.sort_order,
                fc.id AS catalog_id, fc.description, fc.item_number,
-               fc.supplier, fc.price_per_unit, fc.unit, fc.fixture_type
+               fc.supplier, fc.price_per_unit, fc.unit, fc.fixture_type,
+               fc.invoice_no, fc.date
         FROM fixture_kit_members fkm
         JOIN fixture_catalog fc ON fc.id = fkm.catalog_id
         WHERE fkm.kit_id = ?

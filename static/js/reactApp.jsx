@@ -471,6 +471,8 @@ function FixtureKitsModal({ onClose, initialKits }) {
   const fetchKits = () =>
     fetch("/api/fixture-kits").then(r => r.json()).then(d => setKits(d.kits || []));
 
+  useEffect(() => { fetchKits(); }, []);
+
   const fetchKitDetail = (kitId) => {
     setSelectedKitId(kitId);
     fetch(`/api/fixture-kits/${kitId}`).then(r => r.json()).then(d => setKitDetail(d));
@@ -3814,6 +3816,15 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
   const [selectedKitId, setSelectedKitId] = useState("");
   const [kitPreview, setKitPreview]       = useState(null); // {kit, members}
   const [kitLoading, setKitLoading]       = useState(false);
+  // Catalog search state
+  const [showCatSearch, setShowCatSearch] = useState(false);
+  const [catQuery, setCatQuery]           = useState("");
+  const [catResults, setCatResults]       = useState([]);
+  const catSearchTimer = useRef(null);
+  // Spec viewer state
+  const [specsForCatalogId, setSpecsForCatalogId] = useState(null);
+  const [specsModalData, setSpecsModalData]       = useState([]);
+  const [specsModalLoading, setSpecsModalLoading] = useState(false);
 
   const inputClass = "w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200";
 
@@ -3891,6 +3902,48 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
     setKitPreview(null);
   };
 
+  // Catalog search helpers
+  const searchCatalog = (q) => {
+    setCatQuery(q);
+    clearTimeout(catSearchTimer.current);
+    if (q.length < 2) { setCatResults([]); return; }
+    catSearchTimer.current = setTimeout(() => {
+      fetch(`/api/search?supply=fixtures_db&query=${encodeURIComponent(q)}`)
+        .then(r => r.json())
+        .then(d => setCatResults((d.rows || []).slice(0, 15)));
+    }, 250);
+  };
+
+  const addRowFromCatalog = (row) => {
+    const newRow = {
+      id:            crypto.randomUUID(),
+      catalog_id:    row.catalog_id || null,
+      fixture_type:  row["Fixture Type"] || "",
+      description:   row.Description || "",
+      item_number:   row["Item Number"] || "",
+      qty:           "",
+      price_per_unit: parseFloat(row["Price per Unit"] || 0) || "",
+      unit:          row.Unit || "",
+      invoice_no:    row["Invoice No."] || "",
+      date:          row.Date || "",
+      sub_total:     0,
+      comments:      "",
+    };
+    onAddRowsFromKit(pkgIdx, [newRow]);
+    setCatQuery(""); setCatResults([]);
+  };
+
+  // Spec viewer helpers
+  const openSpecsForRow = (catalogId) => {
+    if (specsForCatalogId === catalogId) { setSpecsForCatalogId(null); return; }
+    setSpecsForCatalogId(catalogId);
+    setSpecsModalLoading(true);
+    fetch(`/api/fixture-specs?catalog_id=${catalogId}`)
+      .then(r => r.json())
+      .then(d => setSpecsModalData(d.specs || []))
+      .finally(() => setSpecsModalLoading(false));
+  };
+
   const subtotal  = (pkg.rows || []).reduce((s, r) => s + (parseFloat(r.sub_total) || 0), 0);
   const tax       = subtotal * 0.07;
   const extrasAmt = parseFloat(pkg.extras) || 0;
@@ -3939,6 +3992,7 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
                   <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-24">DATE</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-24">SUBTOTAL</th>
                   <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700">COMMENTS</th>
+                  <th className="px-3 py-2 w-8 text-center text-xs font-semibold text-teal-700">📄</th>
                   <th className="px-3 py-2 w-8"></th>
                 </tr>
               </thead>
@@ -3991,22 +4045,36 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
                       <AutoTextarea value={row.comments || ""} onChange={e => onUpdateRow(pkgIdx, ri, { comments: e.target.value })} className={inputClass} placeholder="Comments…" />
                     </td>
                     <td className="px-3 py-1.5 text-center">
+                      {row.catalog_id ? (
+                        <button
+                          onClick={() => openSpecsForRow(row.catalog_id)}
+                          title="View spec sheets"
+                          className={`text-sm transition ${specsForCatalogId === row.catalog_id ? "text-teal-600" : "text-slate-300 hover:text-teal-500"}`}>
+                          📄
+                        </button>
+                      ) : <span className="text-slate-200 text-xs">—</span>}
+                    </td>
+                    <td className="px-3 py-1.5 text-center">
                       <button onClick={() => onRemoveRow(pkgIdx, ri)} className="text-slate-400 hover:text-rose-500 text-xl leading-none transition" title="Remove">×</button>
                     </td>
                   </tr>
                 ))}
                 {(!pkg.rows || pkg.rows.length === 0) && (
-                  <tr><td colSpan="11" className="px-3 py-6 text-center text-sm text-slate-400">No items yet — click + Add Row below.</td></tr>
+                  <tr><td colSpan="12" className="px-3 py-6 text-center text-sm text-slate-400">No items yet — click + Add Row below.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
 
-          <div className="px-5 py-2 border-t border-teal-100 flex items-center gap-4">
+          <div className="px-5 py-2 border-t border-teal-100 flex items-center gap-4 flex-wrap">
             <button onClick={() => onAddRow(pkgIdx)} className="text-sm text-teal-600 font-semibold hover:text-teal-800 transition">+ Add Row</button>
             <button onClick={openKitPicker}
               className={`text-sm font-semibold transition ${showKitPicker ? "text-teal-700" : "text-slate-400 hover:text-teal-600"}`}>
               📦 Add from Kit
+            </button>
+            <button onClick={() => { setShowCatSearch(c => !c); setCatQuery(""); setCatResults([]); }}
+              className={`text-sm font-semibold transition ${showCatSearch ? "text-teal-700" : "text-slate-400 hover:text-teal-600"}`}>
+              🔍 Search Fixture Catalog
             </button>
           </div>
 
@@ -4057,6 +4125,64 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
                 </table>
               ) : kitPreview && (
                 <p className="text-xs text-slate-400">This kit has no members yet. Use Manage Kits to add items.</p>
+              )}
+            </div>
+          )}
+
+          {/* Catalog search panel */}
+          {showCatSearch && (
+            <div className="border-t border-teal-200 bg-teal-50/40 px-5 py-4 space-y-2">
+              <p className="text-xs font-semibold text-teal-700 uppercase tracking-wide">Search Fixture Catalog</p>
+              <div className="relative">
+                <input
+                  value={catQuery}
+                  onChange={e => searchCatalog(e.target.value)}
+                  placeholder="Type description to search saved fixtures…"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200"
+                />
+                {catResults.length > 0 && (
+                  <div className="absolute top-full left-0 right-0 mt-1 border border-slate-200 rounded-xl bg-white shadow-xl max-h-64 overflow-y-auto z-20">
+                    {catResults.map((r, i) => (
+                      <button key={i} onClick={() => addRowFromCatalog(r)}
+                        className="w-full text-left px-4 py-2.5 text-sm hover:bg-teal-50 border-b border-slate-100 last:border-0 transition">
+                        <div className="flex justify-between items-start gap-3">
+                          <div>
+                            <p className="font-semibold text-slate-800">{r.Description}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">{r["Fixture Type"] && <span className="mr-2">{r["Fixture Type"]}</span>}{r["Item Number"] && <span className="mr-2">#{r["Item Number"]}</span>}{r["Supply"]}</p>
+                          </div>
+                          <span className="text-sm font-bold text-teal-700 shrink-0">${parseFloat(r["Price per Unit"] || 0).toFixed(2)}</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {catQuery.length >= 2 && catResults.length === 0 && (
+                  <p className="mt-1 text-xs text-slate-400">No matches in fixture catalog. Save an estimate with fixture rows first to populate the catalog.</p>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Spec viewer panel */}
+          {specsForCatalogId && (
+            <div className="border-t border-teal-200 bg-slate-50 px-5 py-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-600">📄 Specification Sheets</p>
+                <button onClick={() => setSpecsForCatalogId(null)} className="text-xs text-slate-400 hover:text-slate-600 transition">Close</button>
+              </div>
+              {specsModalLoading ? (
+                <p className="text-xs text-slate-400">Loading…</p>
+              ) : specsModalData.length === 0 ? (
+                <p className="text-xs text-slate-400">No specs uploaded for this item. Upload them from the Fixtures DB in the Search tab.</p>
+              ) : (
+                <div className="flex flex-wrap gap-2">
+                  {specsModalData.map(s => (
+                    <a key={s.id} href={s.url} target="_blank" rel="noreferrer"
+                      className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-sky-600 shadow-sm hover:bg-sky-50 hover:text-sky-700 transition">
+                      📄 {s.file_name}
+                    </a>
+                  ))}
+                </div>
               )}
             </div>
           )}
@@ -4320,17 +4446,18 @@ function EstimateBuilderPage({ data }) {
     setFixturePackages(prev => prev.map((p, i) => {
       if (i !== pkgIdx) return p;
       const newRows = members.map(m => ({
-        id: crypto.randomUUID(),
-        fixture_type: m.fixture_type || m.role || "",
-        description:  m.description || "",
-        item_number:  m.item_number || "",
-        qty:          "",
+        id:            crypto.randomUUID(),
+        catalog_id:    m.catalog_id || null,
+        fixture_type:  m.fixture_type || m.role || "",
+        description:   m.description || "",
+        item_number:   m.item_number || "",
+        qty:           "",
         price_per_unit: m.price_per_unit || "",
-        unit:         m.unit || "",
-        invoice_no:   "",
-        date:         "",
-        sub_total:    0,
-        comments:     "",
+        unit:          m.unit || "",
+        invoice_no:    m.invoice_no || "",
+        date:          m.date || "",
+        sub_total:     0,
+        comments:      "",
       }));
       return { ...p, rows: [...(p.rows || []), ...newRows] };
     }));
