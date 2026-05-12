@@ -3982,18 +3982,18 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-teal-50 border-b border-teal-100">
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-40">FIXTURE TYPE</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700">DESCRIPTION</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-28">ITEM #</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-16">QTY</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-24">PRICE/UNIT</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-14">UNIT</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-24">INVOICE #</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-24">DATE</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700 w-24">SUBTOTAL</th>
-                  <th className="px-3 py-2 text-left text-xs font-semibold text-teal-700">COMMENTS</th>
-                  <th className="px-3 py-2 w-8 text-center text-xs font-semibold text-teal-700">📄</th>
-                  <th className="px-3 py-2 w-8"></th>
+                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-32">FIXTURE TYPE</th>
+                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700">DESCRIPTION</th>
+                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-32">ITEM #</th>
+                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-14">QTY</th>
+                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-24">PRICE/UNIT</th>
+                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-12">UNIT</th>
+                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-28">INVOICE #</th>
+                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-28">DATE</th>
+                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-24">SUBTOTAL</th>
+                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700">COMMENTS</th>
+                  <th className="px-1 py-2 w-7 text-center text-xs font-semibold text-teal-700">📄</th>
+                  <th className="px-1 py-2 w-7"></th>
                 </tr>
               </thead>
               <tbody>
@@ -4148,7 +4148,7 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
                         <div className="flex justify-between items-start gap-3">
                           <div>
                             <p className="font-semibold text-slate-800">{r.Description}</p>
-                            <p className="text-xs text-slate-400 mt-0.5">{r["Fixture Type"] && <span className="mr-2">{r["Fixture Type"]}</span>}{r["Item Number"] && <span className="mr-2">#{r["Item Number"]}</span>}{r["Supply"]}</p>
+                            <p className="text-xs text-slate-400 mt-0.5">{r["Fixture Type"] && <span className="mr-2">{r["Fixture Type"]}</span>}{r["Item Number"] && <span className="mr-2">#{r["Item Number"]}</span>}{supplyLabels[r["Supply"]] || r["Supply"]}</p>
                           </div>
                           <span className="text-sm font-bold text-teal-700 shrink-0">${parseFloat(r["Price per Unit"] || 0).toFixed(2)}</span>
                         </div>
