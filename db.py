@@ -437,7 +437,19 @@ def init_db():
             uploaded_at TEXT DEFAULT (datetime('now'))
         );
 
-        CREATE INDEX IF NOT EXISTS idx_fspecs_cat ON fixture_specs (catalog_id)
+        CREATE INDEX IF NOT EXISTS idx_fspecs_cat ON fixture_specs (catalog_id);
+
+        CREATE TABLE IF NOT EXISTS row_attachments (
+            id            INTEGER PRIMARY KEY AUTOINCREMENT,
+            estimate_name TEXT NOT NULL,
+            row_id        TEXT NOT NULL,
+            file_name     TEXT NOT NULL,
+            file_type     TEXT NOT NULL,
+            r2_key        TEXT NOT NULL,
+            uploaded_at   TEXT DEFAULT (datetime('now'))
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_rowatt_key ON row_attachments (estimate_name, row_id)
     """
 
     if USE_TURSO:
@@ -1807,6 +1819,46 @@ def delete_fixture_spec(spec_id: int) -> str | None:
             row = conn.execute(sel, (spec_id,)).fetchone()
             key = row[0] if row else None
             conn.execute(delete, (spec_id,))
+            return key
+
+
+def add_row_attachment(estimate_name: str, row_id: str, file_name: str, file_type: str, r2_key: str) -> int | None:
+    sql = "INSERT INTO row_attachments (estimate_name, row_id, file_name, file_type, r2_key) VALUES (?, ?, ?, ?, ?)"
+    if USE_TURSO:
+        _turso_execute(sql, [estimate_name, row_id, file_name, file_type, r2_key])
+        rows = _turso_execute("SELECT id FROM row_attachments WHERE r2_key = ? LIMIT 1", [r2_key])
+        return rows[0]["id"] if rows else None
+    else:
+        with _local_conn() as conn:
+            return conn.execute(sql, (estimate_name, row_id, file_name, file_type, r2_key)).lastrowid
+
+
+def get_row_attachments(estimate_name: str, row_id: str) -> list[dict]:
+    sql = (
+        "SELECT id, file_name, file_type, r2_key, uploaded_at "
+        "FROM row_attachments WHERE estimate_name = ? AND row_id = ? ORDER BY uploaded_at"
+    )
+    if USE_TURSO:
+        return _turso_execute(sql, [estimate_name, row_id])
+    else:
+        with _local_conn() as conn:
+            return [dict(r) for r in conn.execute(sql, (estimate_name, row_id)).fetchall()]
+
+
+def delete_row_attachment(attach_id: int) -> str | None:
+    sel = "SELECT r2_key FROM row_attachments WHERE id = ?"
+    delete = "DELETE FROM row_attachments WHERE id = ?"
+    if USE_TURSO:
+        rows = _turso_execute(sel, [attach_id])
+        key = rows[0]["r2_key"] if rows else None
+        if key:
+            _turso_execute(delete, [attach_id])
+        return key
+    else:
+        with _local_conn() as conn:
+            row = conn.execute(sel, (attach_id,)).fetchone()
+            key = row[0] if row else None
+            conn.execute(delete, (attach_id,))
             return key
 
 

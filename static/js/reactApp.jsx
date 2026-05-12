@@ -3804,7 +3804,7 @@ function EstimatesPage({ data }) {
 // ================================================================
 // FixturesPanel — a single plumbing fixtures package
 // ================================================================
-function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRowsFromKit, onRemoveRow, onUpdateRow, supplierSearchUrl, fixtureTypes }) {
+function FixturesPanel({ pkg, pkgIdx, estimateName, onUpdatePkg, onDelete, onAddRow, onAddRowsFromKit, onRemoveRow, onUpdateRow, supplierSearchUrl, fixtureTypes }) {
   const [collapsed, setCollapsed] = useState(false);
   const [acResults, setAcResults] = useState([]);
   const [acRowIdx, setAcRowIdx]   = useState(null);
@@ -3821,10 +3821,12 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
   const [catQuery, setCatQuery]           = useState("");
   const [catResults, setCatResults]       = useState([]);
   const catSearchTimer = useRef(null);
-  // Spec viewer state
-  const [specsForCatalogId, setSpecsForCatalogId] = useState(null);
-  const [specsModalData, setSpecsModalData]       = useState([]);
-  const [specsModalLoading, setSpecsModalLoading] = useState(false);
+  // Spec/attachment panel state — activeSpecRow: { row_id, catalog_id, description } | null
+  const [activeSpecRow, setActiveSpecRow]   = useState(null);
+  const [specFiles, setSpecFiles]           = useState([]);
+  const [specLoading, setSpecLoading]       = useState(false);
+  const [specUploading, setSpecUploading]   = useState(false);
+  const specFileRef = useRef(null);
 
   const inputClass = "w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm text-slate-700 shadow-sm focus:border-teal-500 focus:outline-none focus:ring-2 focus:ring-teal-200";
 
@@ -3897,7 +3899,7 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
 
   const addAllFromKit = () => {
     if (!kitPreview?.members?.length) return;
-    onAddRowsFromKit(pkgIdx, kitPreview.members);
+    onAddRowsFromKit(pkgIdx, kitPreview.members, { kit_id: kitPreview.kit?.id, kit_name: kitPreview.kit?.name });
     setShowKitPicker(false);
     setKitPreview(null);
   };
@@ -3933,15 +3935,48 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
     setCatQuery(""); setCatResults([]);
   };
 
-  // Spec viewer helpers
-  const openSpecsForRow = (catalogId) => {
-    if (specsForCatalogId === catalogId) { setSpecsForCatalogId(null); return; }
-    setSpecsForCatalogId(catalogId);
-    setSpecsModalLoading(true);
-    fetch(`/api/fixture-specs?catalog_id=${catalogId}`)
+  // Spec/attachment panel helpers
+  const openSpecsForRow = (row) => {
+    if (activeSpecRow?.row_id === row.id) { setActiveSpecRow(null); setSpecFiles([]); return; }
+    const panel = { row_id: row.id, catalog_id: row.catalog_id || null, description: row.description || "this item" };
+    setActiveSpecRow(panel);
+    setSpecFiles([]);
+    setSpecLoading(true);
+    const url = row.catalog_id
+      ? `/api/fixture-specs?catalog_id=${row.catalog_id}`
+      : `/api/row-attachments?estimate_name=${encodeURIComponent(estimateName)}&row_id=${encodeURIComponent(row.id)}`;
+    fetch(url)
       .then(r => r.json())
-      .then(d => setSpecsModalData(d.specs || []))
-      .finally(() => setSpecsModalLoading(false));
+      .then(d => setSpecFiles(d.specs || d.attachments || []))
+      .finally(() => setSpecLoading(false));
+  };
+
+  const uploadSpecFile = (file) => {
+    if (!activeSpecRow) return;
+    setSpecUploading(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    let url;
+    if (activeSpecRow.catalog_id) {
+      fd.append("catalog_id", activeSpecRow.catalog_id);
+      url = "/api/fixture-specs/upload";
+    } else {
+      fd.append("estimate_name", estimateName);
+      fd.append("row_id", activeSpecRow.row_id);
+      url = "/api/row-attachments/upload";
+    }
+    fetch(url, { method: "POST", body: fd })
+      .then(r => r.json())
+      .then(d => { if (d.ok) setSpecFiles(prev => [...prev, d]); })
+      .finally(() => setSpecUploading(false));
+  };
+
+  const deleteSpecFile = (fileId) => {
+    const url = activeSpecRow?.catalog_id
+      ? `/api/fixture-specs/${fileId}`
+      : `/api/row-attachments/${fileId}`;
+    fetch(url, { method: "DELETE" })
+      .then(() => setSpecFiles(prev => prev.filter(f => f.id !== fileId)));
   };
 
   const subtotal  = (pkg.rows || []).reduce((s, r) => s + (parseFloat(r.sub_total) || 0), 0);
@@ -3998,7 +4033,7 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
               </thead>
               <tbody>
                 {(pkg.rows || []).map((row, ri) => (
-                  <tr key={row.id} className={ri % 2 === 0 ? "bg-white" : "bg-teal-50/30"}>
+                  <tr key={row.id} className={`${ri % 2 === 0 ? "bg-white" : "bg-teal-50/30"} ${row.kit_id ? "border-l-4 border-teal-400" : ""}`}>
                     <td className="px-3 py-1.5">
                       <input
                         list="fixture-types-datalist"
@@ -4007,6 +4042,9 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
                         className={inputClass}
                         placeholder="Type…"
                       />
+                      {row.kit_name && (
+                        <span className="block text-xs text-teal-500 font-medium mt-0.5 truncate" title={row.kit_name}>🔗 {row.kit_name}</span>
+                      )}
                     </td>
                     <td className="px-3 py-1.5">
                       <AutoTextarea
@@ -4045,14 +4083,12 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
                       <AutoTextarea value={row.comments || ""} onChange={e => onUpdateRow(pkgIdx, ri, { comments: e.target.value })} className={inputClass} placeholder="Comments…" />
                     </td>
                     <td className="px-3 py-1.5 text-center">
-                      {row.catalog_id ? (
-                        <button
-                          onClick={() => openSpecsForRow(row.catalog_id)}
-                          title="View spec sheets"
-                          className={`text-sm transition ${specsForCatalogId === row.catalog_id ? "text-teal-600" : "text-slate-300 hover:text-teal-500"}`}>
-                          📄
-                        </button>
-                      ) : <span className="text-slate-200 text-xs">—</span>}
+                      <button
+                        onClick={() => openSpecsForRow(row)}
+                        title={row.catalog_id ? "View/upload catalog spec sheets" : "View/upload row attachments"}
+                        className={`text-sm transition ${activeSpecRow?.row_id === row.id ? "text-teal-600" : "text-slate-300 hover:text-teal-500"}`}>
+                        📄
+                      </button>
                     </td>
                     <td className="px-3 py-1.5 text-center">
                       <button onClick={() => onRemoveRow(pkgIdx, ri)} className="text-slate-400 hover:text-rose-500 text-xl leading-none transition" title="Remove">×</button>
@@ -4163,24 +4199,52 @@ function FixturesPanel({ pkg, pkgIdx, onUpdatePkg, onDelete, onAddRow, onAddRows
             </div>
           )}
 
-          {/* Spec viewer panel */}
-          {specsForCatalogId && (
+          {/* Spec / attachment panel */}
+          {activeSpecRow && (
             <div className="border-t border-teal-200 bg-slate-50 px-5 py-3 space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-xs font-semibold text-slate-600">📄 Specification Sheets</p>
-                <button onClick={() => setSpecsForCatalogId(null)} className="text-xs text-slate-400 hover:text-slate-600 transition">Close</button>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <div>
+                  <p className="text-xs font-semibold text-slate-700">
+                    {activeSpecRow.catalog_id ? "📄 Catalog Spec Sheets" : "📎 Row Attachments"}
+                    <span className="ml-2 text-slate-400 font-normal">— {activeSpecRow.description}</span>
+                  </p>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {activeSpecRow.catalog_id
+                      ? "Shared across all estimates — stored in the fixture catalog."
+                      : "Attached to this row in this estimate only."}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={specFileRef}
+                    type="file"
+                    accept=".pdf,image/*"
+                    className="hidden"
+                    onChange={e => { if (e.target.files[0]) { uploadSpecFile(e.target.files[0]); e.target.value = ""; } }}
+                  />
+                  <button
+                    onClick={() => specFileRef.current?.click()}
+                    disabled={specUploading}
+                    className="rounded-lg bg-teal-600 text-white px-3 py-1 text-xs font-semibold hover:bg-teal-700 disabled:opacity-50 transition">
+                    {specUploading ? "Uploading…" : "+ Upload File"}
+                  </button>
+                  <button onClick={() => { setActiveSpecRow(null); setSpecFiles([]); }} className="text-xs text-slate-400 hover:text-slate-600 transition">Close</button>
+                </div>
               </div>
-              {specsModalLoading ? (
+              {specLoading ? (
                 <p className="text-xs text-slate-400">Loading…</p>
-              ) : specsModalData.length === 0 ? (
-                <p className="text-xs text-slate-400">No specs uploaded for this item. Upload them from the Fixtures DB in the Search tab.</p>
+              ) : specFiles.length === 0 ? (
+                <p className="text-xs text-slate-400">No files attached yet — click + Upload File above.</p>
               ) : (
                 <div className="flex flex-wrap gap-2">
-                  {specsModalData.map(s => (
-                    <a key={s.id} href={s.url} target="_blank" rel="noreferrer"
-                      className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm font-medium text-sky-600 shadow-sm hover:bg-sky-50 hover:text-sky-700 transition">
-                      📄 {s.file_name}
-                    </a>
+                  {specFiles.map(s => (
+                    <div key={s.id} className="flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-2 py-1 shadow-sm">
+                      <a href={s.url} target="_blank" rel="noreferrer"
+                        className="text-sm font-medium text-sky-600 hover:text-sky-700 transition">
+                        📄 {s.file_name}
+                      </a>
+                      <button onClick={() => deleteSpecFile(s.id)} className="text-slate-300 hover:text-rose-500 text-base leading-none ml-1 transition" title="Delete">×</button>
+                    </div>
                   ))}
                 </div>
               )}
@@ -4442,22 +4506,24 @@ function EstimateBuilderPage({ data }) {
   // ── fixture package helpers ──────────────────────────────────────
   const [showFixtureKitsModal, setShowFixtureKitsModal] = useState(false);
 
-  const addFixtureRowsFromKit = useCallback((pkgIdx, members) => {
+  const addFixtureRowsFromKit = useCallback((pkgIdx, members, kitMeta) => {
     setFixturePackages(prev => prev.map((p, i) => {
       if (i !== pkgIdx) return p;
       const newRows = members.map(m => ({
-        id:            crypto.randomUUID(),
+        id:            m.id || crypto.randomUUID(),
         catalog_id:    m.catalog_id || null,
+        kit_id:        kitMeta?.kit_id || null,
+        kit_name:      kitMeta?.kit_name || null,
         fixture_type:  m.fixture_type || m.role || "",
         description:   m.description || "",
         item_number:   m.item_number || "",
-        qty:           "",
+        qty:           m.qty ?? "",
         price_per_unit: m.price_per_unit || "",
         unit:          m.unit || "",
         invoice_no:    m.invoice_no || "",
         date:          m.date || "",
-        sub_total:     0,
-        comments:      "",
+        sub_total:     m.sub_total || 0,
+        comments:      m.comments || "",
       }));
       return { ...p, rows: [...(p.rows || []), ...newRows] };
     }));
@@ -5590,6 +5656,7 @@ function EstimateBuilderPage({ data }) {
             key={pkg.id}
             pkg={pkg}
             pkgIdx={pkgIdx}
+            estimateName={estimateName}
             onUpdatePkg={updateFixturePkg}
             onDelete={() => removeFixturePackage(pkgIdx)}
             onAddRow={addFixtureRow}

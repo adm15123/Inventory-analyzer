@@ -49,6 +49,7 @@ from db import (
     get_all_kits, get_kit_with_members, create_kit, rename_kit, delete_kit,
     add_kit_member, remove_kit_member,
     add_fixture_spec, get_fixture_specs, delete_fixture_spec,
+    add_row_attachment, get_row_attachments, delete_row_attachment,
 )
 import r2_utils
 import tempfile
@@ -1829,6 +1830,60 @@ def api_fixture_spec_list():
 @login_required
 def api_fixture_spec_delete(spec_id):
     key = delete_fixture_spec(spec_id)
+    if key and r2_utils.ENABLED:
+        r2_utils.delete_file(key)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/row-attachments/upload", methods=["POST"])
+@login_required
+def api_row_attachment_upload():
+    if not r2_utils.ENABLED:
+        return jsonify({"ok": False, "error": "R2 not configured"}), 503
+    estimate_name = request.form.get("estimate_name", "").strip()
+    row_id = request.form.get("row_id", "").strip()
+    if not estimate_name or not row_id:
+        return jsonify({"ok": False, "error": "Missing estimate_name or row_id"}), 400
+    f = request.files.get("file")
+    if not f:
+        return jsonify({"ok": False, "error": "No file"}), 400
+    if f.content_type not in ALLOWED_ATTACHMENT_TYPES:
+        return jsonify({"ok": False, "error": "File type not allowed"}), 400
+    f.seek(0, 2)
+    if f.tell() / (1024 * 1024) > MAX_ATTACHMENT_MB:
+        return jsonify({"ok": False, "error": f"File exceeds {MAX_ATTACHMENT_MB} MB limit"}), 400
+    f.seek(0)
+    safe_name = secure_filename(f.filename)
+    safe_est = secure_filename(estimate_name)
+    key = f"row-attachments/{safe_est}/{row_id}/{uuid.uuid4().hex}_{safe_name}"
+    r2_utils.upload_file(f.stream, key, f.content_type)
+    attach_id = add_row_attachment(estimate_name, row_id, safe_name, f.content_type, key)
+    url = r2_utils.presigned_url(key)
+    return jsonify({"ok": True, "id": attach_id, "file_name": safe_name, "file_type": f.content_type, "url": url})
+
+
+@app.route("/api/row-attachments")
+@login_required
+def api_row_attachment_list():
+    estimate_name = request.args.get("estimate_name", "").strip()
+    row_id = request.args.get("row_id", "").strip()
+    if not estimate_name or not row_id:
+        return jsonify({"ok": False, "error": "Missing estimate_name or row_id"}), 400
+    rows = get_row_attachments(estimate_name, row_id)
+    if r2_utils.ENABLED:
+        for row in rows:
+            row["url"] = r2_utils.presigned_url(row.pop("r2_key"))
+    else:
+        for row in rows:
+            row["url"] = ""
+            row.pop("r2_key", None)
+    return jsonify({"ok": True, "attachments": rows})
+
+
+@app.route("/api/row-attachments/<int:attach_id>", methods=["DELETE"])
+@login_required
+def api_row_attachment_delete(attach_id):
+    key = delete_row_attachment(attach_id)
     if key and r2_utils.ENABLED:
         r2_utils.delete_file(key)
     return jsonify({"ok": True})
