@@ -91,6 +91,11 @@
 
     /* Table alternating rows */
     html.dark .even\:bg-slate-50:nth-child(even) { background-color: #162032 !important; }
+
+    /* Remove number input spinners globally */
+    input[type="number"]::-webkit-inner-spin-button,
+    input[type="number"]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    input[type="number"] { -moz-appearance: textfield; appearance: textfield; }
   </style>
   <script>
     /* Restore dark mode before React paints — prevents white flash */

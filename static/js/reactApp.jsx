@@ -4020,9 +4020,9 @@ function FixturesPanel({ pkg, pkgIdx, estimateName, onUpdatePkg, onDelete, onAdd
                   <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-32">FIXTURE TYPE</th>
                   <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700">DESCRIPTION</th>
                   <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-32">ITEM #</th>
-                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-14">QTY</th>
+                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-20">QTY</th>
                   <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-24">PRICE/UNIT</th>
-                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-12">UNIT</th>
+                  <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-20">UNIT</th>
                   <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-28">INVOICE #</th>
                   <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-28">DATE</th>
                   <th className="px-2 py-2 text-left text-xs font-semibold text-teal-700 w-24">SUBTOTAL</th>
@@ -4062,7 +4062,7 @@ function FixturesPanel({ pkg, pkgIdx, estimateName, onUpdatePkg, onDelete, onAdd
                       <input value={row.item_number || ""} onChange={e => onUpdateRow(pkgIdx, ri, { item_number: e.target.value })} className={inputClass} placeholder="Item #" />
                     </td>
                     <td className="px-3 py-1.5">
-                      <input type="number" min="0" step="1" value={row.qty || ""} onChange={e => onUpdateRow(pkgIdx, ri, { qty: e.target.value })} className={inputClass} />
+                      <input type="text" inputMode="decimal" value={row.qty || ""} onChange={e => onUpdateRow(pkgIdx, ri, { qty: e.target.value })} className={inputClass} placeholder="0" />
                     </td>
                     <td className="px-3 py-1.5">
                       <input type="number" min="0" step="0.01" value={row.price_per_unit || ""} onChange={e => onUpdateRow(pkgIdx, ri, { price_per_unit: e.target.value })} className={inputClass} />
