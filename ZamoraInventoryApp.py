@@ -50,6 +50,7 @@ from db import (
     add_kit_member, remove_kit_member,
     add_fixture_spec, get_fixture_specs, delete_fixture_spec,
     add_row_attachment, get_row_attachments, delete_row_attachment,
+    pop_turso_sync_error,
 )
 import r2_utils
 import tempfile
@@ -1587,10 +1588,12 @@ def save_estimate():
     except Exception as _fe:
         print(f"[save_estimate] fixture sync error: {_fe}")
 
+    est_key = f"{folder}/{ename}" if folder else ename
     tid = save_estimate_db(ename, folder, session["email"], session.get("role", "user"), data_json)
     if tid is None:
         return jsonify({"ok": False, "error": "Access denied"}), 403
-    return jsonify({"ok": True, "id": tid})
+    sync_warn = pop_turso_sync_error(est_key)
+    return jsonify({"ok": True, "id": tid, **({"sync_warning": sync_warn} if sync_warn else {})})
 
 
 @app.route("/delete_estimate/<path:name>", methods=["POST"])

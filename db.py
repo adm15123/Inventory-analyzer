@@ -33,6 +33,15 @@ USE_TURSO   = bool(TURSO_URL)
 
 LOCAL_DB_PATH = os.path.join(os.path.dirname(__file__), "data", "zamora.db")
 
+# Tracks the most recent Turso background-sync error per estimate key.
+# Piggybacked onto the next save response so the UI can warn the user.
+_turso_sync_errors: dict[str, str] = {}
+
+
+def pop_turso_sync_error(estimate_key: str) -> str | None:
+    """Return and clear the last Turso sync error for this estimate, if any."""
+    return _turso_sync_errors.pop(estimate_key, None)
+
 
 # ── Turso HTTP transport ──────────────────────────────────────────────────────
 
@@ -1225,6 +1234,7 @@ def save_estimate_db(
 
     # Sync to Turso in the background — does not block the HTTP response
     if USE_TURSO:
+        _est_key = f"{folder}/{name}" if folder else name
         def _turso_sync():
             try:
                 rows = _turso_execute(find_sql, [name, folder])
@@ -1240,7 +1250,9 @@ def save_estimate_db(
                     )
                     new_tid = new[0]["id"]
                     _turso_execute(ver_sql, [new_tid, data_json, actor_email, now])
+                _turso_sync_errors.pop(_est_key, None)  # clear any previous error on success
             except Exception as e:
+                _turso_sync_errors[_est_key] = str(e)
                 print(f"[save_estimate_db] Turso background sync error: {e}")
         threading.Thread(target=_turso_sync, daemon=True).start()
 

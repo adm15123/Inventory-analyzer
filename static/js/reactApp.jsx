@@ -4365,6 +4365,7 @@ function EstimateBuilderPage({ data }) {
   const [bids, setBids]                   = useState(data.content?.scenarios?.[0]?.bids     ?? data.content?.bids     ?? []);
   const [saving, setSaving]               = useState(false);
   const [saveOk, setSaveOk]               = useState(false);
+  const [syncWarn, setSyncWarn]           = useState(null);
   const [pdfLoading, setPdfLoading]       = useState(false);
   const [xlsLoading, setXlsLoading]       = useState(false);
   const [mlModal, setMlModal]             = useState(null);   // { sectionIdx, rowIdx }
@@ -4897,7 +4898,17 @@ function EstimateBuilderPage({ data }) {
     const payload = new URLSearchParams({ estimate_name: fullName, estimate_data: buildPayload() });
     fetch(data.saveUrl, { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: payload.toString() })
       .then((r) => r.json())
-      .then((res) => { if (res.ok) { setSaveOk(true); setEstimateName(fullName); fetchAttachments(fullName); } else window.alert(res.error || "Save failed."); })
+      .then((res) => {
+        if (res.ok) {
+          setSaveOk(true); setEstimateName(fullName); fetchAttachments(fullName);
+          if (res.sync_warning) {
+            setSyncWarn("Cloud sync failed — data saved locally. Will retry on next save.");
+            setTimeout(() => setSyncWarn(null), 8000);
+          } else {
+            setSyncWarn(null);
+          }
+        } else window.alert(res.error || "Save failed.");
+      })
       .catch(() => window.alert("Save failed."))
       .finally(() => setSaving(false));
   };
@@ -4961,6 +4972,13 @@ function EstimateBuilderPage({ data }) {
             {xlsLoading ? "⏳ Generating…" : "📊 Export Excel"}
           </button>
         </div>
+        {syncWarn && (
+          <div className="mt-2 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-700">
+            <span>⚠️</span>
+            <span>{syncWarn}</span>
+            <button onClick={() => setSyncWarn(null)} className="ml-auto text-amber-400 hover:text-amber-600 transition text-sm leading-none">×</button>
+          </div>
+        )}
       </div>
 
       {/* Hidden export form */}
