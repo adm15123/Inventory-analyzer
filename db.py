@@ -462,6 +462,10 @@ def init_db():
         CREATE INDEX IF NOT EXISTS idx_rowatt_key ON row_attachments (estimate_name, row_id)
     """
 
+    # Always initialize local SQLite (needed as the fast-write cache)
+    with _local_conn() as conn:
+        conn.executescript(ddl)
+
     if USE_TURSO:
         statements = [
             (stmt.strip(), [])
@@ -469,9 +473,6 @@ def init_db():
             if stmt.strip()
         ]
         _turso_batch(statements)
-    else:
-        with _local_conn() as conn:
-            conn.executescript(ddl)
 
 
 def deduplicate_catalog_usage() -> None:
