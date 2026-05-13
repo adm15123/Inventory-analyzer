@@ -16,6 +16,7 @@ at data/zamora.db (useful for local dev without Turso).
 import json
 import os
 import sqlite3
+import threading
 import time
 from datetime import datetime
 from typing import Optional
@@ -1207,39 +1208,43 @@ def save_estimate_db(
     ins_sql  = ("INSERT INTO estimates (name, folder, owner_email, data, created_at, updated_at, updated_by)"
                 " VALUES (?,?,?,?,?,?,?)")
 
-    if USE_TURSO:
-        rows = _turso_execute(find_sql, [name, folder])
-        if rows:
-            t = rows[0]
+    # Always write to local SQLite first — returns immediately (~1 ms)
+    with _local_conn() as conn:
+        row = conn.execute(find_sql, (name, folder)).fetchone()
+        if row:
+            t = dict(row)
             if not _can_write_estimate(t, actor_email, actor_role):
                 return None
             tid = t["id"]
-            _turso_execute(ver_sql, [tid, t["data"], actor_email, now])
-            _turso_execute(upd_sql, [data_json, now, actor_email, tid])
-            return tid
-        _turso_execute(ins_sql, [name, folder, actor_email, data_json, now, now, actor_email])
-        new = _turso_execute(
-            "SELECT id FROM estimates WHERE name=? AND folder=? ORDER BY id DESC LIMIT 1",
-            [name, folder],
-        )
-        tid = new[0]["id"]
-        _turso_execute(ver_sql, [tid, data_json, actor_email, now])
-        return tid
-    else:
-        with _local_conn() as conn:
-            row = conn.execute(find_sql, (name, folder)).fetchone()
-            if row:
-                t = dict(row)
-                if not _can_write_estimate(t, actor_email, actor_role):
-                    return None
-                tid = t["id"]
-                conn.execute(ver_sql, (tid, t["data"], actor_email, now))
-                conn.execute(upd_sql, (data_json, now, actor_email, tid))
-                return tid
+            conn.execute(ver_sql, (tid, t["data"], actor_email, now))
+            conn.execute(upd_sql, (data_json, now, actor_email, tid))
+        else:
             cur = conn.execute(ins_sql, (name, folder, actor_email, data_json, now, now, actor_email))
             tid = cur.lastrowid
             conn.execute(ver_sql, (tid, data_json, actor_email, now))
-            return tid
+
+    # Sync to Turso in the background — does not block the HTTP response
+    if USE_TURSO:
+        def _turso_sync():
+            try:
+                rows = _turso_execute(find_sql, [name, folder])
+                if rows:
+                    t = rows[0]
+                    _turso_execute(ver_sql, [t["id"], t["data"], actor_email, now])
+                    _turso_execute(upd_sql, [data_json, now, actor_email, t["id"]])
+                else:
+                    _turso_execute(ins_sql, [name, folder, actor_email, data_json, now, now, actor_email])
+                    new = _turso_execute(
+                        "SELECT id FROM estimates WHERE name=? AND folder=? ORDER BY id DESC LIMIT 1",
+                        [name, folder],
+                    )
+                    new_tid = new[0]["id"]
+                    _turso_execute(ver_sql, [new_tid, data_json, actor_email, now])
+            except Exception as e:
+                print(f"[save_estimate_db] Turso background sync error: {e}")
+        threading.Thread(target=_turso_sync, daemon=True).start()
+
+    return tid
 
 
 def get_estimate_db(name: str, folder: str, viewer_email: str, viewer_role: str) -> dict | None:
