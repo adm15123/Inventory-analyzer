@@ -4032,8 +4032,25 @@ function FixturesPanel({ pkg, pkgIdx, estimateName, onUpdatePkg, onDelete, onAdd
                 </tr>
               </thead>
               <tbody>
-                {(pkg.rows || []).map((row, ri) => (
-                  <tr key={row.id} className={`${ri % 2 === 0 ? "bg-white" : "bg-teal-50/30"} ${row.kit_id ? "border-l-4 border-teal-400" : ""}`}>
+                {(() => {
+                  const KIT_PALETTE = [
+                    { border: "border-l-4 border-teal-400",   text: "text-teal-600"   },
+                    { border: "border-l-4 border-blue-400",   text: "text-blue-600"   },
+                    { border: "border-l-4 border-violet-400", text: "text-violet-600" },
+                    { border: "border-l-4 border-amber-400",  text: "text-amber-600"  },
+                    { border: "border-l-4 border-rose-400",   text: "text-rose-600"   },
+                    { border: "border-l-4 border-emerald-400",text: "text-emerald-600"},
+                  ];
+                  const kitColorMap = {};
+                  let nextIdx = 0;
+                  (pkg.rows || []).forEach(r => {
+                    if (r.kit_id != null && !(r.kit_id in kitColorMap))
+                      kitColorMap[r.kit_id] = nextIdx++ % KIT_PALETTE.length;
+                  });
+                  return (pkg.rows || []).map((row, ri) => {
+                  const kitColor = row.kit_id != null ? KIT_PALETTE[kitColorMap[row.kit_id]] : null;
+                  return (
+                  <tr key={row.id} className={`${ri % 2 === 0 ? "bg-white" : "bg-teal-50/30"} ${kitColor ? kitColor.border : ""}`}>
                     <td className="px-3 py-1.5">
                       <input
                         list="fixture-types-datalist"
@@ -4043,7 +4060,7 @@ function FixturesPanel({ pkg, pkgIdx, estimateName, onUpdatePkg, onDelete, onAdd
                         placeholder="Type…"
                       />
                       {row.kit_name && (
-                        <span className="block text-xs text-teal-500 font-medium mt-0.5 truncate" title={row.kit_name}>🔗 {row.kit_name}</span>
+                        <span className={`block text-xs font-medium mt-0.5 truncate ${kitColor ? kitColor.text : "text-teal-500"}`} title={row.kit_name}>🔗 {row.kit_name}</span>
                       )}
                     </td>
                     <td className="px-3 py-1.5">
@@ -4094,7 +4111,9 @@ function FixturesPanel({ pkg, pkgIdx, estimateName, onUpdatePkg, onDelete, onAdd
                       <button onClick={() => onRemoveRow(pkgIdx, ri)} className="text-slate-400 hover:text-rose-500 text-xl leading-none transition" title="Remove">×</button>
                     </td>
                   </tr>
-                ))}
+                  );
+                  });
+                })()}
                 {(!pkg.rows || pkg.rows.length === 0) && (
                   <tr><td colSpan="12" className="px-3 py-6 text-center text-sm text-slate-400">No items yet — click + Add Row below.</td></tr>
                 )}
